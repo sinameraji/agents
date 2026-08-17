@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { routeAgentRequest } from 'agents'
 import { resolveIdentity, type Identity } from './auth/access'
+import { fetchOpenRouterModels } from './api/models'
 
 export { UserAgent } from './agents/user-agent'
 
@@ -22,6 +23,17 @@ app.use('*', async (c, next) => {
 app.get('/api/me', (c) => {
   const { id, email } = c.get('identity')
   return c.json({ id, email })
+})
+
+app.get('/api/models', async (c) => {
+  const provider = c.req.query('provider') ?? 'openrouter'
+  if (provider !== 'openrouter') return c.json({ models: [] })
+  try {
+    const models = await fetchOpenRouterModels()
+    return c.json({ models })
+  } catch (err) {
+    return c.json({ models: [], error: (err as Error).message }, 502)
+  }
 })
 
 // --- agents (WebSocket + HTTP) ---------------------------------------------------------------
