@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local dev (never commit .dev.vars)
+# Local auth bypass: the email to treat as the signed-in user when Cloudflare Access is not in front.
+DEV_USER_EMAIL=you@example.com
+# 32 random bytes, base64 — used to encrypt stored provider keys.  openssl rand -base64 32
+ENCRYPTION_KEY=

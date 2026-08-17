@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dreamweav",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "UserAgent", "class_name": "UserAgent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserAgent"] }],
+  "vars": {
+    "APP_NAME": "Dreamweav"
+  }
+}
