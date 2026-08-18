@@ -54,6 +54,7 @@ export interface SessionApi {
   respondPermission: (id: string, reply: PermissionReply, note?: string) => Promise<void>
   listFiles: (path?: string) => Promise<{ name: string; path: string; isDirectory: boolean; size: number }[]>
   readFile: (path: string) => Promise<string | null>
+  writeFile: (path: string, content: string) => Promise<boolean>
   exposePort: (port: number, hostname?: string) => Promise<string | null>
 }
 
@@ -147,6 +148,10 @@ export function useSession(sessionId: string): SessionApi {
     const r = (await agentRef.current.stub.readFile(path)) as { content: string | null }
     return r.content
   }, [])
+  const writeFile = useCallback(async (path: string, content: string) => {
+    const r = (await agentRef.current.stub.writeFile(path, content)) as { ok: boolean }
+    return r.ok
+  }, [])
   const exposePort = useCallback(async (port: number, hostname?: string) => {
     const r = (await agentRef.current.stub.exposePort(port, hostname)) as { url: string | null }
     return r.url
@@ -168,6 +173,7 @@ export function useSession(sessionId: string): SessionApi {
     respondPermission,
     listFiles,
     readFile,
+    writeFile,
     exposePort,
   }
 }

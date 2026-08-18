@@ -93,9 +93,9 @@ export type Harness = 'pi' | 'opencode' | 'kimiflare' | 'aisdk'
 
 export const HARNESSES: { id: Harness; label: string; blurb: string; enabled: boolean }[] = [
   { id: 'opencode', label: 'OpenCode', blurb: 'Sub-agents, permissions, LSP (by Anomaly)', enabled: true },
-  { id: 'pi', label: 'pi', blurb: 'Minimal, fast agent by Mario Zechner', enabled: false },
-  { id: 'kimiflare', label: 'KimiFlare', blurb: 'Kimi K2 on your Cloudflare account', enabled: false },
-  { id: 'aisdk', label: 'Built-in', blurb: 'Vercel AI SDK loop — zero extra deps', enabled: false },
+  { id: 'aisdk', label: 'Built-in', blurb: 'Vercel AI SDK loop — any OpenAI-compatible model', enabled: true },
+  { id: 'pi', label: 'pi', blurb: 'Minimal, fast agent by Mario Zechner', enabled: true },
+  { id: 'kimiflare', label: 'KimiFlare', blurb: 'Kimi K2 on your own Cloudflare account', enabled: true },
 ]
 
 /** Where LLM requests are billed / routed. */

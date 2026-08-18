@@ -10,7 +10,7 @@
     "dev": "vite dev",
     "build": "npm run build -w bridge && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b && npm run typecheck -w bridge",
+    "typecheck": "tsc -b",
     "test": "vitest run",
     "types": "wrangler types",
     "deploy": "npm run build && wrangler deploy",

@@ -1,15 +1,16 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
-import { Eye, Files, X } from 'lucide-react'
+import { Eye, Files, SlidersHorizontal, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { SessionApi } from '@/hooks/use-session'
 import { Button } from '@/components/ui/button'
 import { PreviewPanel } from './preview-panel'
 import { FilesPanel } from './files-panel'
+import { ConfigPanel } from './config-panel'
 
-type Tab = 'preview' | 'files'
+type Tab = 'preview' | 'files' | 'config'
 
 export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('files')
@@ -31,6 +32,12 @@ export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClo
             icon={<Files className="size-3.5" />}
             label="Files"
           />
+          <TabButton
+            active={tab === 'config'}
+            onClick={() => setTab('config')}
+            icon={<SlidersHorizontal className="size-3.5" />}
+            label="Config"
+          />
         </div>
         <Button
           variant="ghost"
@@ -44,7 +51,9 @@ export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClo
       </header>
 
       <div className="min-h-0 flex-1">
-        {tab === 'preview' ? <PreviewPanel session={session} /> : <FilesPanel session={session} />}
+        {tab === 'preview' && <PreviewPanel session={session} />}
+        {tab === 'files' && <FilesPanel session={session} />}
+        {tab === 'config' && <ConfigPanel session={session} />}
       </div>
     </aside>
   )

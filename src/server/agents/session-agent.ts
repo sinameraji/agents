@@ -253,6 +253,101 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
+  // --- bridge harnesses (pi / KimiFlare / built-in AI SDK) ---------------------------------
+  private bridgeStarted = false
+
+  private async ensureBridge(): Promise<ReturnType<typeof getSandbox>> {
+    const cfg = this.config()
+    const conn = await this.connections()
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
+    await this.ensureWorkspace(sandbox)
+    // (Re)start the bridge process and confirm it's healthy (it may have died on container restart).
+    const healthy = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok).catch(() => false)
+    if (!healthy) {
+      this.bridgeStarted = false
+      await sandbox.startProcess('node /opt/dreamweav/bridge.mjs', { processId: 'bridge' }).catch(() => {})
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 1000))
+        const ok = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok).catch(() => false)
+        if (ok) break
+        if (i === 29) throw new Error('Bridge did not start in the sandbox.')
+      }
+    }
+    if (!this.bridgeStarted) {
+      const res = await this.bridgeFetch(sandbox, 'POST', '/start', {
+        harness: cfg.harness,
+        config: { provider: cfg.provider, model: cfg.model, cwd: '/workspace', mode: this.state.mode, creds: conn },
+      })
+      if (!res?.ok) throw new Error('Bridge failed to start the harness.')
+      this.bridgeStarted = true
+    }
+    return sandbox
+  }
+
+  private async bridgeFetch(sandbox: ReturnType<typeof getSandbox>, method: string, path: string, body?: unknown): Promise<{ ok: boolean; json: unknown } | null> {
+    try {
+      const res = await sandbox.containerFetch(
+        `http://localhost:7700${path}`,
+        { method, headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) },
+        7700,
+      )
+      const json = await res.json().catch(() => ({}))
+      return { ok: res.ok, json }
+    } catch {
+      return null
+    }
+  }
+
+  private async runBridgeTurn(text: string): Promise<void> {
+    const cfg = this.config()
+    const conn = await this.connections()
+    if (!hasProviderKey(cfg.provider, conn)) throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
+
+    this.setStatus('booting')
+    const sandbox = await this.ensureBridge()
+    this.setStatus('busy')
+    this.emittedParts.clear()
+
+    await this.bridgeFetch(sandbox, 'POST', '/prompt', { text })
+    const turnId = `a-${crypto.randomUUID()}`
+    this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
+
+    const deadline = Date.now() + 8 * 60 * 1000
+    let stable = 0
+    let lastSnapshot = ''
+    try {
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1200))
+        const res = await this.bridgeFetch(sandbox, 'GET', '/state')
+        const state = (res?.json ?? {}) as { status?: string; turns?: NormTurn[]; todos?: TranscriptState['todos']; permissions?: TranscriptState['permissions'] }
+        // The bridge's last assistant turn holds this prompt's parts.
+        const assistant = [...(state.turns ?? [])].reverse().find((t) => t.role === 'assistant')
+        if (assistant) {
+          for (const part of assistant.parts) {
+            const ser = JSON.stringify(part)
+            if (this.emittedParts.get(part.id) === ser) continue
+            this.emittedParts.set(part.id, ser)
+            this.emit({ t: 'part.upsert', turnId, part })
+          }
+          if (assistant.usage) this.emit({ t: 'usage', usage: assistant.usage })
+        }
+        for (const perm of state.permissions ?? []) this.emit({ t: 'permission.ask', permission: perm })
+        if (state.todos?.length) this.emit({ t: 'todos', todos: state.todos })
+        const snapshot = JSON.stringify(assistant?.parts?.length ?? 0) + (state.status ?? '')
+        if (snapshot === lastSnapshot) stable += 1
+        else stable = 0
+        lastSnapshot = snapshot
+        if (state.status === 'idle' && stable >= 2) break
+      }
+    } finally {
+      for (const turn of this.transcript.turns) {
+        if (turn.role === 'assistant' && turn.status === 'streaming') this.emit({ t: 'turn.update', id: turn.id, patch: { status: 'complete', completedAt: Date.now() } })
+      }
+    }
+    this.setStatus('idle')
+    await this.checkpoint()
+  }
+
   // --- OpenCode lifecycle -------------------------------------------------------------------
   private async ensureOpencode(): Promise<void> {
     const cfg = this.config()
@@ -297,7 +392,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
     this.emit({ t: 'turn.start', turn: userTurn })
     this.setStatus('busy')
-    void this.runTurn(input.text).catch((err) => {
+    const harness = this.config().harness
+    const run = harness === 'opencode' ? this.runOpencodeTurn(input.text) : this.runBridgeTurn(input.text)
+    void run.catch((err) => {
       const message = (err as Error).message
       console.error('[dreamweav] turn failed:', (err as Error).stack ?? err)
       const errId = `err-${Date.now()}`
@@ -310,7 +407,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return { ok: true }
   }
 
-  private async runTurn(text: string): Promise<void> {
+  private async runOpencodeTurn(text: string): Promise<void> {
     const cfg = this.config()
     const conn = await this.connections()
     if (!hasProviderKey(cfg.provider, conn)) {
@@ -419,9 +516,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     if (this.opencode && this.opencodeSessionId) {
       try {
         await this.opencode.session.abort({ sessionID: this.opencodeSessionId } as never)
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
+    }
+    if (this.config().harness !== 'opencode') {
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+      await this.bridgeFetch(sandbox, 'POST', '/abort').catch(() => null)
     }
     this.setStatus('idle')
     return { ok: true }
@@ -431,8 +530,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async respondPermission(id: string, reply: PermissionReply, note?: string): Promise<{ ok: true }> {
     this.emit({ t: 'permission.resolve', id })
     try {
-      if (this.opencode) {
-        await this.opencode.permission.reply({ requestID: id, reply, message: note } as never)
+      if (this.config().harness === 'opencode') {
+        if (this.opencode) await this.opencode.permission.reply({ requestID: id, reply, message: note } as never)
+      } else {
+        const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+        await this.bridgeFetch(sandbox, 'POST', '/permission', { id, reply, note })
       }
     } catch (e) {
       console.error('[dreamweav] permission reply failed', e)
@@ -479,6 +581,17 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       return { files }
     } catch {
       return { files: [] }
+    }
+  }
+
+  @callable()
+  async writeFile(path: string, content: string): Promise<{ ok: boolean }> {
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    try {
+      await sandbox.writeFile(path, content)
+      return { ok: true }
+    } catch {
+      return { ok: false }
     }
   }
 
