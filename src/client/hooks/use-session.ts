@@ -52,6 +52,7 @@ export interface SessionApi {
   setModel: (id: string) => Promise<void>
   setMode: (mode: SessionMode) => Promise<void>
   respondPermission: (id: string, reply: PermissionReply, note?: string) => Promise<void>
+  runCommand: (name: 'compact' | 'undo' | 'redo' | 'initProject' | 'showDiff' | 'clearTranscript') => Promise<string>
   listFiles: (path?: string) => Promise<{ name: string; path: string; isDirectory: boolean; size: number }[]>
   readFile: (path: string) => Promise<string | null>
   writeFile: (path: string, content: string) => Promise<boolean>
@@ -86,6 +87,7 @@ export function useSession(sessionId: string): SessionApi {
         return
       }
       if (data.t === 'agent' && data.event) dispatch({ type: 'event', event: data.event })
+      if ((data as { t?: string }).t === 'reset') dispatch({ type: 'hydrate', state: { turns: [], todos: [], permissions: [] } })
     }
     agent.addEventListener('message', onMsg)
     let alive = true
@@ -140,6 +142,10 @@ export function useSession(sessionId: string): SessionApi {
   const respondPermission = useCallback(async (id: string, reply: PermissionReply, note?: string) => {
     await agentRef.current.stub.respondPermission(id, reply, note)
   }, [])
+  const runCommand = useCallback(async (name: 'compact' | 'undo' | 'redo' | 'initProject' | 'showDiff' | 'clearTranscript') => {
+    const r = (await (agentRef.current.stub as Record<string, (...a: unknown[]) => Promise<unknown>>)[name]()) as { note?: string }
+    return r?.note ?? 'Done.'
+  }, [])
   const listFiles = useCallback(async (path?: string) => {
     const r = (await agentRef.current.stub.listFiles(path)) as { files: { name: string; path: string; isDirectory: boolean; size: number }[] }
     return r.files
@@ -171,6 +177,7 @@ export function useSession(sessionId: string): SessionApi {
     setModel,
     setMode,
     respondPermission,
+    runCommand,
     listFiles,
     readFile,
     writeFile,

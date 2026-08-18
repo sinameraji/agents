@@ -694,6 +694,75 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return { ok: true }
   }
 
+  // --- harness slash-commands ----------------------------------------------------------------
+  /** OpenCode-backed session operations; boots OpenCode if needed. */
+  private async ocOp<T>(fn: (sid: string) => Promise<T>): Promise<T> {
+    if (this.config().harness !== 'opencode') throw new Error('This command is only available on OpenCode sessions (for now).')
+    await this.ensureOpencode()
+    const sid = await this.ensureOpencodeSession()
+    return fn(sid)
+  }
+
+  @callable()
+  async compact(): Promise<{ ok: boolean; note: string }> {
+    await this.ocOp((sid) => this.opencode!.session.summarize({ sessionID: sid } as never))
+    return { ok: true, note: 'Compacted the conversation (older turns summarized).' }
+  }
+
+  @callable()
+  async undo(): Promise<{ ok: boolean; note: string }> {
+    await this.ocOp((sid) => this.opencode!.session.revert({ sessionID: sid } as never))
+    return { ok: true, note: 'Reverted the last change.' }
+  }
+
+  @callable()
+  async redo(): Promise<{ ok: boolean; note: string }> {
+    await this.ocOp((sid) => this.opencode!.session.unrevert({ sessionID: sid } as never))
+    return { ok: true, note: 'Restored the reverted change.' }
+  }
+
+  @callable()
+  async initProject(): Promise<{ ok: boolean; note: string }> {
+    await this.ocOp((sid) => this.opencode!.session.init({ sessionID: sid } as never))
+    return { ok: true, note: 'Scanned the project and wrote AGENTS.md.' }
+  }
+
+  @callable()
+  async showDiff(): Promise<{ ok: boolean; note: string }> {
+    const diff = await this.ocOp((sid) => this.opencode!.session.diff({ sessionID: sid } as never))
+    const data = ((diff as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>
+    const files = data.map((d) => ({
+      path: String(d.file ?? d.path ?? d.filename ?? '?'),
+      additions: typeof d.additions === 'number' ? d.additions : undefined,
+      deletions: typeof d.deletions === 'number' ? d.deletions : undefined,
+      patch: typeof d.patch === 'string' ? d.patch : typeof d.diff === 'string' ? d.diff : undefined,
+    }))
+    const turnId = `d-${Date.now()}`
+    this.emit({
+      t: 'turn.start',
+      turn: {
+        id: turnId, role: 'assistant', createdAt: Date.now(), status: 'complete', completedAt: Date.now(),
+        parts: files.length
+          ? [{ kind: 'diff', id: `${turnId}:diff`, files }]
+          : [{ kind: 'text', id: `${turnId}:t`, text: '_No changes in this session yet._' }],
+      },
+    })
+    return { ok: true, note: files.length ? `Showing ${files.length} changed file(s).` : 'No changes yet.' }
+  }
+
+  @callable()
+  clearTranscript(): { ok: true } {
+    this.sql`DELETE FROM turns`
+    this.putKv('todos', [])
+    this.putKv('permissions', [])
+    this.putKv('cfagent:messages', [])
+    this.emittedParts.clear()
+    this.transcript = emptyTranscript()
+    this.hydrated = true
+    this.broadcast(JSON.stringify({ t: 'reset' }))
+    return { ok: true }
+  }
+
   @callable()
   setMode(mode: SessionMode): { ok: true } {
     this.setState({ ...this.state, mode })

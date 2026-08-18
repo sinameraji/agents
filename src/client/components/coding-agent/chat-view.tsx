@@ -6,6 +6,7 @@ import { Bot, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'luci
 
 import type { SessionApi } from '@/hooks/use-session'
 import { HARNESSES } from '~shared/protocol'
+import { useRouter } from '@/router'
 import { Button } from '@/components/ui/button'
 import { StatusDot, statusLabel } from './status-dot'
 import { TokenMeter } from './token-meter'
@@ -18,6 +19,7 @@ import { WorkspaceDock } from '../workspace/workspace-dock'
 export function ChatView({ session }: { session: SessionApi }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [dockOpen, setDockOpen] = useState(false)
+  const { navigate } = useRouter()
   const meta = session.meta
   const harnessLabel = HARNESSES.find((h) => h.id === meta?.harness)?.label ?? meta?.harness ?? ''
   const busy = session.status === 'busy' || session.status === 'booting'
@@ -132,6 +134,17 @@ export function ChatView({ session }: { session: SessionApi }) {
             { id: 'auto', label: 'Auto', hint: 'approve everything', run: () => void session.setMode('auto') },
             { id: 'stop', label: 'Stop', hint: 'interrupt the agent', run: () => void session.stop() },
             { id: 'workspace', label: 'Workspace', hint: 'toggle the side panel', run: () => setDockOpen((v) => !v) },
+            { id: 'new', label: 'New session', hint: 'start another session', run: () => navigate('/new') },
+            { id: 'clear', label: 'Clear', hint: 'wipe this conversation', run: () => void session.runCommand('clearTranscript') },
+            ...(meta?.harness === 'opencode'
+              ? [
+                  { id: 'compact', label: 'Compact', hint: 'summarize older turns', run: () => void session.runCommand('compact') },
+                  { id: 'undo', label: 'Undo', hint: 'revert last change', run: () => void session.runCommand('undo') },
+                  { id: 'redo', label: 'Redo', hint: 'restore reverted change', run: () => void session.runCommand('redo') },
+                  { id: 'init', label: 'Init', hint: 'scan repo → AGENTS.md', run: () => void session.runCommand('initProject') },
+                  { id: 'diff', label: 'Diff', hint: 'show session changes', run: () => void session.runCommand('showDiff') },
+                ]
+              : []),
           ]}
           extras={
             <>
