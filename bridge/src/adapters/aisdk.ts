@@ -142,8 +142,12 @@ export function createAiSdkAdapter(): HarnessAdapter {
           stopWhen: stepCountIs(readonly ? 12 : 40),
           abortSignal: controller.signal,
         })
+        let streamError: string | null = null
         for await (const ev of result.fullStream) {
-          if (ev.type === 'text-delta') {
+          if (ev.type === 'error') {
+            const raw = (ev as { error?: unknown }).error
+            streamError = raw instanceof Error ? raw.message : JSON.stringify(raw).slice(0, 500)
+          } else if (ev.type === 'text-delta') {
             textAcc += ev.text
             sink.part({ kind: 'text', id: textPartId, text: textAcc, streaming: true })
           } else if (ev.type === 'tool-call') {
@@ -154,6 +158,7 @@ export function createAiSdkAdapter(): HarnessAdapter {
             sink.part({ kind: 'tool', id: `tc-${ev.toolCallId}`, callId: ev.toolCallId, name: prev?.name ?? 'tool', state: { status: 'completed', input: prev?.input, output: String(ev.output).slice(0, 20_000) } })
           }
         }
+        if (streamError) throw new Error(streamError)
         const finalText = await result.text
         if (finalText) sink.part({ kind: 'text', id: textPartId, text: finalText, streaming: false })
         const usage = await result.usage
