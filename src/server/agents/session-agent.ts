@@ -63,6 +63,12 @@ interface TurnRow {
   data_json: string
 }
 
+interface QueuedMessage {
+  text: string
+  runText?: string
+  attachments?: { key: string; name: string; size: number }[]
+}
+
 /**
  * One instance per session (name = session id). Thin supervisor: owns the Sandbox + the OpenCode
  * server, PERSISTS the transcript as turns/parts, owns the authoritative status (driven by real
@@ -549,6 +555,19 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       this.setState({ ...this.state, meta: { ...this.state.meta, name } })
       void getAgentByName(this.env.UserAgent, this.config().owner).then((u) => u.upsertSessionSummary({ id: this.name, name }))
     }
+    // While a turn runs, new messages QUEUE (the user turn is already in the transcript) and
+    // drain in order after the current turn finishes. Stop clears the queue.
+    if (this.state.status === 'busy' || this.state.status === 'booting') {
+      const q = this.getKv<QueuedMessage[]>('queue', [])
+      this.putKv('queue', [...q, { text: input.text, runText: input.runText, attachments: input.attachments }])
+      return { ok: true }
+    }
+    this.startTurn({ text: input.text, runText: input.runText, attachments: input.attachments })
+    return { ok: true }
+  }
+
+  /** Kick off the harness turn for an (already transcript-visible) user message. */
+  private startTurn(input: QueuedMessage): void {
     this.setStatus('busy')
     const harness = this.config().harness
     const promptText = input.runText ?? input.text
@@ -561,17 +580,30 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       if (harness === 'cfagent') return this.runCfAgentTurn(text)
       return this.runBridgeTurn(text)
     })()
-    void run.catch((err) => {
-      const message = (err as Error).message
-      console.error('[dreamweav] turn failed:', (err as Error).stack ?? err)
-      const errId = `err-${Date.now()}`
-      this.emit({
-        t: 'turn.start',
-        turn: { id: errId, role: 'assistant', createdAt: Date.now(), status: 'error', error: { name: 'error', message }, parts: [{ kind: 'error', id: `${errId}:e`, name: 'error', message }] },
+    void run
+      .catch((err) => {
+        const message = (err as Error).message
+        console.error('[dreamweav] turn failed:', (err as Error).stack ?? err)
+        const errId = `err-${Date.now()}`
+        this.emit({
+          t: 'turn.start',
+          turn: { id: errId, role: 'assistant', createdAt: Date.now(), status: 'error', error: { name: 'error', message }, parts: [{ kind: 'error', id: `${errId}:e`, name: 'error', message }] },
+        })
+        this.setStatus('error')
       })
-      this.setStatus('error')
-    })
-    return { ok: true }
+      .finally(() => {
+        this.drainQueue()
+      })
+  }
+
+  /** Run the next queued message, if any, once the session is no longer busy. */
+  private drainQueue(): void {
+    if (this.state.status === 'busy' || this.state.status === 'booting') return
+    const q = this.getKv<QueuedMessage[]>('queue', [])
+    if (!q.length) return
+    const [next, ...rest] = q
+    this.putKv('queue', rest)
+    this.startTurn(next)
   }
 
   private async runOpencodeTurn(text: string): Promise<void> {
@@ -690,6 +722,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   @callable()
   async stop(): Promise<{ ok: true }> {
+    this.putKv('queue', []) // stop means stop: drop queued follow-ups too
     if (this.opencode && this.opencodeSessionId) {
       try {
         await this.opencode.session.abort({ sessionID: this.opencodeSessionId } as never)
@@ -741,7 +774,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     })
   }
 
-  private noted(res: { ok: boolean; note: string }): { ok: boolean; note: string } {
+  private noted<T extends { ok: boolean; note: string }>(res: T): T {
     this.noteTurn(res.note)
     return res
   }
@@ -850,6 +883,162 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       return { ok: true, note: `Running /${name}.` }
     }
     return { ok: false, note: 'Custom commands are not supported on this harness.' }
+  }
+
+  // --- git export ---------------------------------------------------------------------------
+  private async sandboxSh(sandbox: ReturnType<typeof getSandbox>, script: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    const r = (await sandbox.exec(`sh -lc ${JSON.stringify(script)}`, { timeout: 120_000 })) as {
+      exitCode?: number; stdout?: string; stderr?: string
+    }
+    return { exitCode: r.exitCode ?? 0, stdout: r.stdout ?? '', stderr: r.stderr ?? '' }
+  }
+
+  @callable()
+  async gitStatus(): Promise<{ repo: boolean; branch: string; dirty: number; remote: string | null; lastCommit: string | null }> {
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    await this.ensureWorkspace(sandbox).catch(() => null)
+    // NOTE: single line — the exec wrapper JSON-stringifies the script, so newlines don't survive.
+    const { stdout } = await this.sandboxSh(
+      sandbox,
+      `cd /workspace 2>/dev/null; git config --global --add safe.directory /workspace >/dev/null 2>&1; ` +
+        `if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo "REPO 1"; else echo "REPO 0"; fi; ` +
+        `echo "BRANCH $(git branch --show-current 2>/dev/null)"; ` +
+        `echo "DIRTY $(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"; ` +
+        `echo "REMOTE $(git remote get-url origin 2>/dev/null)"; ` +
+        `echo "LAST $(git log -1 --format=%s 2>/dev/null)"`,
+    )
+    const grab = (k: string) => stdout.split('\n').find((l) => l.startsWith(`${k} `))?.slice(k.length + 1).trim() ?? ''
+    return {
+      repo: grab('REPO') === '1',
+      branch: grab('BRANCH'),
+      dirty: Number(grab('DIRTY')) || 0,
+      remote: grab('REMOTE') || null,
+      lastCommit: grab('LAST') || null,
+    }
+  }
+
+  /** Commit everything, push a branch to the user's GitHub (creating a private repo for blank
+   *  sessions), optionally open a PR. BYO GitHub PAT from Settings. */
+  @callable()
+  async gitExport(input: { message?: string; branch?: string; openPr?: boolean }): Promise<{ ok: boolean; note: string; branchUrl?: string; prUrl?: string }> {
+    const cfg = this.config()
+    const conn = await this.connections()
+    const pat = conn.githubPat
+    if (!pat) return this.noted({ ok: false, note: 'Add a GitHub token in Settings → Connections first.' })
+
+    const gh = async (path: string, init?: RequestInit) => {
+      const res = await fetch(`https://api.github.com${path}`, {
+        ...init,
+        headers: {
+          authorization: `Bearer ${pat}`,
+          accept: 'application/vnd.github+json',
+          'user-agent': 'dreamweav',
+          ...(init?.body ? { 'content-type': 'application/json' } : {}),
+        },
+      })
+      return { status: res.status, json: (await res.json().catch(() => ({}))) as Record<string, unknown> }
+    }
+
+    const me = await gh('/user')
+    const login = String(me.json.login ?? '')
+    if (!login) return this.noted({ ok: false, note: 'The GitHub token was rejected — check it in Settings.' })
+
+    // Where to push: the session's source repo, or a new private repo for blank sessions.
+    let owner: string, repo: string, base: string | null = null
+    if (cfg.source.kind === 'github') {
+      const m = cfg.source.url.replace(/\.git$/, '').match(/github\.com\/([^/]+)\/([^/]+)/)
+      if (!m) return this.noted({ ok: false, note: 'Could not parse the session repo URL.' })
+      owner = m[1]
+      repo = m[2]
+      const info = await gh(`/repos/${owner}/${repo}`)
+      base = String(info.json.default_branch ?? 'main')
+    } else {
+      owner = login
+      repo = `dreamweav-${this.name.slice(0, 8)}`
+      const created = await gh('/user/repos', { method: 'POST', body: JSON.stringify({ name: repo, private: true, description: `Dreamweav session: ${this.state.meta?.name ?? this.name}` }) })
+      if (created.status !== 201 && created.status !== 422) {
+        return this.noted({ ok: false, note: `Could not create repo ${repo} (HTTP ${created.status}).` })
+      }
+    }
+
+    const branch = (input.branch ?? cfg.branch).replace(/[^\w/.-]/g, '-')
+    // The message is interpolated into a double-quoted sh word — keep it single-line and quote-free.
+    const message = (input.message?.trim() || `Dreamweav: ${this.state.meta?.name ?? 'session export'}`)
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/["\\$`]/g, "'")
+      .slice(0, 200)
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    await this.ensureWorkspace(sandbox).catch(() => null)
+    const pushUrl = `https://x-access-token:${pat}@github.com/${owner}/${repo}.git`
+    // Single-line script (exec wrapper JSON-stringifies it); push result via explicit markers
+    // because the trailing `tail` would otherwise mask git's exit code.
+    const r = await this.sandboxSh(
+      sandbox,
+      `cd /workspace && git config --global --add safe.directory /workspace >/dev/null 2>&1; ` +
+        `git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -b ${branch} >/dev/null 2>&1; ` +
+        `git config user.name "${login}"; git config user.email "${login}@users.noreply.github.com"; ` +
+        `git checkout -B ${branch} >/dev/null 2>&1; git add -A; ` +
+        `git commit -m "${message}" >/dev/null 2>&1 || echo NOTHING_TO_COMMIT; ` +
+        `git push -f ${pushUrl} ${branch} >/tmp/dw-push.log 2>&1 && echo PUSH_OK || echo PUSH_FAIL; ` +
+        `tail -3 /tmp/dw-push.log`,
+    )
+    if (!r.stdout.includes('PUSH_OK')) {
+      const scrubbed = (r.stdout + r.stderr).replaceAll(pat, '***').slice(-400)
+      return this.noted({ ok: false, note: `Git push failed: ${scrubbed}` })
+    }
+    const nothingNew = r.stdout.includes('NOTHING_TO_COMMIT') && /up.to.date/i.test(r.stdout)
+    const branchUrl = `https://github.com/${owner}/${repo}/tree/${branch}`
+
+    let prUrl: string | undefined
+    if (input.openPr && base && branch !== base) {
+      const pr = await gh(`/repos/${owner}/${repo}/pulls`, {
+        method: 'POST',
+        body: JSON.stringify({ title: message, head: branch, base, body: 'Opened from Dreamweav.' }),
+      })
+      if (pr.status === 201) prUrl = String(pr.json.html_url ?? '')
+      else if (pr.status === 422) {
+        // A PR for this branch may already exist — find it.
+        const list = await gh(`/repos/${owner}/${repo}/pulls?head=${owner}:${branch}&state=open`)
+        prUrl = String((list.json as unknown as Array<{ html_url?: string }>)[0]?.html_url ?? '') || undefined
+      }
+    }
+    const note = nothingNew
+      ? `Nothing new to commit — branch is up to date: ${branchUrl}`
+      : `Pushed ${branch} → ${owner}/${repo}${prUrl ? ` · PR: ${prUrl}` : ''}\n${branchUrl}`
+    return this.noted({ ok: true, note, branchUrl, prUrl })
+  }
+
+  // --- fork ---------------------------------------------------------------------------------
+  /** Duplicate this session: workspace snapshot + transcript copy into a NEW session. The new
+   *  harness starts with fresh context (its internal state is not portable across sessions). */
+  @callable()
+  async fork(): Promise<{ ok: boolean; note: string; id?: string }> {
+    this.hydrate()
+    const cfg = this.config()
+    await this.checkpoint()
+    const backup = this.getKv<unknown>('backup', null)
+    const name = `${this.state.meta?.name ?? 'Session'} (fork)`
+    const user = await getAgentByName(this.env.UserAgent, cfg.owner)
+    const { id } = await user.createSession({
+      source: cfg.source, name, harness: cfg.harness, provider: cfg.provider, model: cfg.model,
+    })
+    const child = await getAgentByName(this.env.SessionAgent, id)
+    await child.adoptFork({ backup, turns: this.transcript.turns, todos: this.transcript.todos })
+    return this.noted({ ok: true, note: `Forked → “${name}”. Workspace snapshot and transcript copied; the harness starts fresh context there.`, id })
+  }
+
+  /** Seed a freshly-created session from a fork: workspace backup pointer + transcript. */
+  @callable()
+  async adoptFork(input: { backup: unknown; turns: NormTurn[]; todos: TranscriptState['todos'] }): Promise<{ ok: true }> {
+    if (input.backup) this.putKv('backup', input.backup)
+    this.sql`DELETE FROM turns`
+    this.transcript = { turns: input.turns, todos: input.todos ?? [], permissions: [] }
+    this.hydrated = true
+    let seq = 0
+    for (const t of input.turns) this.persistTurn(t.id, ++seq)
+    this.putKv('todos', this.transcript.todos)
+    this.putKv('permissions', [])
+    return { ok: true }
   }
 
   @callable()
