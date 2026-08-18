@@ -1,4 +1,4 @@
-import { Agent, callable } from 'agents'
+import { Agent, callable, getAgentByName } from 'agents'
 import { decryptSecret, encryptSecret, maskSecret } from '../crypto'
 import {
   DEFAULT_SETTINGS,
@@ -106,13 +106,13 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   }
 
   @callable()
-  createSession(input: {
+  async createSession(input: {
     source: SessionSource
     name?: string
     harness?: Harness
     provider?: Provider
     model?: string
-  }): { id: string } {
+  }): Promise<{ id: string }> {
     const settings = this.getSettings().settings
     const id = crypto.randomUUID()
     const harness = input.harness ?? settings.defaultHarness
@@ -125,7 +125,9 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     this.sql`INSERT INTO sessions (id, name, repo, branch, harness, status, model, provider, source_json, created_at)
              VALUES (${id}, ${name}, ${repo}, ${branch}, ${harness}, 'provisioning', ${model}, ${provider},
                      ${JSON.stringify(input.source)}, ${new Date().toISOString()})`
-    // P1.3: also getAgentByName(env.SessionAgent, id).init({owner, source, harness, provider, model})
+    void getAgentByName(this.env.SessionAgent, id).then((sa) =>
+      sa.init({ owner: this.name, source: input.source, harness, provider, model, name, repo, branch }),
+    )
     return { id }
   }
 

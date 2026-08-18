@@ -5,6 +5,7 @@ const STATUS_META: Record<
   SessionStatus,
   { label: string; dot: string; ring: string; pulse: boolean }
 > = {
+  provisioning: { label: 'Provisioning', dot: 'bg-primary', ring: 'bg-primary/30', pulse: true },
   running: { label: 'Running', dot: 'bg-primary', ring: 'bg-primary/30', pulse: true },
   review: { label: 'Needs review', dot: 'bg-warning', ring: 'bg-warning/30', pulse: false },
   idle: { label: 'Idle', dot: 'bg-muted-foreground', ring: 'bg-muted-foreground/20', pulse: false },

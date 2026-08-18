@@ -1,4 +1,4 @@
-export type SessionStatus = 'running' | 'idle' | 'review' | 'error'
+export type SessionStatus = 'provisioning' | 'running' | 'idle' | 'review' | 'error'
 
 export type SandboxRegion = 'iad1' | 'sfo1' | 'fra1' | 'hnd1'
 

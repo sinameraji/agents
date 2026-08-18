@@ -1,9 +1,12 @@
 import { Hono } from 'hono'
 import { routeAgentRequest } from 'agents'
+import { proxyToSandbox } from '@cloudflare/sandbox'
 import { resolveIdentity, type Identity } from './auth/access'
 import { fetchOpenRouterModels } from './api/models'
 
 export { UserAgent } from './agents/user-agent'
+export { SessionAgent } from './agents/session-agent'
+export { Sandbox } from '@cloudflare/sandbox'
 
 type Variables = { identity: Identity }
 const app = new Hono<{ Bindings: Env; Variables: Variables }>()
@@ -54,4 +57,12 @@ app.all('/agents/*', async (c) => {
 // --- SPA / static assets ---------------------------------------------------------------------
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw))
 
-export default app
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Preview URLs for services running in a sandbox (e.g. a dev server) arrive on *.dreamweav.com
+    // and must be routed to the container before anything else.
+    const proxied = await proxyToSandbox(request, env)
+    if (proxied) return proxied
+    return app.fetch(request, env, ctx)
+  },
+}
