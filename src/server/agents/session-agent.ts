@@ -264,7 +264,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   /** Copy uploaded files from R2 into the sandbox at /workspace/uploads/. */
   private async copyAttachments(attachments: { key: string; name: string; size: number }[]): Promise<void> {
     try {
-      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
       await sandbox.mkdir('/workspace/uploads', { recursive: true }).catch(() => null)
       for (const att of attachments) {
         const obj = await this.env.STORE.get(att.key)
@@ -301,7 +301,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private async ensureBridge(): Promise<ReturnType<typeof getSandbox>> {
     const cfg = this.config()
     const conn = await this.connections()
-    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
     await this.ensureWorkspace(sandbox)
     // (Re)start the bridge process and confirm it's healthy (it may have died on container restart).
     const healthy = await this.bridgeFetch(sandbox, 'GET', '/health')
@@ -365,7 +365,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
 
     this.setStatus('booting')
-    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
     await this.ensureWorkspace(sandbox)
     this.setStatus('busy')
 
@@ -485,7 +485,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const cfg = this.config()
     const conn = await this.connections()
     const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn)
-    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
     await this.ensureWorkspace(sandbox)
     const booted = createOpencode(sandbox, { directory: '/workspace', config })
     const timeout = new Promise<never>((_, reject) =>

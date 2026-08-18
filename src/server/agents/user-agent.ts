@@ -1,4 +1,5 @@
 import { Agent, callable, getAgentByName } from 'agents'
+import { getSandbox } from '@cloudflare/sandbox'
 import { decryptSecret, encryptSecret, maskSecret } from '../crypto'
 import {
   DEFAULT_SETTINGS,
@@ -134,6 +135,11 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   @callable()
   deleteSession(id: string): { ok: true } {
     this.sql`DELETE FROM sessions WHERE id = ${id}`
+    // Kill the session's container immediately so deleted sessions never idle-bill.
+    try {
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${id}`)
+      void sandbox.destroy().catch(() => null)
+    } catch { /* ignore */ }
     return { ok: true }
   }
 
