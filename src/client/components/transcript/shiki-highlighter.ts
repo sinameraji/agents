@@ -4,11 +4,12 @@ import { useEffect, useState } from 'react'
 type Highlighter = { codeToHtml: (code: string, opts: { lang: string; theme: string }) => string }
 
 /**
- * Lazy singleton Shiki highlighter. The bundle is loaded once, on first use, and
- * shared by every code block / diff on the page.
+ * Lazy singleton Shiki highlighter, built from `shiki/core` + fine-grained language
+ * and theme entries so the bundle contains ONLY the grammars below — never the full
+ * `shiki` bundle (which would emit one lazy chunk per language/theme). Loaded once,
+ * on first use, and shared by every code block / diff on the page.
  */
 
-const THEMES = ['github-dark', 'github-light'] as const
 const LANGS = [
   'typescript',
   'tsx',
@@ -20,6 +21,8 @@ const LANGS = [
   'html',
   'css',
   'markdown',
+  'yaml',
+  'sql',
   'diff',
   'go',
   'rust',
@@ -40,6 +43,7 @@ const ALIASES: Record<string, string> = {
   zsh: 'bash',
   htm: 'html',
   md: 'markdown',
+  yml: 'yaml',
   rs: 'rust',
   golang: 'go',
   patch: 'diff',
@@ -52,8 +56,28 @@ let highlighterPromise: Promise<Highlighter> | null = null
 
 function getHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
-    highlighterPromise = import('shiki').then(({ getSingletonHighlighter }) =>
-      getSingletonHighlighter({ themes: [...THEMES], langs: [...LANGS] }) as unknown as Promise<Highlighter>,
+    highlighterPromise = import('shiki/core').then(({ createHighlighterCore, createOnigurumaEngine }) =>
+      createHighlighterCore({
+        themes: [import('shiki/themes/github-dark.mjs'), import('shiki/themes/github-light.mjs')],
+        langs: [
+          import('shiki/langs/typescript.mjs'),
+          import('shiki/langs/tsx.mjs'),
+          import('shiki/langs/javascript.mjs'),
+          import('shiki/langs/jsx.mjs'),
+          import('shiki/langs/json.mjs'),
+          import('shiki/langs/python.mjs'),
+          import('shiki/langs/bash.mjs'),
+          import('shiki/langs/html.mjs'),
+          import('shiki/langs/css.mjs'),
+          import('shiki/langs/markdown.mjs'),
+          import('shiki/langs/yaml.mjs'),
+          import('shiki/langs/sql.mjs'),
+          import('shiki/langs/diff.mjs'),
+          import('shiki/langs/go.mjs'),
+          import('shiki/langs/rust.mjs'),
+        ],
+        engine: createOnigurumaEngine(import('shiki/wasm')),
+      }) as unknown as Promise<Highlighter>,
     )
   }
   return highlighterPromise
