@@ -496,11 +496,19 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   private async ensureOpencodeSession(): Promise<string> {
-    if (this.opencodeSessionId) return this.opencodeSessionId
-    const stored = this.getKv<string | null>('opencodeSessionId', null)
-    if (stored) {
-      this.opencodeSessionId = stored
-      return stored
+    const known = this.opencodeSessionId ?? this.getKv<string | null>('opencodeSessionId', null)
+    if (known) {
+      // The container may have been recycled since this id was minted — verify it still exists
+      // on the live OpenCode server before reusing it (a stale id makes turns hang forever).
+      const alive = await this.opencode!.session
+        .get({ sessionID: known } as never)
+        .then((r) => !!(r as { data?: { id?: string } }).data?.id)
+        .catch(() => false)
+      if (alive) {
+        this.opencodeSessionId = known
+        return known
+      }
+      this.opencodeSessionId = undefined
     }
     const res = await this.opencode!.session.create({ title: this.state.meta?.name ?? 'session' }, { throwOnError: true } as never)
     const id = (res as { data?: { id?: string } }).data?.id ?? (res as { id?: string }).id
