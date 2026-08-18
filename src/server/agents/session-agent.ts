@@ -198,6 +198,17 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   @callable()
   getTurns(): { turns: NormTurn[]; todos: TranscriptState['todos']; permissions: TranscriptState['permissions']; status: SessionStatus } {
     this.hydrate()
+    // Self-heal: a deploy can kill an isolate mid-turn, leaving status stuck on busy/booting.
+    // If nothing has progressed in 5 minutes, the run is dead — report idle (or error if the
+    // last assistant turn errored) and sync the sidebar.
+    if (this.state.status === 'busy' || this.state.status === 'booting') {
+      const last = this.transcript.turns[this.transcript.turns.length - 1]
+      const lastActivity = last ? Math.max(last.createdAt, last.completedAt ?? 0) : 0
+      if (Date.now() - lastActivity > 5 * 60 * 1000) {
+        const errored = last?.role === 'assistant' && last.status === 'error'
+        this.setStatus(errored ? 'error' : 'idle')
+      }
+    }
     return {
       turns: this.transcript.turns,
       todos: this.transcript.todos,
@@ -419,6 +430,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       parts: [{ kind: 'text', id: `${id}:text`, text: input.text }],
     }
     this.emit({ t: 'turn.start', turn: userTurn })
+    // Auto-title: the first prompt names an untitled session.
+    if (this.state.meta && (this.state.meta.name === 'Untitled session' || !this.state.meta.name)) {
+      const name = input.text.replace(/\s+/g, ' ').trim().slice(0, 48) || 'Untitled session'
+      this.setState({ ...this.state, meta: { ...this.state.meta, name } })
+      void getAgentByName(this.env.UserAgent, this.config().owner).then((u) => u.upsertSessionSummary({ id: this.name, name }))
+    }
     this.setStatus('busy')
     const harness = this.config().harness
     const run = harness === 'opencode' ? this.runOpencodeTurn(input.text) : this.runBridgeTurn(input.text)
