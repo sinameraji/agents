@@ -349,6 +349,15 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
             this.emit({ t: 'part.upsert', turnId, part })
           }
           if (assistant.usage) this.emit({ t: 'usage', usage: assistant.usage })
+          if (assistant.error) {
+            const errPartId = `${turnId}:err`
+            const ser = JSON.stringify(assistant.error)
+            if (this.emittedParts.get(errPartId) !== ser) {
+              this.emittedParts.set(errPartId, ser)
+              this.emit({ t: 'part.upsert', turnId, part: { kind: 'error', id: errPartId, name: assistant.error.name, message: assistant.error.message } })
+              this.emit({ t: 'turn.update', id: turnId, patch: { status: 'error', error: assistant.error } })
+            }
+          }
         }
         for (const perm of state.permissions ?? []) this.emit({ t: 'permission.ask', permission: perm })
         if (state.todos?.length) this.emit({ t: 'todos', todos: state.todos })
