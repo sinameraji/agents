@@ -26,7 +26,7 @@ const server = createServer(async (req, res) => {
   }
   try {
     const url = req.url ?? '/'
-    if (req.method === 'GET' && url === '/health') return send(200, { ok: true })
+    if (req.method === 'GET' && url === '/health') return send(200, { ok: true, rev: process.env.BRIDGE_REV ?? 'dev' })
     if (req.method === 'GET' && url === '/state') return send(200, session ? session.state() : { status: 'idle', turns: [], todos: [], permissions: [] })
 
     if (req.method === 'POST' && url === '/start') {

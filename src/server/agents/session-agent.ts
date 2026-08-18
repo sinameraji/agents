@@ -4,6 +4,9 @@ import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 import { buildOpencodeConfig, hasProviderKey } from '../opencode-config'
 import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
+// The bridge (pi/KimiFlare/AI-SDK host) ships INSIDE the worker and is written into the container
+// at runtime, so its version always matches this deploy — no image rebuilds, no warm-pool staleness.
+import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
 import { applyEvent, emptyTranscript } from '~shared/agent-reduce'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
 import type {
@@ -44,6 +47,13 @@ interface SessionAgentState {
   mode: SessionMode
   usage: { tokensIn: number; tokensOut: number; costUsd: number }
 }
+
+const BRIDGE_HASH = (() => {
+  let h = 5381
+  for (let i = 0; i < bridgeSource.length; i++) h = ((h * 33) ^ bridgeSource.charCodeAt(i)) >>> 0
+  return h.toString(16)
+})()
+const BRIDGE_PATH = '/tmp/dw-bridge.mjs'
 
 interface TurnRow {
   id: string
@@ -273,34 +283,31 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
     await this.ensureWorkspace(sandbox)
     // (Re)start the bridge process and confirm it's healthy (it may have died on container restart).
-    const healthy = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok).catch(() => false)
+    const healthy = await this.bridgeFetch(sandbox, 'GET', '/health')
+      .then((r) => (r?.ok ?? false) && (r?.json as { rev?: string })?.rev === BRIDGE_HASH)
+      .catch(() => false)
     if (!healthy) {
       this.bridgeStarted = false
-      // Start via nohup so the process survives the exec; log to a file we can read.
+      // Kill any stale bridge, write THIS deploy's bridge into the container, and launch it.
+      await sandbox.exec("sh -lc 'pkill -f dw-bridge.mjs || true'").catch(() => null)
+      await sandbox.writeFile(BRIDGE_PATH, bridgeSource)
       const startRes = await sandbox
-        .exec("sh -lc 'nohup node /opt/dreamweav/bridge.mjs > /tmp/bridge.log 2>&1 & echo started'")
+        .exec(`sh -lc 'BRIDGE_REV=${BRIDGE_HASH} nohup node ${BRIDGE_PATH} > /tmp/bridge.log 2>&1 & echo started'`)
         .then((r) => (r as { stdout?: string }).stdout ?? '')
         .catch((e) => `start-error: ${String(e)}`)
       let ok = false
-      let innerHealth = ''
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 1000))
-        ok = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok ?? false).catch(() => false)
+        const h = await this.bridgeFetch(sandbox, 'GET', '/health').catch(() => null)
+        ok = (h?.ok ?? false) && (h?.json as { rev?: string })?.rev === BRIDGE_HASH
         if (ok) break
-        if (i === 10 || i === 25) {
-          innerHealth = await sandbox
-            .exec("sh -lc 'curl -s -m 2 http://127.0.0.1:7700/health || echo CURL_FAIL'")
-            .then((r) => (r as { stdout?: string }).stdout ?? '')
-            .catch(() => 'exec-fail')
-          // If the bridge is healthy from inside but containerFetch fails, surface that clearly.
-        }
       }
       if (!ok) {
         const log = await sandbox
           .exec("sh -lc 'tail -c 500 /tmp/bridge.log 2>/dev/null || echo NO_LOG'")
           .then((r) => (r as { stdout?: string }).stdout ?? '')
           .catch(() => 'log-read-fail')
-        throw new Error(`Bridge did not start. start=${startRes.trim()}; innerHealth=${innerHealth.trim()}; log=${log.trim()}`)
+        throw new Error(`Bridge did not start. start=${startRes.trim()}; log=${log.trim()}`)
       }
     }
     if (!this.bridgeStarted) {
