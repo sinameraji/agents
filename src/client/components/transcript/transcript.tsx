@@ -7,16 +7,6 @@ import type {
 import { TurnView } from './turn-view'
 import { PermissionCard } from './parts/permission-card'
 
-function isTurnActive(turn: NormTurn | undefined): boolean {
-  if (!turn) return false
-  if (turn.status === 'streaming') return true
-  return turn.parts.some((part) => {
-    if (part.kind === 'text' || part.kind === 'reasoning') return Boolean(part.streaming)
-    if (part.kind === 'tool') return part.state.status === 'running'
-    return false
-  })
-}
-
 function WorkingRow({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 pl-10 text-sm text-muted-foreground">
@@ -43,8 +33,13 @@ export function Transcript({
   onPermissionReply?: (id: string, reply: PermissionReply, note?: string) => void
 }) {
   const working = status === 'booting' || status === 'busy'
-  const showWorking = working && !isTurnActive(turns[turns.length - 1])
-  const workingLabel = status === 'booting' ? 'Booting the sandbox…' : 'Working…'
+  const last = turns[turns.length - 1]
+  // Only show the indicator BEFORE the assistant produces anything — once content streams (or the
+  // turn is done), the content itself is the signal. And never surface infra language ("booting"):
+  // to the user it's all just the agent thinking.
+  const showWorking =
+    working && (!last || last.role === 'user' || (last.role === 'assistant' && last.parts.length === 0))
+  const workingLabel = 'Thinking…'
 
   return (
     <div className="flex flex-col gap-7">

@@ -434,7 +434,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     let lastSnapshot = ''
     try {
       while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 1200))
+        await new Promise((r) => setTimeout(r, 600))
         const res = await this.bridgeFetch(sandbox, 'GET', '/state')
         const state = (res?.json ?? {}) as { status?: string; turns?: NormTurn[]; todos?: TranscriptState['todos']; permissions?: TranscriptState['permissions'] }
         // The bridge's last assistant turn holds this prompt's parts.
@@ -463,7 +463,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         if (snapshot === lastSnapshot) stable += 1
         else stable = 0
         lastSnapshot = snapshot
-        if (state.status === 'idle' && stable >= 2) break
+        if (state.status === 'idle' && stable >= 1) break
       }
     } finally {
       for (const turn of this.transcript.turns) {
@@ -585,7 +585,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     let sawComplete = false
     try {
       while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 1200))
+        await new Promise((r) => setTimeout(r, 600))
         const res = await client.session
           .messages({ sessionID: ocSession } as never)
           .catch(() => ({ data: [] as unknown[] }))
@@ -643,7 +643,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         if (snapshot === lastSnapshot) stable += 1
         else stable = 0
         lastSnapshot = snapshot
-        if (sawComplete && stable >= 3) break
+        if (sawComplete && stable >= 1) break
       }
     } finally {
       for (const turn of this.transcript.turns) {

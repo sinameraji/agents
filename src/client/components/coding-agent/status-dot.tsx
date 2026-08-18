@@ -6,7 +6,7 @@ const STATUS_META: Record<
   { label: string; dot: string; ring: string; pulse: boolean }
 > = {
   provisioning: { label: 'Provisioning', dot: 'bg-primary', ring: 'bg-primary/30', pulse: true },
-  booting: { label: 'Booting', dot: 'bg-primary', ring: 'bg-primary/30', pulse: true },
+  booting: { label: 'Working', dot: 'bg-primary', ring: 'bg-primary/30', pulse: true },
   busy: { label: 'Working', dot: 'bg-primary', ring: 'bg-primary/30', pulse: true },
   idle: { label: 'Idle', dot: 'bg-muted-foreground', ring: 'bg-muted-foreground/20', pulse: false },
   error: { label: 'Failed', dot: 'bg-destructive', ring: 'bg-destructive/30', pulse: false },
