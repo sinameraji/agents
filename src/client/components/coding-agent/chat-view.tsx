@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { GitBranch, Layers, MoreHorizontal, Server, Square } from 'lucide-react'
+import { useState } from 'react'
+import { GitBranch, Layers, MoreHorizontal, PanelRight, Server, Square } from 'lucide-react'
 
 import type { SessionApi } from '@/hooks/use-session'
 import { Button } from '@/components/ui/button'
@@ -11,9 +12,11 @@ import { Composer } from './composer'
 import { ModelPicker } from '../model-picker'
 import { Transcript } from '../transcript/transcript'
 import { TodoList } from '../transcript/parts/todo-list'
+import { WorkspaceDock } from '../workspace/workspace-dock'
 
 export function ChatView({ session }: { session: SessionApi }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [dockOpen, setDockOpen] = useState(false)
   const meta = session.meta
   const busy = session.status === 'busy' || session.status === 'booting'
   const turnCount = session.turns.length
@@ -23,6 +26,7 @@ export function ChatView({ session }: { session: SessionApi }) {
   }, [turnCount, session.status, meta?.id])
 
   return (
+    <div className="flex h-full min-w-0 flex-1">
     <div className="flex h-full min-w-0 flex-1 flex-col">
       {/* Header */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
@@ -77,6 +81,16 @@ export function ChatView({ session }: { session: SessionApi }) {
             <Layers className="size-3.5" />
             <span className="hidden sm:inline">Sub-agents</span>
           </Button>
+          <Button
+            variant={dockOpen ? 'secondary' : 'outline'}
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setDockOpen((v) => !v)}
+            aria-label="Toggle workspace"
+          >
+            <PanelRight className="size-3.5" />
+            <span className="hidden sm:inline">Workspace</span>
+          </Button>
           <Button variant="ghost" size="icon-sm" aria-label="Session options">
             <MoreHorizontal className="size-4" />
           </Button>
@@ -112,6 +126,12 @@ export function ChatView({ session }: { session: SessionApi }) {
         )}
         <Composer onSend={(text) => void session.send(text)} sessionName={meta?.name ?? 'session'} />
       </div>
+    </div>
+    {dockOpen && (
+      <div className="hidden h-full shrink-0 lg:block">
+        <WorkspaceDock session={session} onClose={() => setDockOpen(false)} />
+      </div>
+    )}
     </div>
   )
 }
