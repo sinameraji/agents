@@ -21,7 +21,6 @@
     "@cloudflare/sandbox": "^0.12.7",
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
-    "@git-diff-view/react": "^0.0.30",
     "@opencode-ai/sdk": "^1.18.18",
     "@tanstack/react-router": "^1.170.29",
     "agents": "^0.20.1",
