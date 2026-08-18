@@ -32,9 +32,11 @@ function formatSize(bytes: number): string {
 export function Composer({
   onSend,
   sessionName,
+  extras,
 }: {
   onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   sessionName: string
+  extras?: React.ReactNode
 }) {
   const [text, setText] = useState('')
   const [pasted, setPasted] = useState<PastedBlock[]>([])
@@ -223,6 +225,7 @@ export function Composer({
             <Button variant="ghost" size="icon-sm" aria-label="Mention a file">
               <AtSign className="size-4" />
             </Button>
+            {extras}
             {uploadError ? (
               <span className="ml-1 truncate text-xs text-destructive">{uploadError}</span>
             ) : (

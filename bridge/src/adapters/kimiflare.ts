@@ -11,6 +11,7 @@ import { JsonlProcess } from './jsonl'
 
 export function createKimiflareAdapter(): HarnessAdapter {
   let proc: JsonlProcess | null = null
+  let mode: 'plan' | 'build' | 'auto' = 'build'
   let sink: AdapterSink | null = null
   let resolveDone: (() => void) | null = null
   let finished = false
@@ -91,6 +92,7 @@ export function createKimiflareAdapter(): HarnessAdapter {
 
   return {
     async start(c: StartConfig) {
+      mode = c.mode
       proc = new JsonlProcess('kimiflare', ['--mode', 'rpc'], { cwd: c.cwd, env: {} }, handle, (message) => {
         finish({ name: 'harness', message })
       })
@@ -113,7 +115,7 @@ export function createKimiflareAdapter(): HarnessAdapter {
       reasoningAcc = ''
       await new Promise<void>((res) => {
         resolveDone = res
-        proc?.send({ id: PROMPT_ID, type: 'prompt', message: text })
+        proc?.send({ id: PROMPT_ID, type: 'prompt', message: text, options: { mode: mode === 'build' ? 'edit' : mode } })
       })
     },
     async abort() {

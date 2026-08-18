@@ -4,7 +4,7 @@ export interface StartConfig {
   provider: 'openrouter' | 'cloudflare' | 'anthropic' | 'openai'
   model: string
   cwd: string
-  mode: 'plan' | 'build'
+  mode: 'plan' | 'build' | 'auto'
   creds: {
     openrouterKey?: string
     anthropicKey?: string

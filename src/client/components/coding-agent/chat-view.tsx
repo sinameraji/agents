@@ -2,9 +2,10 @@
 
 import { useEffect, useRef } from 'react'
 import { useState } from 'react'
-import { GitBranch, Layers, MoreHorizontal, PanelRight, Server, Square } from 'lucide-react'
+import { Bot, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'lucide-react'
 
 import type { SessionApi } from '@/hooks/use-session'
+import { HARNESSES } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { StatusDot, statusLabel } from './status-dot'
 import { TokenMeter } from './token-meter'
@@ -18,6 +19,7 @@ export function ChatView({ session }: { session: SessionApi }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [dockOpen, setDockOpen] = useState(false)
   const meta = session.meta
+  const harnessLabel = HARNESSES.find((h) => h.id === meta?.harness)?.label ?? meta?.harness ?? ''
   const busy = session.status === 'busy' || session.status === 'booting'
   const turnCount = session.turns.length
 
@@ -46,41 +48,18 @@ export function ChatView({ session }: { session: SessionApi }) {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden items-center gap-1.5 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs text-muted-foreground lg:flex">
-            <Server className="size-3.5" />
-            sandbox <span className="font-mono text-foreground/90 uppercase">{meta?.region ?? 'iad1'}</span>
-          </span>
+          {harnessLabel && (
+            <span className="hidden items-center gap-1.5 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs text-muted-foreground sm:flex">
+              <Bot className="size-3.5 text-primary" />
+              <span className="font-medium text-foreground/90">{harnessLabel}</span>
+            </span>
+          )}
           <TokenMeter
             tokensIn={session.usage.tokensIn}
             tokensOut={session.usage.tokensOut}
             costUsd={session.usage.costUsd}
             className="hidden md:flex"
           />
-          <div className="hidden items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs md:flex" role="group" aria-label="Mode">
-            {(['plan', 'build'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => void session.setMode(m)}
-                className={
-                  'rounded-md px-2 py-1 capitalize transition-colors ' +
-                  (session.mode === m ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground')
-                }
-                title={m === 'plan' ? 'Plan: read-only, no edits' : 'Build: full access'}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-          <ModelPicker
-            value={meta?.model ?? ''}
-            provider={meta?.provider ?? 'openrouter'}
-            onChange={(id) => void session.setModel(id)}
-          />
-          <Button variant="outline" size="sm" className="gap-1.5" disabled aria-label="Sub-agents">
-            <Layers className="size-3.5" />
-            <span className="hidden sm:inline">Sub-agents</span>
-          </Button>
           <Button
             variant={dockOpen ? 'secondary' : 'outline'}
             size="sm"
@@ -125,6 +104,42 @@ export function ChatView({ session }: { session: SessionApi }) {
           </div>
         )}
         <Composer
+          extras={
+            <>
+              <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs" role="group" aria-label="Mode">
+                {(['plan', 'build', 'auto'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => void session.setMode(m)}
+                    className={
+                      'rounded-md px-2 py-0.5 capitalize transition-colors ' +
+                      (session.mode === m
+                        ? 'bg-secondary text-secondary-foreground'
+                        : 'text-muted-foreground hover:text-foreground')
+                    }
+                    title={
+                      m === 'plan'
+                        ? 'Plan: read-only, no edits'
+                        : m === 'build'
+                          ? 'Build: edits allowed, approvals may apply'
+                          : 'Auto: approve everything'
+                    }
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              <ModelPicker
+                value={meta?.model ?? ''}
+                provider={meta?.provider ?? 'openrouter'}
+                onChange={(id) => void session.setModel(id)}
+              />
+              <Button variant="ghost" size="icon-sm" disabled aria-label="Sub-agents">
+                <Layers className="size-4" />
+              </Button>
+            </>
+          }
           onSend={(text, _pasted, attachments) =>
             void (
               session.send as (

@@ -1,6 +1,6 @@
 import type { SessionStatus } from './agent'
 export type { SessionStatus }
-export type SessionMode = 'plan' | 'build'
+export type SessionMode = 'plan' | 'build' | 'auto'
 
 export type SandboxRegion = 'iad1' | 'sfo1' | 'fra1' | 'hnd1'
 
