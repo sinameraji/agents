@@ -42,6 +42,11 @@ function Shell({ userId, email }: { userId: string; email: string }) {
           }}
           onNew={() => navigate('/new')}
           onOpenSettings={() => setSettingsOpen(true)}
+          onDelete={(id) => {
+            void ua.deleteSession(id)
+            if (sessionId === id) navigate('/')
+          }}
+          onRename={(id, name) => void ua.renameSession(id, name)}
         />
       </div>
       {main}
