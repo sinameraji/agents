@@ -3,7 +3,7 @@ FROM docker.io/cloudflare/sandbox:0.12.7-opencode
 
 # Repo + search tooling (some may already be present in the base image; harmless if so).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ripgrep unzip zstd ca-certificates curl \
+  && apt-get install -y --no-install-recommends git ripgrep unzip zstd ca-certificates curl python3 python-is-python3 \
   && rm -rf /var/lib/apt/lists/*
 
 # Default git identity for agent commits (overridden per-session where needed).

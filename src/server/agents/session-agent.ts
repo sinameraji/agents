@@ -3,7 +3,7 @@ import { getSandbox } from '@cloudflare/sandbox'
 import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 import { buildOpencodeConfig, hasProviderKey } from '../opencode-config'
-import { OpencodeMapper, isSessionIdle } from '../harness/opencode-map'
+import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
 import { applyEvent, emptyTranscript } from '~shared/agent-reduce'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
 import type {
@@ -66,7 +66,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   private opencode?: OpencodeClient
   private opencodeSessionId?: string
-  private mapper = new OpencodeMapper()
+  private emittedParts = new Map<string, string>()
+  private startedTurns = new Set<string>()
   private transcript: TranscriptState = emptyTranscript()
   private hydrated = false
 
@@ -273,27 +274,103 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     await this.ensureOpencode()
     const ocSession = await this.ensureOpencodeSession()
     this.setStatus('busy')
-    this.mapper.reset()
+    this.emittedParts.clear()
 
-    const events = await this.opencode!.event.subscribe()
-    await this.opencode!.session.promptAsync({ sessionID: ocSession, parts: [{ type: 'text', text }] } as never)
+    const client = this.opencode!
+    await client.session.promptAsync({ sessionID: ocSession, parts: [{ type: 'text', text }] } as never)
 
-    const deadline = Date.now() + 5 * 60 * 1000
+    // The SDK's event.subscribe() SSE does not stream over the Sandbox transport, so we POLL
+    // session.messages (+ todos) and diff against what we've already emitted. Same approach as
+    // production OpenCode harnesses that run the server headlessly.
+    const deadline = Date.now() + 8 * 60 * 1000
+    let stable = 0
+    let lastSnapshot = ''
+    let sawComplete = false
     try {
-      for await (const ev of (events as { stream: AsyncIterable<Record<string, unknown>> }).stream) {
-        if (Date.now() > deadline) throw new Error('Timed out waiting for the agent (5 min).')
-        for (const ae of this.mapper.map(ev)) this.emit(ae)
-        if (isSessionIdle(ev, ocSession)) break
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1200))
+        const res = await client.session
+          .messages({ sessionID: ocSession } as never)
+          .catch(() => ({ data: [] as unknown[] }))
+        const data = ((res as { data?: unknown[] }).data ?? []) as Array<{ info?: Record<string, unknown>; parts?: unknown[] }>
+
+        for (const msg of data) {
+          const info = (msg.info ?? {}) as Record<string, unknown>
+          if (info.role !== 'assistant') continue
+          const turnId = String(info.id ?? '')
+          if (!turnId) continue
+          if (!this.startedTurns.has(turnId)) {
+            this.startedTurns.add(turnId)
+            this.emit({
+              t: 'turn.start',
+              turn: {
+                id: turnId,
+                role: 'assistant',
+                createdAt: Date.now(),
+                status: 'streaming',
+                model: { providerId: String(info.providerID ?? ''), modelId: String(info.modelID ?? '') },
+                parts: [],
+              },
+            })
+          }
+          const complete = isAssistantComplete(info)
+          for (const rawPart of msg.parts ?? []) {
+            const np = mapPart(rawPart as Record<string, unknown>)
+            if (!np) continue
+            if ((np.kind === 'text' || np.kind === 'reasoning') && !complete) np.streaming = true
+            const key = np.id
+            const ser = JSON.stringify(np)
+            if (this.emittedParts.get(key) === ser) continue
+            this.emittedParts.set(key, ser)
+            this.emit({ t: 'part.upsert', turnId, part: np })
+          }
+          const usage = usageFromInfo(info)
+          this.emit({
+            t: 'turn.update',
+            id: turnId,
+            patch: {
+              status: complete ? (info.error ? 'error' : 'complete') : 'streaming',
+              usage,
+              completedAt: complete ? Date.now() : undefined,
+              error: info.error
+                ? { name: 'error', message: String(((info.error as Record<string, unknown>).data as Record<string, unknown>)?.message ?? 'Agent error') }
+                : undefined,
+            },
+          })
+          this.emit({ t: 'usage', usage })
+          if (complete) sawComplete = true
+        }
+
+        // Todos (best-effort).
+        try {
+          const todoRes = await client.session.todo({ sessionID: ocSession } as never)
+          const todos = ((todoRes as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>
+          if (todos.length) {
+            this.emit({
+              t: 'todos',
+              todos: todos.map((td) => ({
+                content: String(td.content ?? ''),
+                status: (String(td.status ?? 'pending') as 'pending' | 'in_progress' | 'completed' | 'cancelled'),
+                priority: td.priority as 'high' | 'medium' | 'low' | undefined,
+              })),
+            })
+          }
+        } catch {
+          /* ignore */
+        }
+
+        // Completion via quiescence: once an assistant message is complete and nothing has changed
+        // for a few polls, the turn is done.
+        const snapshot = JSON.stringify(data.map((m) => ({ i: m.info?.id, c: (m.info as Record<string, unknown>)?.time, p: (m.parts ?? []).length })))
+        if (snapshot === lastSnapshot) stable += 1
+        else stable = 0
+        lastSnapshot = snapshot
+        if (sawComplete && stable >= 3) break
       }
     } finally {
-      // Finalize: clear streaming flags + mark the active assistant turn complete.
       for (const turn of this.transcript.turns) {
-        if (turn.role !== 'assistant' || turn.status !== 'streaming') continue
-        this.emit({ t: 'turn.update', id: turn.id, patch: { status: 'complete', completedAt: Date.now() } })
-        for (const part of turn.parts) {
-          if ((part.kind === 'text' || part.kind === 'reasoning') && part.streaming) {
-            this.emit({ t: 'part.upsert', turnId: turn.id, part: { ...part, streaming: false } })
-          }
+        if (turn.role === 'assistant' && turn.status === 'streaming') {
+          this.emit({ t: 'turn.update', id: turn.id, patch: { status: 'complete', completedAt: Date.now() } })
         }
       }
     }

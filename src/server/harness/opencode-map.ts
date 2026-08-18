@@ -57,6 +57,42 @@ function mapAssistantStatus(info: Any): TurnStatus {
   return obj(info.time).completed ? 'complete' : 'streaming'
 }
 
+/** Map a raw OpenCode Part (from session.messages) → a NormPart, or null if not renderable. */
+export function mapPart(part: Any): NormPart | null {
+  const pt = str(part.type)
+  const id = str(part.id) ?? `${str(part.messageID) ?? 'm'}:${pt}`
+  if (pt === 'text' && typeof part.text === 'string') {
+    return { kind: 'text', id, text: part.text }
+  }
+  if (pt === 'reasoning' && typeof part.text === 'string') {
+    return { kind: 'reasoning', id, text: part.text }
+  }
+  if (pt === 'tool') {
+    return { kind: 'tool', id, callId: str(part.callID) ?? id, name: str(part.tool) ?? 'tool', state: mapToolState(obj(part.state)) }
+  }
+  if (pt === 'step-finish') {
+    return { kind: 'step', id, usage: mapUsage(obj(part.tokens), part.cost) }
+  }
+  if (pt === 'patch') {
+    const files = (Array.isArray(part.files) ? part.files : []).map((f) => ({ path: String(f) }))
+    return { kind: 'diff', id, files }
+  }
+  if (pt === 'subtask' || pt === 'agent') {
+    return { kind: 'subtask', id, agent: str(part.agent) ?? str(part.name) ?? 'agent', description: str(part.description) }
+  }
+  return null
+}
+
+/** Usage from an assistant message info (session.messages). */
+export function usageFromInfo(info: Any): NormUsage {
+  return mapUsage(obj(info.tokens), info.cost)
+}
+
+/** Is an assistant message finished (has a completion time or an error)? */
+export function isAssistantComplete(info: Any): boolean {
+  return !!obj(info.time).completed || !!info.error
+}
+
 export class OpencodeMapper {
   private started = new Set<string>()
 

@@ -7,7 +7,6 @@ import { ToolCard } from './parts/tool-card'
 import { TodoList } from './parts/todo-list'
 import { DiffBlock } from './parts/diff-block'
 import { TerminalBlock } from './parts/terminal-block'
-import { UsageStrip } from './parts/usage-strip'
 import { ErrorBlock } from './parts/error-block'
 
 /** Renders a single normalized part. Permissions are handled separately, not here. */
@@ -28,7 +27,7 @@ export function PartView({ part }: { part: NormPart }) {
         <TerminalBlock command={part.command} output={part.output} exitCode={part.exitCode} />
       )
     case 'step':
-      return part.usage ? <UsageStrip usage={part.usage} /> : null
+      return null
     case 'subtask':
       return (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-sm">
