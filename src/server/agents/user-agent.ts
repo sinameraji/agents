@@ -171,6 +171,11 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   @callable()
   getSettings(): { settings: UserSettings; connections: MaskedConnections } {
     const settings = this.getSetting<UserSettings>('settings', DEFAULT_SETTINGS)
+    // Migration: the old default was an expensive model; upgrade stored settings to the cheap default.
+    if (settings.defaultModel === 'anthropic/claude-sonnet-4.5') {
+      settings.defaultModel = DEFAULT_SETTINGS.defaultModel
+      this.putSetting('settings', settings)
+    }
     const masked = {} as MaskedConnections
     for (const f of CONNECTION_FIELDS) {
       const enc = this.getSetting<string | null>(`conn:${f}`, null)

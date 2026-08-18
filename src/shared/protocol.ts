@@ -126,7 +126,7 @@ export interface UserSettings {
 export const DEFAULT_SETTINGS: UserSettings = {
   defaultHarness: 'opencode',
   defaultProvider: 'openrouter',
-  defaultModel: 'anthropic/claude-sonnet-4.5',
+  defaultModel: 'openai/gpt-5.6-luna',
   approvalMode: 'auto',
 }
 
