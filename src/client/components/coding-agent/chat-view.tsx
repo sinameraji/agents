@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useState } from 'react'
 import { Bot, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'lucide-react'
 
@@ -22,6 +22,27 @@ export function ChatView({ session }: { session: SessionApi }) {
   const harnessLabel = HARNESSES.find((h) => h.id === meta?.harness)?.label ?? meta?.harness ?? ''
   const busy = session.status === 'busy' || session.status === 'booting'
   const turnCount = session.turns.length
+
+  const filesCache = useRef<string[] | null>(null)
+  const listWorkspaceFiles = useCallback(async () => {
+    if (filesCache.current) return filesCache.current
+    const out: string[] = []
+    const queue = ['/workspace']
+    const SKIP = /(^|\/)(node_modules|\.git|dist|\.next|\.cache|uploads)$/
+    while (queue.length && out.length < 300) {
+      const dir = queue.shift()!
+      const entries = await session.listFiles(dir).catch(() => [])
+      for (const e of entries) {
+        if (e.isDirectory) {
+          if (!SKIP.test(e.path)) queue.push(e.path)
+        } else {
+          out.push(e.path.replace(/^\/workspace\//, ''))
+        }
+      }
+    }
+    filesCache.current = out
+    return out
+  }, [session])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -104,6 +125,14 @@ export function ChatView({ session }: { session: SessionApi }) {
           </div>
         )}
         <Composer
+          listFiles={listWorkspaceFiles}
+          commands={[
+            { id: 'plan', label: 'Plan', hint: 'read-only mode', run: () => void session.setMode('plan') },
+            { id: 'build', label: 'Build', hint: 'edits allowed', run: () => void session.setMode('build') },
+            { id: 'auto', label: 'Auto', hint: 'approve everything', run: () => void session.setMode('auto') },
+            { id: 'stop', label: 'Stop', hint: 'interrupt the agent', run: () => void session.stop() },
+            { id: 'workspace', label: 'Workspace', hint: 'toggle the side panel', run: () => setDockOpen((v) => !v) },
+          ]}
           extras={
             <>
               <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs" role="group" aria-label="Mode">
@@ -133,6 +162,7 @@ export function ChatView({ session }: { session: SessionApi }) {
               <ModelPicker
                 value={meta?.model ?? ''}
                 provider={meta?.provider ?? 'openrouter'}
+                direction="up"
                 onChange={(id) => void session.setModel(id)}
               />
               <Button variant="ghost" size="icon-sm" disabled aria-label="Sub-agents">

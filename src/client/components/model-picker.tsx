@@ -14,10 +14,12 @@ export function ModelPicker({
   value,
   provider,
   onChange,
+  direction = 'down',
 }: {
   value: string
   provider: Provider
   onChange: (id: string) => void
+  direction?: 'up' | 'down'
 }) {
   const [open, setOpen] = useState(false)
   const [models, setModels] = useState<ModelInfo[]>(() => cache.get(provider) ?? [])
@@ -85,7 +87,7 @@ export function ModelPicker({
         <ChevronDown className="size-3.5 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1.5 w-80 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+        <div className={"absolute right-0 z-30 w-80 overflow-hidden rounded-lg border border-border bg-popover shadow-xl " + (direction === "up" ? "bottom-full mb-1.5" : "mt-1.5")}>
           <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
             <Search className="size-3.5 shrink-0 text-muted-foreground" />
             <input
