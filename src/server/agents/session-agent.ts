@@ -265,18 +265,31 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const healthy = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok).catch(() => false)
     if (!healthy) {
       this.bridgeStarted = false
-      const nodeCheck = await sandbox.exec('node --version 2>&1 || echo NO_NODE').then((r) => (r as { stdout?: string }).stdout?.trim()).catch((e) => String(e))
-      const exists = await sandbox.exec('ls -la /opt/dreamweav/ 2>&1').then((r) => (r as { stdout?: string }).stdout ?? '').catch(() => '')
-      await sandbox.startProcess('node /opt/dreamweav/bridge.mjs', { processId: 'bridge' }).catch(() => {})
+      // Start via nohup so the process survives the exec; log to a file we can read.
+      const startRes = await sandbox
+        .exec("sh -lc 'nohup node /opt/dreamweav/bridge.mjs > /tmp/bridge.log 2>&1 & echo started'")
+        .then((r) => (r as { stdout?: string }).stdout ?? '')
+        .catch((e) => `start-error: ${String(e)}`)
       let ok = false
+      let innerHealth = ''
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 1000))
         ok = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok ?? false).catch(() => false)
         if (ok) break
+        if (i === 10 || i === 25) {
+          innerHealth = await sandbox
+            .exec("sh -lc 'curl -s -m 2 http://127.0.0.1:7700/health || echo CURL_FAIL'")
+            .then((r) => (r as { stdout?: string }).stdout ?? '')
+            .catch(() => 'exec-fail')
+          // If the bridge is healthy from inside but containerFetch fails, surface that clearly.
+        }
       }
       if (!ok) {
-        const logs = await sandbox.getProcessLogs('bridge').then((l) => JSON.stringify(l).slice(0, 600)).catch(() => 'no logs')
-        throw new Error(`Bridge did not start. node=${nodeCheck}; /opt/dreamweav=${exists.slice(0, 200)}; logs=${logs}`)
+        const log = await sandbox
+          .exec("sh -lc 'tail -c 500 /tmp/bridge.log 2>/dev/null || echo NO_LOG'")
+          .then((r) => (r as { stdout?: string }).stdout ?? '')
+          .catch(() => 'log-read-fail')
+        throw new Error(`Bridge did not start. start=${startRes.trim()}; innerHealth=${innerHealth.trim()}; log=${log.trim()}`)
       }
     }
     if (!this.bridgeStarted) {
