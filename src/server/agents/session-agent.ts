@@ -508,6 +508,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         this.opencodeSessionId = known
         return known
       }
+      console.warn('[dreamweav] opencode session', known, 'no longer exists (container recycled) — creating a new one')
       this.opencodeSessionId = undefined
     }
     const res = await this.opencode!.session.create({ title: this.state.meta?.name ?? 'session' }, { throwOnError: true } as never)
@@ -588,11 +589,14 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
     const client = this.opencode!
     const mode = this.state.mode
-    await client.session.promptAsync({
-      sessionID: ocSession,
-      parts: [{ type: 'text', text }],
-      ...(mode === 'plan' ? { agent: 'plan' } : {}),
-    } as never)
+    await client.session.promptAsync(
+      {
+        sessionID: ocSession,
+        parts: [{ type: 'text', text }],
+        ...(mode === 'plan' ? { agent: 'plan' } : {}),
+      } as never,
+      { throwOnError: true } as never,
+    )
 
     // The SDK's event.subscribe() SSE does not stream over the Sandbox transport, so we POLL
     // session.messages (+ todos) and diff against what we've already emitted. All of OpenCode's
@@ -604,12 +608,19 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     let stable = 0
     let lastSnapshot = ''
     let sawComplete = false
+    let loggedPollError = false
     try {
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 600))
         const res = await client.session
           .messages({ sessionID: ocSession } as never)
-          .catch(() => ({ data: [] as unknown[] }))
+          .catch((e: unknown) => {
+            if (!loggedPollError) {
+              loggedPollError = true
+              console.error('[dreamweav] oc messages poll failed', e)
+            }
+            return { data: [] as unknown[] }
+          })
         const data = ((res as { data?: unknown[] }).data ?? []) as Array<{ info?: Record<string, unknown>; parts?: unknown[] }>
 
         const assistants = data.filter((m) => (m.info as Record<string, unknown>)?.role === 'assistant')
