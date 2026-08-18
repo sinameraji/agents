@@ -30,7 +30,10 @@
     { "tag": "v1", "new_sqlite_classes": ["UserAgent"] },
     { "tag": "v2", "new_sqlite_classes": ["SessionAgent", "Sandbox"] }
   ],
-  "r2_buckets": [{ "binding": "STORE", "bucket_name": "dreamweav-store" }],
+  "r2_buckets": [
+    { "binding": "STORE", "bucket_name": "dreamweav-store" },
+    { "binding": "BACKUP_BUCKET", "bucket_name": "dreamweav-store" }
+  ],
   "vars": {
     "APP_NAME": "Dreamweav",
     "OWNER_EMAIL": "sina.meraji@gmail.com"

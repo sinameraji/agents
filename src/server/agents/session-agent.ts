@@ -206,12 +206,60 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
+  // --- workspace hydration + persistence ----------------------------------------------------
+  /** Restore a prior snapshot, or clone the source repo, if the container's /workspace is empty. */
+  private async ensureWorkspace(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
+    const empty = await sandbox
+      .exec('sh -lc \'[ -z "$(ls -A /workspace 2>/dev/null)" ] && echo EMPTY || echo FULL\'')
+      .then((r) => (r as { stdout?: string }).stdout?.includes('EMPTY'))
+      .catch(() => false)
+    if (!empty) return
+
+    const backup = this.getKv<{ id: string; dir: string; localBucket?: boolean } | null>('backup', null)
+    if (backup) {
+      try {
+        await sandbox.restoreBackup(backup as never)
+        return
+      } catch (e) {
+        console.error('[dreamweav] restore failed', e)
+      }
+    }
+
+    const cfg = this.config()
+    if (cfg.source.kind === 'github') {
+      const conn = await this.connections()
+      const url = cfg.source.url.replace(/\.git$/, '').replace(/\/$/, '')
+      const auth = conn.githubPat ? url.replace('https://github.com/', `https://x-access-token:${conn.githubPat}@github.com/`) : url
+      const branch = cfg.source.branch ? `-b ${cfg.source.branch}` : ''
+      await sandbox.exec(`sh -lc 'cd /workspace && git clone --depth 50 ${branch} ${auth}.git . 2>&1 | tail -3'`).catch((e) => {
+        console.error('[dreamweav] clone failed', e)
+      })
+    }
+  }
+
+  /** Snapshot /workspace to R2 so it survives container sleep. */
+  private async checkpoint(): Promise<void> {
+    try {
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+      const backup = await sandbox.createBackup({
+        dir: '/workspace',
+        excludes: ['node_modules', '.git/objects', '*.log', '.cache', 'dist', '.next'],
+        localBucket: true,
+        ttl: 7 * 24 * 60 * 60,
+      } as never)
+      this.putKv('backup', backup)
+    } catch (e) {
+      console.error('[dreamweav] checkpoint failed', e)
+    }
+  }
+
   // --- OpenCode lifecycle -------------------------------------------------------------------
   private async ensureOpencode(): Promise<void> {
     const cfg = this.config()
     const conn = await this.connections()
     const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn)
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
+    await this.ensureWorkspace(sandbox)
     const booted = createOpencode(sandbox, { directory: '/workspace', config })
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('OpenCode did not start in the sandbox within 120s.')), 120_000),
@@ -363,6 +411,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       }
     }
     this.setStatus('idle')
+    await this.checkpoint()
   }
 
   @callable()
