@@ -896,8 +896,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async listFiles(path = '/workspace'): Promise<{ files: { name: string; path: string; isDirectory: boolean; size: number }[] }> {
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
     try {
-      const res = (await sandbox.listFiles(path)) as {
+      let res = (await sandbox.listFiles(path)) as {
         files?: { name: string; absolutePath: string; type: string; size: number }[]
+      }
+      if (path === '/workspace' && !(res.files ?? []).length) {
+        // Container disk does not survive sleep — restore the workspace (backup / clone) and retry.
+        await this.ensureWorkspace(sandbox).catch(() => null)
+        res = (await sandbox.listFiles(path)) as typeof res
       }
       const files = (res.files ?? []).map((f) => ({
         name: f.name,

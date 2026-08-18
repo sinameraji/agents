@@ -45,7 +45,7 @@ export function ChatView({ session }: { session: SessionApi }) {
         }
       }
     }
-    filesCache.current = out
+    if (out.length) filesCache.current = out // never cache an empty listing (cold sandbox)
     return out
   }, [session])
 

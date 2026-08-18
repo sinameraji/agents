@@ -80,7 +80,9 @@ export function Composer({
     const trigger = detectTrigger(value, caret)
     setMenu(trigger)
     if (trigger) setMenuIndex(0)
-    if (trigger?.kind === 'mention' && fileList === null && listFiles) {
+    const reopening = menu === null && trigger !== null
+    const emptyList = Array.isArray(fileList) && fileList.length === 0
+    if (trigger?.kind === 'mention' && listFiles && (fileList === null || (reopening && emptyList))) {
       setFileList('loading')
       void listFiles().then(setFileList).catch(() => setFileList([]))
     }
