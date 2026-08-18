@@ -265,12 +265,18 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const healthy = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok).catch(() => false)
     if (!healthy) {
       this.bridgeStarted = false
+      const nodeCheck = await sandbox.exec('node --version 2>&1 || echo NO_NODE').then((r) => (r as { stdout?: string }).stdout?.trim()).catch((e) => String(e))
+      const exists = await sandbox.exec('ls -la /opt/dreamweav/ 2>&1').then((r) => (r as { stdout?: string }).stdout ?? '').catch(() => '')
       await sandbox.startProcess('node /opt/dreamweav/bridge.mjs', { processId: 'bridge' }).catch(() => {})
+      let ok = false
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 1000))
-        const ok = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok).catch(() => false)
+        ok = await this.bridgeFetch(sandbox, 'GET', '/health').then((r) => r?.ok ?? false).catch(() => false)
         if (ok) break
-        if (i === 29) throw new Error('Bridge did not start in the sandbox.')
+      }
+      if (!ok) {
+        const logs = await sandbox.getProcessLogs('bridge').then((l) => JSON.stringify(l).slice(0, 600)).catch(() => 'no logs')
+        throw new Error(`Bridge did not start. node=${nodeCheck}; /opt/dreamweav=${exists.slice(0, 200)}; logs=${logs}`)
       }
     }
     if (!this.bridgeStarted) {
