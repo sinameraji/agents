@@ -3,8 +3,15 @@
 FROM docker.io/cloudflare/sandbox:0.12.7-opencode
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ripgrep unzip zstd ca-certificates curl python3 python-is-python3 \
+  && apt-get install -y --no-install-recommends git ripgrep unzip zstd ca-certificates curl gnupg python3 python-is-python3 \
   && rm -rf /var/lib/apt/lists/*
+
+# Node.js 22 — the base opencode image ships a compiled binary and has no Node runtime, which the
+# Dreamweav bridge (and the pi/KimiFlare npm CLIs) need.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/* \
+  && node --version
 
 RUN git config --system user.email "agent@dreamweav.com" \
   && git config --system user.name "Dreamweav Agent" \
