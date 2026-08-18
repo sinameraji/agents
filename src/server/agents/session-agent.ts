@@ -220,7 +220,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
     this.persistMessage(userMsg)
     this.broadcast(JSON.stringify({ t: 'message.upsert', message: userMsg }))
-    this.setStatus('running')
+    this.setStatus('busy')
 
     void this.runTurn(input.text).catch((err) => {
       const message = (err as Error).message
