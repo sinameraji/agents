@@ -4,7 +4,7 @@ import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 import { buildOpencodeConfig, hasProviderKey } from '../opencode-config'
 import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
-import { runCfAgentLoop } from '../harness/cfagent'
+import { runCfAgentLoop, summarizeMessages } from '../harness/cfagent'
 import type { ModelMessage } from 'ai'
 // The bridge (pi/KimiFlare/AI-SDK host) ships INSIDE the worker and is written into the container
 // at runtime, so its version always matches this deploy — no image rebuilds, no warm-pool staleness.
@@ -512,7 +512,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   // --- the turn -----------------------------------------------------------------------------
   @callable()
-  async sendMessage(input: { text: string; messageId?: string; attachments?: { key: string; name: string; size: number }[] }): Promise<{ ok: true }> {
+  async sendMessage(input: {
+    text: string
+    messageId?: string
+    attachments?: { key: string; name: string; size: number }[]
+    /** What actually goes to the harness when it differs from the displayed text (command templates). */
+    runText?: string
+  }): Promise<{ ok: true }> {
     this.hydrate()
     const id = input.messageId ?? `u-${crypto.randomUUID()}`
     const userTurn: NormTurn = {
@@ -536,9 +542,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
     this.setStatus('busy')
     const harness = this.config().harness
+    const promptText = input.runText ?? input.text
     const text = input.attachments?.length
-      ? `${input.text}\n\n[The user attached ${input.attachments.length} file(s), copied into ./uploads/: ${input.attachments.map((a) => a.name).join(', ')}]`
-      : input.text
+      ? `${promptText}\n\n[The user attached ${input.attachments.length} file(s), copied into ./uploads/: ${input.attachments.map((a) => a.name).join(', ')}]`
+      : promptText
     const run = (async () => {
       if (input.attachments?.length) await this.copyAttachments(input.attachments)
       if (harness === 'opencode') return this.runOpencodeTurn(text)
@@ -703,28 +710,127 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return fn(sid)
   }
 
+  /** Surface a slash-command result in the transcript as a small assistant note. */
+  private noteTurn(text: string): void {
+    const id = `note-${Date.now()}`
+    this.emit({
+      t: 'turn.start',
+      turn: {
+        id, role: 'assistant', createdAt: Date.now(), status: 'complete', completedAt: Date.now(),
+        parts: [{ kind: 'text', id: `${id}:t`, text }],
+      },
+    })
+  }
+
+  private noted(res: { ok: boolean; note: string }): { ok: boolean; note: string } {
+    this.noteTurn(res.note)
+    return res
+  }
+
   @callable()
   async compact(): Promise<{ ok: boolean; note: string }> {
-    await this.ocOp((sid) => this.opencode!.session.summarize({ sessionID: sid } as never))
-    return { ok: true, note: 'Compacted the conversation (older turns summarized).' }
+    const harness = this.config().harness
+    if (harness === 'opencode') {
+      await this.ocOp((sid) => this.opencode!.session.summarize({ sessionID: sid } as never))
+      return this.noted({ ok: true, note: 'Compacted the conversation (older turns summarized).' })
+    }
+    if (harness === 'cfagent') {
+      const history = this.getKv<ModelMessage[]>('cfagent:messages', [])
+      if (!history.length) return this.noted({ ok: true, note: 'Nothing to compact yet.' })
+      const cfg = this.config()
+      const summary = await summarizeMessages({ provider: cfg.provider, model: cfg.model, creds: await this.connections(), messages: history })
+      this.putKv('cfagent:messages', [{ role: 'user', content: `Context summary of the conversation so far:\n${summary}` }])
+      return this.noted({ ok: true, note: 'Context compacted — older turns condensed into a summary.' })
+    }
+    return this.bridgeCommand('compact')
   }
 
   @callable()
   async undo(): Promise<{ ok: boolean; note: string }> {
     await this.ocOp((sid) => this.opencode!.session.revert({ sessionID: sid } as never))
-    return { ok: true, note: 'Reverted the last change.' }
+    return this.noted({ ok: true, note: 'Reverted the last change.' })
   }
 
   @callable()
   async redo(): Promise<{ ok: boolean; note: string }> {
     await this.ocOp((sid) => this.opencode!.session.unrevert({ sessionID: sid } as never))
-    return { ok: true, note: 'Restored the reverted change.' }
+    return this.noted({ ok: true, note: 'Restored the reverted change.' })
   }
 
   @callable()
   async initProject(): Promise<{ ok: boolean; note: string }> {
     await this.ocOp((sid) => this.opencode!.session.init({ sessionID: sid } as never))
-    return { ok: true, note: 'Scanned the project and wrote AGENTS.md.' }
+    return this.noted({ ok: true, note: 'Scanned the project and wrote AGENTS.md.' })
+  }
+
+  @callable()
+  async share(): Promise<{ ok: boolean; note: string }> {
+    const res = await this.ocOp((sid) => this.opencode!.session.share({ sessionID: sid } as never))
+    const url = (res as { data?: { share?: { url?: string } } }).data?.share?.url ?? ''
+    return this.noted({ ok: true, note: url ? `Session shared: ${url}` : 'Session shared.' })
+  }
+
+  @callable()
+  async unshare(): Promise<{ ok: boolean; note: string }> {
+    await this.ocOp((sid) => this.opencode!.session.unshare({ sessionID: sid } as never))
+    return this.noted({ ok: true, note: 'Session share link revoked.' })
+  }
+
+  /** Proxy a slash command to the bridge harness process (pi extras, aisdk compact). */
+  @callable()
+  async bridgeCommand(name: string): Promise<{ ok: boolean; note: string }> {
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    const res = await this.bridgeFetch(sandbox, 'POST', '/command', { name })
+    if (!res || !res.ok) {
+      return this.noted({ ok: false, note: 'The harness is not running yet — send a message first.' })
+    }
+    const out = res.json as { ok?: boolean; note?: string }
+    return this.noted({ ok: !!out.ok, note: out.note ?? (out.ok ? 'Done.' : 'The harness rejected the command.') })
+  }
+
+  /** Commands the harness itself advertises (OpenCode custom/skill/MCP commands, pi extensions). */
+  @callable()
+  async harnessCommands(): Promise<{ commands: { name: string; description?: string }[] }> {
+    const clean = (list: Array<Record<string, unknown>>) =>
+      list
+        .map((c) => ({ name: String(c.name ?? ''), description: typeof c.description === 'string' ? c.description : undefined }))
+        .filter((c) => c.name)
+    try {
+      const harness = this.config().harness
+      if (harness === 'opencode') {
+        if (!this.opencode) return { commands: [] } // don't boot a sandbox just to fill a menu
+        const res = await this.opencode.command.list({} as never)
+        return { commands: clean(((res as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>) }
+      }
+      if (harness === 'pi') {
+        const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+        const res = await this.bridgeFetch(sandbox, 'POST', '/command', { name: 'commands' })
+        const data = (res?.json as { data?: unknown } | undefined)?.data
+        return { commands: Array.isArray(data) ? clean(data as Array<Record<string, unknown>>) : [] }
+      }
+    } catch { /* menu stays static */ }
+    return { commands: [] }
+  }
+
+  /** Run a harness-advertised command: OpenCode expands the command's prompt template; pi passes the slash text through. */
+  @callable()
+  async runCustomCommand(name: string): Promise<{ ok: boolean; note: string }> {
+    const harness = this.config().harness
+    if (harness === 'opencode') {
+      const res = await this.ocOp(() => this.opencode!.command.list({} as never))
+      const list = ((res as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>
+      const cmd = list.find((c) => c.name === name)
+      if (!cmd) return { ok: false, note: `Unknown command: /${name}` }
+      const template = String(cmd.template ?? '').replaceAll('$ARGUMENTS', '').trim()
+      if (!template) return { ok: false, note: `/${name} has no prompt template.` }
+      await this.sendMessage({ text: `/${name}`, runText: template })
+      return { ok: true, note: `Running /${name}.` }
+    }
+    if (harness === 'pi') {
+      await this.sendMessage({ text: `/${name}` })
+      return { ok: true, note: `Running /${name}.` }
+    }
+    return { ok: false, note: 'Custom commands are not supported on this harness.' }
   }
 
   @callable()

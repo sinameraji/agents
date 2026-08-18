@@ -4,7 +4,7 @@
  * over RPC (exec/readFile/writeFile), and — unlike the container harnesses — text streams to the
  * browser with true token granularity: the LLM fetch streams into the DO, and the DO broadcasts.
  */
-import { streamText, tool, stepCountIs, type ModelMessage } from 'ai'
+import { streamText, generateText, tool, stepCountIs, type ModelMessage } from 'ai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import type { NormPart, NormUsage } from '~shared/agent'
@@ -37,6 +37,28 @@ function providerBase(provider: Provider, conn: Connections): { url: string; key
     case 'openai':
       return { url: 'https://api.openai.com/v1', key: conn.openaiKey ?? '' }
   }
+}
+
+/** Compact a cfagent conversation: flatten the history to text and summarize it in one LLM call. */
+export async function summarizeMessages(opts: {
+  provider: Provider
+  model: string
+  creds: Connections
+  messages: ModelMessage[]
+}): Promise<string> {
+  const { url, key } = providerBase(opts.provider, opts.creds)
+  const provider = createOpenAICompatible({ name: opts.provider, baseURL: url, apiKey: key })
+  const plain = opts.messages
+    .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content).slice(0, 2000)}`)
+    .join('\n')
+    .slice(-24_000)
+  const res = await generateText({
+    model: provider.chatModel(opts.model),
+    system:
+      'Summarize this coding-agent conversation into a compact briefing that preserves: the user goals, key decisions, files touched, current state, and open items. Output only the summary.',
+    messages: [{ role: 'user', content: `Conversation so far:\n\n${plain}` }],
+  })
+  return res.text
 }
 
 const SYSTEM = `You are Dreamweav's Cloudflare-native coding agent, working inside an isolated Linux sandbox.
