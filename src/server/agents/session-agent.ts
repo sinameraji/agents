@@ -418,7 +418,15 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async listFiles(path = '/workspace'): Promise<{ files: { name: string; path: string; isDirectory: boolean; size: number }[] }> {
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
     try {
-      const files = (await sandbox.listFiles(path)) as unknown as { name: string; path: string; isDirectory: boolean; size: number }[]
+      const res = (await sandbox.listFiles(path)) as {
+        files?: { name: string; absolutePath: string; type: string; size: number }[]
+      }
+      const files = (res.files ?? []).map((f) => ({
+        name: f.name,
+        path: f.absolutePath,
+        isDirectory: f.type === 'directory',
+        size: f.size,
+      }))
       return { files }
     } catch {
       return { files: [] }
