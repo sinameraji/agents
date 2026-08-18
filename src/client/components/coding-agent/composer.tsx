@@ -42,12 +42,15 @@ export function Composer({
   extras,
   commands,
   listFiles,
+  onCommandMenuOpen,
 }: {
   onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   sessionName: string
   extras?: React.ReactNode
   commands?: SlashCommand[]
   listFiles?: () => Promise<string[]>
+  /** Called when the '/' menu opens — lets the host lazily fetch harness-specific commands. */
+  onCommandMenuOpen?: () => void
 }) {
   const [text, setText] = useState('')
   const [pasted, setPasted] = useState<PastedBlock[]>([])
@@ -57,7 +60,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const [menu, setMenu] = useState<{ kind: 'mention' | 'command'; query: string } | null>(null)
   const [menuIndex, setMenuIndex] = useState(0)
-  const [fileList, setFileList] = useState<string[] | null>(null)
+  const [fileList, setFileList] = useState<string[] | 'loading' | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
@@ -78,9 +81,10 @@ export function Composer({
     setMenu(trigger)
     if (trigger) setMenuIndex(0)
     if (trigger?.kind === 'mention' && fileList === null && listFiles) {
-      setFileList([])
+      setFileList('loading')
       void listFiles().then(setFileList).catch(() => setFileList([]))
     }
+    if (trigger?.kind === 'command') onCommandMenuOpen?.()
   }
 
   const detectLanguage = (content: string): string | undefined => {
@@ -171,14 +175,14 @@ export function Composer({
     if (menu.kind === 'command') {
       return (commands ?? [])
         .filter((c) => c.id.toLowerCase().startsWith(menu.query))
-        .slice(0, 8)
+        .slice(0, 24)
         .map((c) => ({ id: c.id, label: `/${c.id}`, hint: c.hint }))
     }
-    const files = fileList ?? []
+    const files = Array.isArray(fileList) ? fileList : []
     const q = menu.query
     const starts = files.filter((f) => f.toLowerCase().startsWith(q))
     const includes = q ? files.filter((f) => !f.toLowerCase().startsWith(q) && f.toLowerCase().includes(q)) : []
-    return [...starts, ...includes].slice(0, 8).map((f) => ({ id: f, label: f }))
+    return [...starts, ...includes].slice(0, 12).map((f) => ({ id: f, label: f }))
   })()
 
   const selectMenuItem = (item: { id: string }) => {
@@ -247,10 +251,13 @@ export function Composer({
             dragging && 'border-primary bg-primary/5',
           )}
         >
-          {menu && menuItems.length > 0 && (
-            <div className="absolute bottom-[calc(100%+0.5rem)] left-2 z-30 w-96 max-w-[90vw] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-xl">
-              {menu.kind === 'mention' && fileList !== null && fileList.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading files…</div>
+          {menu && (menuItems.length > 0 || menu.kind === 'mention') && (
+            <div className="absolute bottom-[calc(100%+0.5rem)] left-2 z-30 max-h-80 w-96 max-w-[90vw] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-xl">
+              {menu.kind === 'mention' && fileList === 'loading' && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading workspace files…</div>
+              )}
+              {menu.kind === 'mention' && Array.isArray(fileList) && menuItems.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No matching files in the workspace.</div>
               )}
               {menuItems.map((item, i) => (
                 <button
