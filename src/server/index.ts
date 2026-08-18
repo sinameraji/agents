@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { routeAgentRequest } from 'agents'
-import { proxyToSandbox } from '@cloudflare/sandbox'
+import { getSandbox, proxyToSandbox } from '@cloudflare/sandbox'
 import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
 import { fetchOpenRouterModels } from './api/models'
@@ -73,6 +73,34 @@ app.post('/api/connections', async (c) => {
   const user = await getAgentByName(c.env.UserAgent, identity.id)
   const res = await user.saveSettings(body as never)
   return c.json(res)
+})
+
+// Download the session workspace as a gzipped tarball, streamed straight from the sandbox.
+app.get('/api/sessions/:id/export', async (c) => {
+  const identity = c.get('identity')
+  const id = c.req.param('id')
+  const user = await getAgentByName(c.env.UserAgent, identity.id)
+  const sessions = await user.listSessions()
+  if (!sessions.some((s) => s.id === id)) return c.json({ error: 'not found' }, 404)
+  // listFiles restores /workspace from backup if the container was recycled while asleep.
+  await getAgentByName(c.env.SessionAgent, id).then((sa) => sa.listFiles()).catch(() => null)
+  const sandbox = getSandbox(c.env.Sandbox, `sess-${id}`)
+  const tar = (await sandbox
+    .exec(
+      `sh -lc ${JSON.stringify(
+        'cd /workspace && tar --exclude=node_modules --exclude=.git/objects --exclude=.cache --exclude=dist --exclude=.next -czf /tmp/dw-export.tgz .',
+      )}`,
+      { timeout: 120_000 },
+    )
+    .catch(() => ({ exitCode: 1 }))) as { exitCode?: number }
+  if (tar.exitCode) return c.json({ error: 'could not archive the workspace' }, 500)
+  const stream = await sandbox.readFileStream('/tmp/dw-export.tgz')
+  return new Response(stream, {
+    headers: {
+      'content-type': 'application/gzip',
+      'content-disposition': `attachment; filename="dreamweav-${id.slice(0, 8)}.tgz"`,
+    },
+  })
 })
 
 // --- agents (WebSocket + HTTP) ---------------------------------------------------------------
