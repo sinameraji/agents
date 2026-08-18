@@ -19,6 +19,9 @@ import { WorkspaceDock } from '../workspace/workspace-dock'
 export function ChatView({ session }: { session: SessionApi }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [dockOpen, setDockOpen] = useState(false)
+  const [editingName, setEditingName] = useState<string | null>(null)
+  const [dynamicCommands, setDynamicCommands] = useState<{ name: string; description?: string }[]>([])
+  const dynFetchedFor = useRef<string | null>(null)
   const { navigate } = useRouter()
   const meta = session.meta
   const harnessLabel = HARNESSES.find((h) => h.id === meta?.harness)?.label ?? meta?.harness ?? ''
@@ -46,6 +49,19 @@ export function ChatView({ session }: { session: SessionApi }) {
     return out
   }, [session])
 
+  /** Lazily pull the harness's own command list the first time the '/' menu opens. */
+  const fetchHarnessCommands = useCallback(() => {
+    if (!meta?.id || dynFetchedFor.current === meta.id) return
+    dynFetchedFor.current = meta.id
+    void session.harnessCommands().then(setDynamicCommands).catch(() => {})
+  }, [session, meta?.id])
+
+  const commitRename = () => {
+    const name = (editingName ?? '').trim()
+    setEditingName(null)
+    if (name && name !== meta?.name) void session.rename(name)
+  }
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [turnCount, session.status, meta?.id])
@@ -56,7 +72,28 @@ export function ChatView({ session }: { session: SessionApi }) {
       {/* Header */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
         <div className="flex min-w-0 flex-col">
-          <h1 className="truncate text-sm font-semibold">{meta?.name ?? 'Session'}</h1>
+          {editingName === null ? (
+            <h1
+              className="cursor-text truncate text-sm font-semibold hover:text-foreground/80"
+              title="Click to rename"
+              onClick={() => setEditingName(meta?.name ?? '')}
+            >
+              {meta?.name ?? 'Session'}
+            </h1>
+          ) : (
+            <input
+              autoFocus
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename()
+                if (e.key === 'Escape') setEditingName(null)
+              }}
+              aria-label="Session name"
+              className="w-56 rounded-md border border-border bg-card px-1.5 py-0.5 text-sm font-semibold outline-none focus:border-primary/60"
+            />
+          )}
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <StatusDot status={session.status} className="size-2" />
             <span>{statusLabel(session.status)}</span>
@@ -128,24 +165,51 @@ export function ChatView({ session }: { session: SessionApi }) {
         )}
         <Composer
           listFiles={listWorkspaceFiles}
-          commands={[
-            { id: 'plan', label: 'Plan', hint: 'read-only mode', run: () => void session.setMode('plan') },
-            { id: 'build', label: 'Build', hint: 'edits allowed', run: () => void session.setMode('build') },
-            { id: 'auto', label: 'Auto', hint: 'approve everything', run: () => void session.setMode('auto') },
-            { id: 'stop', label: 'Stop', hint: 'interrupt the agent', run: () => void session.stop() },
-            { id: 'workspace', label: 'Workspace', hint: 'toggle the side panel', run: () => setDockOpen((v) => !v) },
-            { id: 'new', label: 'New session', hint: 'start another session', run: () => navigate('/new') },
-            { id: 'clear', label: 'Clear', hint: 'wipe this conversation', run: () => void session.runCommand('clearTranscript') },
-            ...(meta?.harness === 'opencode'
-              ? [
-                  { id: 'compact', label: 'Compact', hint: 'summarize older turns', run: () => void session.runCommand('compact') },
-                  { id: 'undo', label: 'Undo', hint: 'revert last change', run: () => void session.runCommand('undo') },
-                  { id: 'redo', label: 'Redo', hint: 'restore reverted change', run: () => void session.runCommand('redo') },
-                  { id: 'init', label: 'Init', hint: 'scan repo → AGENTS.md', run: () => void session.runCommand('initProject') },
-                  { id: 'diff', label: 'Diff', hint: 'show session changes', run: () => void session.runCommand('showDiff') },
-                ]
-              : []),
-          ]}
+          onCommandMenuOpen={fetchHarnessCommands}
+          commands={(() => {
+            const base = [
+              { id: 'plan', label: 'Plan', hint: 'read-only mode', run: () => void session.setMode('plan') },
+              { id: 'build', label: 'Build', hint: 'edits allowed', run: () => void session.setMode('build') },
+              { id: 'auto', label: 'Auto', hint: 'approve everything', run: () => void session.setMode('auto') },
+              { id: 'stop', label: 'Stop', hint: 'interrupt the agent', run: () => void session.stop() },
+              { id: 'workspace', label: 'Workspace', hint: 'toggle the side panel', run: () => setDockOpen((v) => !v) },
+              { id: 'new', label: 'New session', hint: 'start another session', run: () => navigate('/new') },
+              { id: 'clear', label: 'Clear', hint: 'wipe this conversation', run: () => void session.runCommand('clearTranscript') },
+              ...(meta?.harness === 'opencode'
+                ? [
+                    { id: 'compact', label: 'Compact', hint: 'summarize older turns', run: () => void session.runCommand('compact') },
+                    { id: 'undo', label: 'Undo', hint: 'revert last change', run: () => void session.runCommand('undo') },
+                    { id: 'redo', label: 'Redo', hint: 'restore reverted change', run: () => void session.runCommand('redo') },
+                    { id: 'init', label: 'Init', hint: 'scan repo → AGENTS.md', run: () => void session.runCommand('initProject') },
+                    { id: 'diff', label: 'Diff', hint: 'show session changes', run: () => void session.runCommand('showDiff') },
+                    { id: 'share', label: 'Share', hint: 'get a share link', run: () => void session.runCommand('share') },
+                    { id: 'unshare', label: 'Unshare', hint: 'revoke the share link', run: () => void session.runCommand('unshare') },
+                  ]
+                : []),
+              ...(meta?.harness === 'pi'
+                ? [
+                    { id: 'compact', label: 'Compact', hint: 'summarize context', run: () => void session.runCommand('compact') },
+                    { id: 'stats', label: 'Stats', hint: 'session statistics', run: () => void session.bridgeCommand('stats') },
+                    { id: 'export', label: 'Export', hint: 'session → HTML in the workspace', run: () => void session.bridgeCommand('export') },
+                  ]
+                : []),
+              ...(meta?.harness === 'aisdk' || meta?.harness === 'cfagent'
+                ? [{ id: 'compact', label: 'Compact', hint: 'summarize context', run: () => void session.runCommand('compact') }]
+                : []),
+            ]
+            const taken = new Set(base.map((c) => c.id))
+            return [
+              ...base,
+              ...dynamicCommands
+                .filter((c) => !taken.has(c.name))
+                .map((c) => ({
+                  id: c.name,
+                  label: c.name,
+                  hint: c.description ?? 'harness command',
+                  run: () => void session.runCustomCommand(c.name),
+                })),
+            ]
+          })()}
           extras={
             <>
               <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs" role="group" aria-label="Mode">

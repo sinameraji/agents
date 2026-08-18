@@ -52,7 +52,11 @@ export interface SessionApi {
   setModel: (id: string) => Promise<void>
   setMode: (mode: SessionMode) => Promise<void>
   respondPermission: (id: string, reply: PermissionReply, note?: string) => Promise<void>
-  runCommand: (name: 'compact' | 'undo' | 'redo' | 'initProject' | 'showDiff' | 'clearTranscript') => Promise<string>
+  runCommand: (name: string) => Promise<string>
+  bridgeCommand: (name: string) => Promise<string>
+  harnessCommands: () => Promise<{ name: string; description?: string }[]>
+  runCustomCommand: (name: string) => Promise<string>
+  rename: (name: string) => Promise<void>
   listFiles: (path?: string) => Promise<{ name: string; path: string; isDirectory: boolean; size: number }[]>
   readFile: (path: string) => Promise<string | null>
   writeFile: (path: string, content: string) => Promise<boolean>
@@ -142,9 +146,24 @@ export function useSession(sessionId: string): SessionApi {
   const respondPermission = useCallback(async (id: string, reply: PermissionReply, note?: string) => {
     await agentRef.current.stub.respondPermission(id, reply, note)
   }, [])
-  const runCommand = useCallback(async (name: 'compact' | 'undo' | 'redo' | 'initProject' | 'showDiff' | 'clearTranscript') => {
+  const runCommand = useCallback(async (name: string) => {
     const r = (await (agentRef.current.stub as Record<string, (...a: unknown[]) => Promise<unknown>>)[name]()) as { note?: string }
     return r?.note ?? 'Done.'
+  }, [])
+  const harnessCommands = useCallback(async () => {
+    const r = (await agentRef.current.stub.harnessCommands()) as { commands: { name: string; description?: string }[] }
+    return r.commands
+  }, [])
+  const runCustomCommand = useCallback(async (name: string) => {
+    const r = (await agentRef.current.stub.runCustomCommand(name)) as { note?: string }
+    return r?.note ?? 'Done.'
+  }, [])
+  const bridgeCommand = useCallback(async (name: string) => {
+    const r = (await agentRef.current.stub.bridgeCommand(name)) as { note?: string }
+    return r?.note ?? 'Done.'
+  }, [])
+  const rename = useCallback(async (name: string) => {
+    await agentRef.current.stub.rename(name)
   }, [])
   const listFiles = useCallback(async (path?: string) => {
     const r = (await agentRef.current.stub.listFiles(path)) as { files: { name: string; path: string; isDirectory: boolean; size: number }[] }
@@ -178,6 +197,10 @@ export function useSession(sessionId: string): SessionApi {
     setMode,
     respondPermission,
     runCommand,
+    bridgeCommand,
+    harnessCommands,
+    runCustomCommand,
+    rename,
     listFiles,
     readFile,
     writeFile,
