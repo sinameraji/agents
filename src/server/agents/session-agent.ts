@@ -223,8 +223,19 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.setStatus('running')
 
     void this.runTurn(input.text).catch((err) => {
+      const message = (err as Error).message
       console.error('[dreamweav] turn failed:', (err as Error).stack ?? err)
-      this.broadcast(JSON.stringify({ t: 'error', message: (err as Error).message }))
+      const seq = this.nextSeq()
+      const errMsg: Message & { seq: number } = {
+        id: `err-${Date.now()}`,
+        role: 'agent',
+        createdAt: new Date().toISOString(),
+        text: `\u26a0\ufe0f ${message}`,
+        seq,
+      }
+      this.persistMessage(errMsg)
+      this.broadcast(JSON.stringify({ t: 'message.upsert', message: errMsg }))
+      this.broadcast(JSON.stringify({ t: 'error', message }))
       this.setStatus('error')
     })
     return { ok: true }
