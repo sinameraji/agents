@@ -5,6 +5,7 @@ import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
 import { fetchOpenRouterModels } from './api/models'
 import { handleUpload } from './api/uploads'
+import { getAgentByName } from 'agents'
 
 export { UserAgent } from './agents/user-agent'
 export { SessionAgent } from './agents/session-agent'
@@ -60,6 +61,19 @@ app.get('/api/models', async (c) => {
 })
 
 app.post('/api/uploads', handleUpload)
+
+// Programmatic settings/connections update (same shape as UserAgent.saveSettings input).
+app.post('/api/connections', async (c) => {
+  const identity = c.get('identity')
+  const body = (await c.req.json().catch(() => null)) as {
+    settings?: Record<string, unknown>
+    connections?: Record<string, string>
+  } | null
+  if (!body) return c.json({ error: 'bad json' }, 400)
+  const user = await getAgentByName(c.env.UserAgent, identity.id)
+  const res = await user.saveSettings(body as never)
+  return c.json(res)
+})
 
 // --- agents (WebSocket + HTTP) ---------------------------------------------------------------
 app.all('/agents/*', async (c) => {
