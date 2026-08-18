@@ -1,93 +1,71 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useAgent } from 'agents/react'
-import type { AgentStep, Message } from '~shared/protocol'
+import { applyEvent, emptyTranscript } from '~shared/agent-reduce'
+import type {
+  AgentEvent,
+  NormPermission,
+  NormTodo,
+  NormTurn,
+  PermissionReply,
+  SessionStatus,
+  TranscriptState,
+} from '~shared/agent'
+import type { Harness, Provider, SessionMode } from '~shared/protocol'
 
 interface SessionMeta {
   id: string
   name: string
   repo: string
   branch: string
-  harness: string
-  provider: string
+  harness: Harness
+  provider: Provider
   model: string
-  status: string
   region: string
   createdAt: string
   lastActivity: string
 }
-interface SessionState {
+interface SyncState {
   meta: SessionMeta | null
+  status: SessionStatus
+  mode: SessionMode
   usage: { tokensIn: number; tokensOut: number; costUsd: number }
-  bridge: 'down' | 'booting' | 'up'
 }
 
-// --- message reducer --------------------------------------------------------------------------
-type Action =
-  | { type: 'hydrate'; messages: Message[] }
-  | { type: 'upsert'; message: Message }
-  | { type: 'text'; messageId: string; text: string }
-  | { type: 'step'; messageId: string; step: AgentStep }
+type Action = { type: 'hydrate'; state: TranscriptState } | { type: 'event'; event: AgentEvent }
 
-function upsertStep(steps: AgentStep[] | undefined, step: AgentStep): AgentStep[] {
-  const list = steps ? [...steps] : []
-  const i = list.findIndex((s) => s.id === step.id)
-  if (i >= 0) list[i] = { ...list[i], ...step }
-  else list.push(step)
-  return list
-}
-
-function reducer(state: Message[], action: Action): Message[] {
-  switch (action.type) {
-    case 'hydrate': {
-      const byId = new Map(action.messages.map((m) => [m.id, m]))
-      // keep any optimistic messages not yet persisted
-      for (const m of state) if (!byId.has(m.id)) byId.set(m.id, m)
-      return [...byId.values()]
-    }
-    case 'upsert': {
-      const i = state.findIndex((m) => m.id === action.message.id)
-      if (i >= 0) {
-        const next = [...state]
-        next[i] = { ...next[i], ...action.message }
-        return next
-      }
-      return [...state, action.message]
-    }
-    case 'text':
-      return state.map((m) => (m.id === action.messageId ? { ...m, text: action.text } : m))
-    case 'step':
-      return state.map((m) =>
-        m.id === action.messageId ? { ...m, steps: upsertStep(m.steps, action.step) } : m,
-      )
-    default:
-      return state
-  }
+function reducer(state: TranscriptState, action: Action): TranscriptState {
+  if (action.type === 'hydrate') return action.state
+  return applyEvent(state, action.event)
 }
 
 export interface SessionApi {
   meta: SessionMeta | null
-  usage: SessionState['usage']
-  bridge: SessionState['bridge']
-  messages: Message[]
+  status: SessionStatus
+  mode: SessionMode
+  usage: SyncState['usage']
+  turns: NormTurn[]
+  todos: NormTodo[]
+  permissions: NormPermission[]
   connected: boolean
   send: (text: string) => Promise<void>
   stop: () => Promise<void>
   setModel: (id: string) => Promise<void>
-  error: string | null
+  setMode: (mode: SessionMode) => Promise<void>
+  respondPermission: (id: string, reply: PermissionReply, note?: string) => Promise<void>
 }
 
-/** Connect to a SessionAgent DO: synced meta/usage state + streamed message events. */
+/** Subscribe to a SessionAgent: synced meta/status/usage + the normalized AgentEvent transcript stream. */
 export function useSession(sessionId: string): SessionApi {
-  const [messages, dispatch] = useReducer(reducer, [])
-  const [sync, setSync] = useState<SessionState>({
+  const [transcript, dispatch] = useReducer(reducer, undefined, emptyTranscript)
+  const [sync, setSync] = useState<SyncState>({
     meta: null,
+    status: 'idle',
+    mode: 'build',
     usage: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
-    bridge: 'down',
   })
   const [connected, setConnected] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  const agent = useAgent<SessionState>({
+  const agent = useAgent<SyncState>({
     agent: 'session-agent',
     name: sessionId,
     onStateUpdate: (s) => setSync(s),
@@ -97,26 +75,13 @@ export function useSession(sessionId: string): SessionApi {
 
   useEffect(() => {
     const onMsg = (ev: MessageEvent) => {
-      let data: Record<string, unknown>
+      let data: { t?: string; event?: AgentEvent }
       try {
         data = JSON.parse(typeof ev.data === 'string' ? ev.data : '')
       } catch {
         return
       }
-      switch (data.t) {
-        case 'message.upsert':
-          dispatch({ type: 'upsert', message: data.message as Message })
-          break
-        case 'text.set':
-          dispatch({ type: 'text', messageId: data.messageId as string, text: data.text as string })
-          break
-        case 'step.upsert':
-          dispatch({ type: 'step', messageId: data.messageId as string, step: data.step as AgentStep })
-          break
-        case 'error':
-          setError(data.message as string)
-          break
-      }
+      if (data.t === 'agent' && data.event) dispatch({ type: 'event', event: data.event })
     }
     agent.addEventListener('message', onMsg)
     let alive = true
@@ -124,9 +89,14 @@ export function useSession(sessionId: string): SessionApi {
       .then(() => {
         if (!alive) return
         setConnected(true)
-        return agentRef.current.stub.getMessages() as Promise<Message[]>
+        return agentRef.current.stub.getTurns() as Promise<
+          TranscriptState & { status: SessionStatus }
+        >
       })
-      .then((msgs) => msgs && dispatch({ type: 'hydrate', messages: msgs }))
+      .then((res) => {
+        if (!res || !alive) return
+        dispatch({ type: 'hydrate', state: { turns: res.turns, todos: res.todos, permissions: res.permissions } })
+      })
       .catch(() => {})
     return () => {
       alive = false
@@ -135,35 +105,51 @@ export function useSession(sessionId: string): SessionApi {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
-  const send = useCallback(
-    async (text: string) => {
-      setError(null)
-      const messageId = `u-${crypto.randomUUID()}`
-      // optimistic echo with the SAME id the server will use, so its upsert replaces this
-      dispatch({
-        type: 'upsert',
-        message: { id: messageId, role: 'user', createdAt: new Date().toISOString(), text },
-      })
-      await agentRef.current.stub.sendMessage({ text, messageId })
-    },
-    [],
-  )
+  const send = useCallback(async (text: string) => {
+    const messageId = `u-${crypto.randomUUID()}`
+    // optimistic echo with the SAME id the server will use, so its turn.start replaces this
+    dispatch({
+      type: 'event',
+      event: {
+        t: 'turn.start',
+        turn: {
+          id: messageId,
+          role: 'user',
+          createdAt: Date.now(),
+          status: 'complete',
+          parts: [{ kind: 'text', id: `${messageId}:text`, text }],
+        },
+      },
+    })
+    await agentRef.current.stub.sendMessage({ text, messageId })
+  }, [])
+
   const stop = useCallback(async () => {
     await agentRef.current.stub.stop()
   }, [])
   const setModel = useCallback(async (id: string) => {
     await agentRef.current.stub.setModel(id)
   }, [])
+  const setMode = useCallback(async (mode: SessionMode) => {
+    await agentRef.current.stub.setMode(mode)
+  }, [])
+  const respondPermission = useCallback(async (id: string, reply: PermissionReply, note?: string) => {
+    await agentRef.current.stub.respondPermission(id, reply, note)
+  }, [])
 
   return {
     meta: sync.meta,
+    status: sync.status,
+    mode: sync.mode,
     usage: sync.usage,
-    bridge: sync.bridge,
-    messages,
+    turns: transcript.turns,
+    todos: transcript.todos,
+    permissions: transcript.permissions,
     connected,
     send,
     stop,
     setModel,
-    error,
+    setMode,
+    respondPermission,
   }
 }
