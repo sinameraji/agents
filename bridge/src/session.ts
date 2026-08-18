@@ -72,6 +72,12 @@ export class BridgeSession {
     this.status = 'idle'
   }
 
+  /** Run a harness slash command; harnesses without a command surface answer honestly. */
+  async command(name: string, args?: Record<string, unknown>): Promise<{ ok: boolean; note?: string; data?: unknown }> {
+    if (!this.adapter?.command) return { ok: false, note: 'Not supported by this harness.' }
+    return this.adapter.command(name, args)
+  }
+
   async resolvePermission(id: string, reply: 'once' | 'always' | 'reject', note?: string) {
     this.permissions = this.permissions.filter((p) => p.id !== id)
     await this.adapter?.resolvePermission(id, reply, note)

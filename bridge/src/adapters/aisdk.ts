@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { streamText, tool, stepCountIs, type ModelMessage } from 'ai'
+import { generateText, streamText, tool, stepCountIs, type ModelMessage } from 'ai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import type { AdapterSink, HarnessAdapter, StartConfig } from './types'
@@ -175,6 +175,24 @@ export function createAiSdkAdapter(): HarnessAdapter {
     },
     async resolvePermission() {
       /* AI-SDK harness has no interactive approvals (plan mode gates writes instead). */
+    },
+    async command(name) {
+      if (name !== 'compact') return { ok: false, note: 'Not supported.' }
+      if (messages.length === 0) return { ok: true, note: 'Nothing to compact.' }
+      try {
+        const { url, key, model } = baseURL(cfg)
+        const provider = createOpenAICompatible({ name: cfg.provider, baseURL: url, apiKey: key })
+        const { text } = await generateText({
+          model: provider.chatModel(model),
+          system:
+            'Summarize the conversation so far into ONE compact briefing that preserves the goals, key decisions, file paths, code changes, and outstanding work. Reply with the briefing only.',
+          messages: [...messages, { role: 'user', content: 'Summarize the conversation so far into a single compact briefing.' }],
+        })
+        messages = [{ role: 'user', content: `Context summary of the conversation so far:\n${text}` }]
+        return { ok: true, note: 'Context compacted.' }
+      } catch (e) {
+        return { ok: false, note: `Compaction failed: ${(e as Error).message}` }
+      }
     },
     async dispose() {
       controller?.abort()

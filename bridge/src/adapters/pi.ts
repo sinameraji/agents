@@ -16,6 +16,61 @@ const PI_PROVIDER: Record<StartConfig['provider'], string> = {
   cloudflare: 'openrouter',
 }
 
+/**
+ * Request/response correlation for pi's RPC mode: requests go out as `{id, type, ...}` and the
+ * matching reply comes back as `{id, type: 'response', command, success, ...}` interleaved with the
+ * event stream. Exported for tests (no pi process needed).
+ */
+export function createPiRpc(send: (obj: Record<string, unknown>) => void, timeoutMs = 30_000) {
+  let counter = 0
+  const pending = new Map<string, { resolve: (ev: Record<string, unknown>) => void; timer: ReturnType<typeof setTimeout> }>()
+  return {
+    /** True when `ev` answered a pending request (so it must NOT be treated as a stream event). */
+    handle(ev: Record<string, unknown>): boolean {
+      const id = typeof ev.id === 'string' ? ev.id : ''
+      const entry = pending.get(id)
+      if (!entry || ev.type !== 'response') return false
+      pending.delete(id)
+      clearTimeout(entry.timer)
+      entry.resolve(ev)
+      return true
+    },
+    request(req: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const id = `cmd-${++counter}`
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id)
+          reject(new Error('timeout'))
+        }, timeoutMs)
+        pending.set(id, { resolve, timer })
+        send({ id, ...req })
+      })
+    },
+  }
+}
+
+/** Compact one-line summary of pi's get_session_stats response (shape is version-dependent). */
+function formatStats(resp: Record<string, unknown>): string {
+  const stats = resp.stats && typeof resp.stats === 'object' && !Array.isArray(resp.stats) ? (resp.stats as Record<string, unknown>) : resp
+  const skip = new Set(['id', 'type', 'command', 'success'])
+  const pairs: string[] = []
+  for (const [k, v] of Object.entries(stats)) {
+    if (skip.has(k)) continue
+    if (typeof v === 'number') pairs.push(`${k}: ${v}`)
+    else if (v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const [k2, v2] of Object.entries(v as Record<string, unknown>)) if (typeof v2 === 'number') pairs.push(`${k}.${k2}: ${v2}`)
+    }
+  }
+  return pairs.length ? pairs.join(' · ') : 'No stats returned.'
+}
+
+/** get_commands carries an array of {name, description?, source} — field name varies, so take the first array-valued field. */
+function firstArrayField(resp: Record<string, unknown>): unknown[] {
+  if (Array.isArray(resp.commands)) return resp.commands
+  for (const v of Object.values(resp)) if (Array.isArray(v)) return v
+  return []
+}
+
 export function createPiAdapter(): HarnessAdapter {
   let cfg: StartConfig
   let proc: JsonlProcess | null = null
@@ -23,8 +78,10 @@ export function createPiAdapter(): HarnessAdapter {
   let resolveDone: (() => void) | null = null
   let textId = ''
   let textAcc = ''
+  const rpc = createPiRpc((obj) => proc?.send(obj))
 
   const handle = (ev: Record<string, unknown>) => {
+    if (rpc.handle(ev)) return
     if (!sink) return
     const type = ev.type as string
     if (type === 'message_update') {
@@ -81,6 +138,33 @@ export function createPiAdapter(): HarnessAdapter {
     },
     async resolvePermission(id, reply) {
       proc?.send({ type: 'extension_ui_response', id, confirmed: reply !== 'reject' })
+    },
+    async command(name) {
+      try {
+        if (name === 'compact') {
+          const resp = await rpc.request({ type: 'compact' })
+          if (resp.success === false) return { ok: false, note: String(resp.error ?? 'Command failed.') }
+          return { ok: true, note: 'Context compacted.' }
+        }
+        if (name === 'stats') {
+          const resp = await rpc.request({ type: 'get_session_stats' })
+          if (resp.success === false) return { ok: false, note: String(resp.error ?? 'Command failed.') }
+          return { ok: true, note: formatStats(resp) }
+        }
+        if (name === 'export') {
+          const resp = await rpc.request({ type: 'export_html', outputPath: '/workspace/session-export.html' })
+          if (resp.success === false) return { ok: false, note: String(resp.error ?? 'Command failed.') }
+          return { ok: true, note: 'Exported to session-export.html — open it from the Files panel.' }
+        }
+        if (name === 'commands') {
+          const resp = await rpc.request({ type: 'get_commands' })
+          if (resp.success === false) return { ok: false, note: String(resp.error ?? 'Command failed.') }
+          return { ok: true, data: firstArrayField(resp) }
+        }
+        return { ok: false, note: 'Not supported by pi.' }
+      } catch {
+        return { ok: false, note: 'Command timed out.' }
+      }
     },
     async dispose() {
       proc?.kill()

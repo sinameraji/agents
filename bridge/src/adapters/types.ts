@@ -33,4 +33,9 @@ export interface HarnessAdapter {
   abort(): Promise<void>
   resolvePermission(id: string, reply: 'once' | 'always' | 'reject', note?: string): Promise<void>
   dispose(): Promise<void>
+  /**
+   * Run a harness-level slash command (compact / stats / export / commands / …). Optional —
+   * leaving it undefined is the honest signal that the harness has no such surface.
+   */
+  command?(name: string, args?: Record<string, unknown>): Promise<{ ok: boolean; note?: string; data?: unknown }>
 }

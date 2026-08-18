@@ -41,6 +41,11 @@ const server = createServer(async (req, res) => {
       session.prompt(text)
       return send(200, { ok: true })
     }
+    if (req.method === 'POST' && url === '/command') {
+      const { name, args } = JSON.parse(await body(req)) as { name: string; args?: Record<string, unknown> }
+      if (!session) return send(400, { error: 'not started' })
+      return send(200, await session.command(name, args))
+    }
     if (req.method === 'POST' && url === '/abort') {
       await session?.abort()
       return send(200, { ok: true })
