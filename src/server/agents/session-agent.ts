@@ -67,7 +67,6 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private opencode?: OpencodeClient
   private opencodeSessionId?: string
   private emittedParts = new Map<string, string>()
-  private startedTurns = new Set<string>()
   private transcript: TranscriptState = emptyTranscript()
   private hydrated = false
 
@@ -277,11 +276,19 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.emittedParts.clear()
 
     const client = this.opencode!
-    await client.session.promptAsync({ sessionID: ocSession, parts: [{ type: 'text', text }] } as never)
+    const mode = this.state.mode
+    await client.session.promptAsync({
+      sessionID: ocSession,
+      parts: [{ type: 'text', text }],
+      ...(mode === 'plan' ? { agent: 'plan' } : {}),
+    } as never)
 
     // The SDK's event.subscribe() SSE does not stream over the Sandbox transport, so we POLL
-    // session.messages (+ todos) and diff against what we've already emitted. Same approach as
-    // production OpenCode harnesses that run the server headlessly.
+    // session.messages (+ todos) and diff against what we've already emitted. All of OpenCode's
+    // assistant messages for this prompt are grouped into ONE Dreamweav turn.
+    const turnId = `a-${crypto.randomUUID()}`
+    this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
+
     const deadline = Date.now() + 8 * 60 * 1000
     let stable = 0
     let lastSnapshot = ''
@@ -294,54 +301,39 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
           .catch(() => ({ data: [] as unknown[] }))
         const data = ((res as { data?: unknown[] }).data ?? []) as Array<{ info?: Record<string, unknown>; parts?: unknown[] }>
 
-        for (const msg of data) {
+        const assistants = data.filter((m) => (m.info as Record<string, unknown>)?.role === 'assistant')
+        // Only include assistant messages produced for THIS prompt: those after the last user message.
+        const lastUserIdx = data.map((m) => (m.info as Record<string, unknown>)?.role).lastIndexOf('user')
+        const relevant = data.slice(lastUserIdx + 1).filter((m) => (m.info as Record<string, unknown>)?.role === 'assistant')
+
+        let usageIn = 0, usageOut = 0, usageReason = 0, cost = 0
+        let allComplete = relevant.length > 0
+        let anyError: { name: string; message: string } | undefined
+        for (const msg of relevant) {
           const info = (msg.info ?? {}) as Record<string, unknown>
-          if (info.role !== 'assistant') continue
-          const turnId = String(info.id ?? '')
-          if (!turnId) continue
-          if (!this.startedTurns.has(turnId)) {
-            this.startedTurns.add(turnId)
-            this.emit({
-              t: 'turn.start',
-              turn: {
-                id: turnId,
-                role: 'assistant',
-                createdAt: Date.now(),
-                status: 'streaming',
-                model: { providerId: String(info.providerID ?? ''), modelId: String(info.modelID ?? '') },
-                parts: [],
-              },
-            })
-          }
+          const msgId = String(info.id ?? '')
           const complete = isAssistantComplete(info)
+          if (!complete) allComplete = false
+          if (info.error) anyError = { name: 'error', message: String(((info.error as Record<string, unknown>).data as Record<string, unknown>)?.message ?? 'Agent error') }
           for (const rawPart of msg.parts ?? []) {
             const np = mapPart(rawPart as Record<string, unknown>)
             if (!np) continue
+            np.id = `${msgId}:${np.id}`
             if ((np.kind === 'text' || np.kind === 'reasoning') && !complete) np.streaming = true
-            const key = np.id
             const ser = JSON.stringify(np)
-            if (this.emittedParts.get(key) === ser) continue
-            this.emittedParts.set(key, ser)
+            if (this.emittedParts.get(np.id) === ser) continue
+            this.emittedParts.set(np.id, ser)
             this.emit({ t: 'part.upsert', turnId, part: np })
           }
-          const usage = usageFromInfo(info)
-          this.emit({
-            t: 'turn.update',
-            id: turnId,
-            patch: {
-              status: complete ? (info.error ? 'error' : 'complete') : 'streaming',
-              usage,
-              completedAt: complete ? Date.now() : undefined,
-              error: info.error
-                ? { name: 'error', message: String(((info.error as Record<string, unknown>).data as Record<string, unknown>)?.message ?? 'Agent error') }
-                : undefined,
-            },
-          })
-          this.emit({ t: 'usage', usage })
-          if (complete) sawComplete = true
+          const u = usageFromInfo(info)
+          usageIn += u.input; usageOut += u.output; usageReason += u.reasoning ?? 0; cost += u.cost ?? 0
         }
+        const usage = { input: usageIn, output: usageOut, reasoning: usageReason || undefined, cost: cost || undefined }
+        this.emit({ t: 'turn.update', id: turnId, patch: { status: anyError ? 'error' : allComplete ? 'complete' : 'streaming', usage, error: anyError, completedAt: allComplete ? Date.now() : undefined } })
+        this.emit({ t: 'usage', usage })
+        if (allComplete) sawComplete = true
+        void assistants
 
-        // Todos (best-effort).
         try {
           const todoRes = await client.session.todo({ sessionID: ocSession } as never)
           const todos = ((todoRes as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>
@@ -350,18 +342,14 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
               t: 'todos',
               todos: todos.map((td) => ({
                 content: String(td.content ?? ''),
-                status: (String(td.status ?? 'pending') as 'pending' | 'in_progress' | 'completed' | 'cancelled'),
+                status: String(td.status ?? 'pending') as 'pending' | 'in_progress' | 'completed' | 'cancelled',
                 priority: td.priority as 'high' | 'medium' | 'low' | undefined,
               })),
             })
           }
-        } catch {
-          /* ignore */
-        }
+        } catch { /* ignore */ }
 
-        // Completion via quiescence: once an assistant message is complete and nothing has changed
-        // for a few polls, the turn is done.
-        const snapshot = JSON.stringify(data.map((m) => ({ i: m.info?.id, c: (m.info as Record<string, unknown>)?.time, p: (m.parts ?? []).length })))
+        const snapshot = JSON.stringify(relevant.map((m) => ({ i: m.info?.id, c: (m.info as Record<string, unknown>)?.time, p: (m.parts ?? []).length })))
         if (snapshot === lastSnapshot) stable += 1
         else stable = 0
         lastSnapshot = snapshot

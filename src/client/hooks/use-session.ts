@@ -52,6 +52,9 @@ export interface SessionApi {
   setModel: (id: string) => Promise<void>
   setMode: (mode: SessionMode) => Promise<void>
   respondPermission: (id: string, reply: PermissionReply, note?: string) => Promise<void>
+  listFiles: (path?: string) => Promise<{ name: string; path: string; isDirectory: boolean; size: number }[]>
+  readFile: (path: string) => Promise<string | null>
+  exposePort: (port: number, hostname?: string) => Promise<string | null>
 }
 
 /** Subscribe to a SessionAgent: synced meta/status/usage + the normalized AgentEvent transcript stream. */
@@ -136,6 +139,18 @@ export function useSession(sessionId: string): SessionApi {
   const respondPermission = useCallback(async (id: string, reply: PermissionReply, note?: string) => {
     await agentRef.current.stub.respondPermission(id, reply, note)
   }, [])
+  const listFiles = useCallback(async (path?: string) => {
+    const r = (await agentRef.current.stub.listFiles(path)) as { files: { name: string; path: string; isDirectory: boolean; size: number }[] }
+    return r.files
+  }, [])
+  const readFile = useCallback(async (path: string) => {
+    const r = (await agentRef.current.stub.readFile(path)) as { content: string | null }
+    return r.content
+  }, [])
+  const exposePort = useCallback(async (port: number, hostname?: string) => {
+    const r = (await agentRef.current.stub.exposePort(port, hostname)) as { url: string | null }
+    return r.url
+  }, [])
 
   return {
     meta: sync.meta,
@@ -151,5 +166,8 @@ export function useSession(sessionId: string): SessionApi {
     setModel,
     setMode,
     respondPermission,
+    listFiles,
+    readFile,
+    exposePort,
   }
 }

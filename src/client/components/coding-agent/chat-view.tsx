@@ -52,6 +52,22 @@ export function ChatView({ session }: { session: SessionApi }) {
             costUsd={session.usage.costUsd}
             className="hidden md:flex"
           />
+          <div className="hidden items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs md:flex" role="group" aria-label="Mode">
+            {(['plan', 'build'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => void session.setMode(m)}
+                className={
+                  'rounded-md px-2 py-1 capitalize transition-colors ' +
+                  (session.mode === m ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground')
+                }
+                title={m === 'plan' ? 'Plan: read-only, no edits' : 'Build: full access'}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
           <ModelPicker
             value={meta?.model ?? ''}
             provider={meta?.provider ?? 'openrouter'}
