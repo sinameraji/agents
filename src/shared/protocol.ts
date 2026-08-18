@@ -89,11 +89,12 @@ export interface ModelInfo {
 // ---------------------------------------------------------------------------
 
 /** Coding harness that runs inside the sandbox for a session. */
-export type Harness = 'pi' | 'opencode' | 'kimiflare' | 'aisdk'
+export type Harness = 'pi' | 'opencode' | 'kimiflare' | 'aisdk' | 'cfagent'
 
 export const HARNESSES: { id: Harness; label: string; blurb: string; enabled: boolean }[] = [
   { id: 'opencode', label: 'OpenCode', blurb: 'Sub-agents, permissions, LSP (by Anomaly)', enabled: true },
   { id: 'aisdk', label: 'Built-in', blurb: 'Vercel AI SDK loop — any OpenAI-compatible model', enabled: true },
+  { id: 'cfagent', label: 'Agents SDK', blurb: 'Cloudflare-native: loop runs in the Durable Object, true streaming, tools via sandbox RPC', enabled: true },
   { id: 'pi', label: 'pi', blurb: 'Minimal, fast agent by Mario Zechner', enabled: true },
   { id: 'kimiflare', label: 'KimiFlare', blurb: 'Kimi K2 on your own Cloudflare account', enabled: true },
 ]

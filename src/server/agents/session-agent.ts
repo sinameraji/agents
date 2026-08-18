@@ -4,6 +4,8 @@ import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 import { buildOpencodeConfig, hasProviderKey } from '../opencode-config'
 import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
+import { runCfAgentLoop } from '../harness/cfagent'
+import type { ModelMessage } from 'ai'
 // The bridge (pi/KimiFlare/AI-SDK host) ships INSIDE the worker and is written into the container
 // at runtime, so its version always matches this deploy — no image rebuilds, no warm-pool staleness.
 import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
@@ -77,6 +79,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private opencode?: OpencodeClient
   private opencodeSessionId?: string
   private emittedParts = new Map<string, string>()
+  private cfAbort: AbortController | null = null
   private transcript: TranscriptState = emptyTranscript()
   private hydrated = false
 
@@ -353,6 +356,59 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
+  /** The Cloudflare-native harness: the agent loop runs right here in the DO, streaming live. */
+  private async runCfAgentTurn(text: string): Promise<void> {
+    const cfg = this.config()
+    const conn = await this.connections()
+    if (!hasProviderKey(cfg.provider, conn)) {
+      throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
+    }
+
+    this.setStatus('booting')
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
+    await this.ensureWorkspace(sandbox)
+    this.setStatus('busy')
+
+    const history = this.getKv<ModelMessage[]>('cfagent:messages', [])
+    history.push({ role: 'user', content: text })
+
+    const turnId = `a-${crypto.randomUUID()}`
+    this.emit({
+      t: 'turn.start',
+      turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', model: { providerId: cfg.provider, modelId: cfg.model }, parts: [] },
+    })
+    this.cfAbort = new AbortController()
+
+    try {
+      const { text: finalText, usage } = await runCfAgentLoop({
+        sandbox,
+        provider: cfg.provider,
+        model: cfg.model,
+        creds: conn,
+        mode: this.state.mode,
+        messages: history,
+        signal: this.cfAbort.signal,
+        emit: {
+          part: (part) => this.emit({ t: 'part.upsert', turnId, part }),
+          usage: (usage) => this.emit({ t: 'usage', usage }),
+        },
+      })
+      history.push({ role: 'assistant', content: finalText })
+      this.putKv('cfagent:messages', history.slice(-40))
+      this.emit({ t: 'turn.update', id: turnId, patch: { status: 'complete', usage, completedAt: Date.now() } })
+      this.setStatus('idle')
+      await this.checkpoint()
+    } catch (e) {
+      const message = (e as Error).message
+      const aborted = this.cfAbort?.signal.aborted ?? false
+      this.emit({ t: 'part.upsert', turnId, part: { kind: 'error', id: `${turnId}:err`, name: aborted ? 'aborted' : 'error', message: aborted ? 'Stopped.' : message } })
+      this.emit({ t: 'turn.update', id: turnId, patch: { status: aborted ? 'aborted' : 'error', completedAt: Date.now(), error: aborted ? undefined : { name: 'error', message } } })
+      this.setStatus(aborted ? 'idle' : 'error')
+    } finally {
+      this.cfAbort = null
+    }
+  }
+
   private async runBridgeTurn(text: string): Promise<void> {
     const cfg = this.config()
     const conn = await this.connections()
@@ -479,7 +535,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       : input.text
     const run = (async () => {
       if (input.attachments?.length) await this.copyAttachments(input.attachments)
-      return harness === 'opencode' ? this.runOpencodeTurn(text) : this.runBridgeTurn(text)
+      if (harness === 'opencode') return this.runOpencodeTurn(text)
+      if (harness === 'cfagent') return this.runCfAgentTurn(text)
+      return this.runBridgeTurn(text)
     })()
     void run.catch((err) => {
       const message = (err as Error).message
@@ -605,7 +663,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         await this.opencode.session.abort({ sessionID: this.opencodeSessionId } as never)
       } catch { /* ignore */ }
     }
-    if (this.config().harness !== 'opencode') {
+    this.cfAbort?.abort()
+    if (this.config().harness !== 'opencode' && this.config().harness !== 'cfagent') {
       const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
       await this.bridgeFetch(sandbox, 'POST', '/abort').catch(() => null)
     }
