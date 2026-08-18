@@ -138,17 +138,13 @@ export function useSession(sessionId: string): SessionApi {
   const send = useCallback(
     async (text: string) => {
       setError(null)
-      // optimistic user echo
+      const messageId = `u-${crypto.randomUUID()}`
+      // optimistic echo with the SAME id the server will use, so its upsert replaces this
       dispatch({
         type: 'upsert',
-        message: {
-          id: `local-${Date.now()}`,
-          role: 'user',
-          createdAt: new Date().toISOString(),
-          text,
-        },
+        message: { id: messageId, role: 'user', createdAt: new Date().toISOString(), text },
       })
-      await agentRef.current.stub.sendMessage({ text })
+      await agentRef.current.stub.sendMessage({ text, messageId })
     },
     [],
   )

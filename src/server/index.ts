@@ -30,13 +30,16 @@ app.post('/api/logout', (c) => {
   return c.json({ ok: true })
 })
 
-// --- auth: everything below requires an identity -------------------------------------------
-app.use('*', async (c, next) => {
+// --- auth: guard only the API and agent routes, never the static app --------------------------
+// (The SPA must always load so it can render the login screen and call /api/login.)
+const requireAuth = async (c: any, next: any) => {
   const identity = await resolveIdentity(c.req.raw, c.env)
   if (!identity) return c.json({ error: 'unauthenticated' }, 401)
   c.set('identity', identity)
   await next()
-})
+}
+app.use('/api/*', requireAuth)
+app.use('/agents/*', requireAuth)
 
 // --- api ------------------------------------------------------------------------------------
 app.get('/api/me', (c) => {

@@ -2,7 +2,7 @@ import { Agent, callable, getAgentByName } from 'agents'
 import { getSandbox } from '@cloudflare/sandbox'
 import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
-import { buildOpencodeProvider } from '../opencode-config'
+import { buildOpencodeConfig, hasProviderKey } from '../opencode-config'
 import type {
   Connections,
   Harness,
@@ -177,14 +177,15 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private async ensureOpencode(): Promise<void> {
     const cfg = this.config()
     const conn = await this.connections()
-    const { config } = buildOpencodeProvider(cfg.provider, cfg.model, conn)
+    const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn)
     this.setState({ ...this.state, bridge: 'booting' })
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
-    // Blank sessions run in /workspace; git/upload hydration comes in a later step.
-    const { client } = await createOpencode(sandbox, {
-      directory: '/workspace',
-      config,
-    })
+    // Boot OpenCode inside the sandbox with a hard timeout so a stuck container surfaces as an error.
+    const booted = createOpencode(sandbox, { directory: '/workspace', config })
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('OpenCode did not start in the sandbox within 120s.')), 120_000),
+    )
+    const { client } = (await Promise.race([booted, timeout])) as Awaited<typeof booted>
     this.opencode = client
     this.setState({ ...this.state, bridge: 'up' })
   }
@@ -208,10 +209,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   @callable()
-  async sendMessage(input: { text: string }): Promise<{ ok: true }> {
+  async sendMessage(input: { text: string; messageId?: string }): Promise<{ ok: true }> {
     const seq = this.nextSeq()
     const userMsg: Message & { seq: number } = {
-      id: `u-${Date.now()}`,
+      id: input.messageId ?? `u-${Date.now()}`,
       role: 'user',
       createdAt: new Date().toISOString(),
       text: input.text,
@@ -221,8 +222,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.broadcast(JSON.stringify({ t: 'message.upsert', message: userMsg }))
     this.setStatus('running')
 
-    // Run the turn in a durable fiber so an eviction mid-turn recovers cleanly.
     void this.runTurn(input.text).catch((err) => {
+      console.error('[dreamweav] turn failed:', (err as Error).stack ?? err)
       this.broadcast(JSON.stringify({ t: 'error', message: (err as Error).message }))
       this.setStatus('error')
     })
@@ -230,60 +231,103 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   private async runTurn(text: string): Promise<void> {
+    const log = (m: string, extra?: unknown) =>
+      console.log(`[dreamweav] ${m}`, extra !== undefined ? JSON.stringify(extra).slice(0, 500) : '')
     const cfg = this.config()
     const conn = await this.connections()
-    const { model } = buildOpencodeProvider(cfg.provider, cfg.model, conn)
+
+    if (!hasProviderKey(cfg.provider, conn)) {
+      throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
+    }
+
+    log('turn: booting opencode', { provider: cfg.provider, model: cfg.model })
     await this.ensureOpencode()
     const ocSession = await this.ensureOpencodeSession()
+    log('turn: opencode ready', { ocSession })
 
     const assistantId = `a-${Date.now()}`
     const seq = this.nextSeq()
     let assistantText = ''
-    const assistant: Message & { seq: number } = {
-      id: assistantId,
-      role: 'agent',
-      createdAt: new Date().toISOString(),
-      text: '',
-      steps: [],
-      seq,
-    }
-    this.persistMessage(assistant)
-    this.broadcast(JSON.stringify({ t: 'message.upsert', message: assistant }))
+    let bubbleShown = false
+    const steps: Record<string, { id: string; label: string; status: 'running' | 'done' | 'error' }> = {}
+    let tokensIn = this.state.usage.tokensIn
+    let tokensOut = this.state.usage.tokensOut
 
-    // Subscribe to the OpenCode event bus, then fire the prompt.
+    const showBubble = () => {
+      if (bubbleShown) return
+      bubbleShown = true
+      const assistant: Message & { seq: number } = {
+        id: assistantId, role: 'agent', createdAt: new Date().toISOString(), text: '', seq,
+      }
+      this.persistMessage(assistant)
+      this.broadcast(JSON.stringify({ t: 'message.upsert', message: assistant }))
+    }
+
     const events = await this.opencode!.event.subscribe()
+    log('turn: subscribed, prompting')
     await this.opencode!.session.promptAsync({
       sessionID: ocSession,
-      model,
       parts: [{ type: 'text', text }],
     } as never)
 
-    for await (const event of (events as { stream: AsyncIterable<Record<string, unknown>> }).stream) {
-      const type = event.type as string
-      const props = (event.properties ?? {}) as Record<string, unknown>
-      if (type === 'message.part.updated') {
-        const part = (props.part ?? {}) as Record<string, unknown>
-        if (part.sessionID && part.sessionID !== ocSession) continue
-        if (part.type === 'text' && typeof part.text === 'string') {
-          assistantText = part.text
-          this.broadcast(JSON.stringify({ t: 'text.set', messageId: assistantId, text: assistantText }))
-        } else if (part.type === 'tool') {
-          const tool = (part.tool ?? part.name ?? 'tool') as string
-          const step = { id: String(part.id ?? tool), label: String(tool), status: 'running' as const }
-          this.broadcast(JSON.stringify({ t: 'step.upsert', messageId: assistantId, step }))
+    const deadline = Date.now() + 5 * 60 * 1000
+    let sawAny = false
+    try {
+      for await (const event of (events as { stream: AsyncIterable<Record<string, unknown>> }).stream) {
+        if (Date.now() > deadline) throw new Error('Timed out waiting for the agent (5 min).')
+        const type = event.type as string
+        const props = (event.properties ?? {}) as Record<string, unknown>
+        if (!sawAny) { sawAny = true; log('turn: first event', { type }) }
+
+        if (type === 'message.part.updated') {
+          const part = (props.part ?? {}) as Record<string, any>
+          const pt = part.type as string
+          if (pt === 'text' && typeof part.text === 'string') {
+            assistantText = part.text
+            showBubble()
+            this.broadcast(JSON.stringify({ t: 'text.set', messageId: assistantId, text: assistantText }))
+          } else if (pt === 'tool') {
+            showBubble()
+            const tool = (part.tool ?? part.name ?? 'tool') as string
+            const status = (part.state?.status as string) === 'completed' ? 'done' : 'running'
+            const detail = part.state?.input?.filePath ?? part.state?.input?.command ?? part.state?.title
+            const step = { id: String(part.id ?? part.callID ?? tool), label: String(tool), status: status as 'running' | 'done', detail: detail ? String(detail).slice(0, 80) : undefined }
+            steps[step.id] = step
+            this.broadcast(JSON.stringify({ t: 'step.upsert', messageId: assistantId, step }))
+          } else if (pt === 'step-finish' && part.tokens) {
+            tokensIn += Number(part.tokens.input ?? 0)
+            tokensOut += Number(part.tokens.output ?? 0) + Number(part.tokens.reasoning ?? 0)
+            const costUsd = Number(part.cost ?? this.state.usage.costUsd)
+            this.setState({ ...this.state, usage: { tokensIn, tokensOut, costUsd } })
+            this.broadcast(JSON.stringify({ t: 'usage', tokensIn, tokensOut, costUsd }))
+          }
+        } else if (type === 'session.idle') {
+          const sid = (props.sessionID as string) ?? ((props.info as any)?.id as string)
+          if (!sid || sid === ocSession) { log('turn: idle'); break }
+        } else if (type === 'session.error') {
+          log('turn: session.error', props)
+          throw new Error(`Agent error: ${JSON.stringify(props).slice(0, 400)}`)
         }
-      } else if (type === 'session.idle') {
-        if ((props.sessionID ?? props.id) === ocSession) break
-      } else if (type === 'session.error') {
-        this.broadcast(JSON.stringify({ t: 'error', message: JSON.stringify(props) }))
-        break
       }
+    } finally {
+      log('turn: stream ended', { assistantLen: assistantText.length })
     }
 
-    assistant.text = assistantText
-    this.persistMessage(assistant)
-    this.broadcast(JSON.stringify({ t: 'message.upsert', message: assistant }))
+    if (!bubbleShown) {
+      showBubble()
+      assistantText = '_(The agent finished without producing a message — check the model id and your key.)_'
+    }
+    const final: Message & { seq: number } = {
+      id: assistantId, role: 'agent', createdAt: new Date().toISOString(),
+      text: assistantText, seq,
+      steps: Object.values(steps).length ? Object.values(steps) : undefined,
+    }
+    this.persistMessage(final)
+    this.broadcast(JSON.stringify({ t: 'message.upsert', message: final }))
     this.setStatus('idle')
+    void getAgentByName(this.env.UserAgent, cfg.owner).then((u) =>
+      u.upsertSessionSummary({ id: this.name, status: 'idle', costUsd: this.state.usage.costUsd, lastActivity: 'now' }),
+    )
   }
 
   @callable()

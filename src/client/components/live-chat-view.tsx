@@ -30,6 +30,7 @@ export function LiveChatView({ sessionId }: { sessionId: string }) {
   return (
     <ChatView
       session={session}
+      provider={(s.meta?.provider as import('~shared/protocol').Provider) ?? 'openrouter'}
       onSend={(text) => void s.send(text)}
       onChangeModel={(id) => void s.setModel(id)}
     />

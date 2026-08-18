@@ -1,24 +1,26 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, GitBranch, Layers, MoreHorizontal, Server } from 'lucide-react'
+import { GitBranch, Layers, MoreHorizontal, Server } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { MODELS } from '@/lib/mock-data'
-import type { PastedBlock, Session } from '~shared/protocol'
+import type { PastedBlock, Provider, Session } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { StatusDot, statusLabel } from './status-dot'
 import { TokenMeter } from './token-meter'
 import { MessageItem } from './message-item'
 import { Composer } from './composer'
 import { SubAgentPanel } from './subagent-panel'
+import { ModelPicker } from '../model-picker'
 
 export function ChatView({
   session,
+  provider,
   onSend,
   onChangeModel,
 }: {
   session: Session
+  provider: Provider
   onSend: (text: string, pasted: PastedBlock[]) => void
   onChangeModel: (modelId: string) => void
 }) {
@@ -57,7 +59,7 @@ export function ChatView({
               costUsd={session.costUsd}
               className="hidden md:flex"
             />
-            <ModelPicker value={session.model} onChange={onChangeModel} />
+            <ModelPicker value={session.model} provider={provider} onChange={onChangeModel} />
             <Button
               variant={showSubAgents ? 'secondary' : 'outline'}
               size="sm"
@@ -101,56 +103,6 @@ export function ChatView({
       {showSubAgents && session.subAgents.length > 0 && (
         <div className="hidden h-full w-80 shrink-0 md:block">
           <SubAgentPanel subAgents={session.subAgents} onClose={() => setShowSubAgents(false)} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ModelPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const current = MODELS.find((m) => m.id === value) ?? MODELS[0]
-
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [])
-
-  return (
-    <div ref={ref} className="relative">
-      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="hidden max-w-32 truncate sm:inline">{current.label}</span>
-        <span className="sm:hidden">{current.label.split(' ')[0]}</span>
-        <ChevronDown className="size-3.5 text-muted-foreground" />
-      </Button>
-      {open && (
-        <div className="absolute right-0 z-30 mt-1.5 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-xl">
-          {MODELS.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => {
-                onChange(m.id)
-                setOpen(false)
-              }}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted',
-                m.id === value && 'bg-muted',
-              )}
-            >
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate">{m.label}</span>
-                <span className="text-xs text-muted-foreground">{m.provider}</span>
-              </div>
-              <span className="shrink-0 font-mono text-[0.7rem] text-muted-foreground">
-                ${m.inputPerM}/${m.outputPerM}
-              </span>
-            </button>
-          ))}
         </div>
       )}
     </div>
