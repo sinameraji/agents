@@ -68,6 +68,14 @@ export function useUserAgent(userId: string): UserAgentApi {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
+  // Keep the index fresh: statuses/costs change server-side (turns, watchdog) and sessions can be
+  // created by the server itself (/fork), so poll lightly instead of trusting mount-time data.
+  useEffect(() => {
+    if (!connected) return
+    const t = setInterval(() => void refresh().catch(() => {}), 5000)
+    return () => clearInterval(t)
+  }, [connected, refresh])
+
   const createSession: UserAgentApi['createSession'] = useCallback(async (input) => {
     const { id } = (await agentRef.current.stub.createSession(input)) as { id: string }
     await refresh()

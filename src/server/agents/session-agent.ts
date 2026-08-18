@@ -86,6 +86,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private opencodeSessionId?: string
   private emittedParts = new Map<string, string>()
   private cfAbort: AbortController | null = null
+  /** Bumped by stop() and every new turn; in-flight poll loops exit when their captured value goes stale. */
+  private turnGen = 0
   private transcript: TranscriptState = emptyTranscript()
   private hydrated = false
 
@@ -364,6 +366,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   /** The Cloudflare-native harness: the agent loop runs right here in the DO, streaming live. */
   private async runCfAgentTurn(text: string): Promise<void> {
+    const gen = this.turnGen
     const cfg = this.config()
     const conn = await this.connections()
     if (!hasProviderKey(cfg.provider, conn)) {
@@ -402,20 +405,23 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       history.push({ role: 'assistant', content: finalText })
       this.putKv('cfagent:messages', history.slice(-40))
       this.emit({ t: 'turn.update', id: turnId, patch: { status: 'complete', usage, completedAt: Date.now() } })
-      this.setStatus('idle')
-      await this.checkpoint()
+      if (this.turnGen === gen) {
+        this.setStatus('idle')
+        await this.checkpoint()
+      }
     } catch (e) {
       const message = (e as Error).message
       const aborted = this.cfAbort?.signal.aborted ?? false
       this.emit({ t: 'part.upsert', turnId, part: { kind: 'error', id: `${turnId}:err`, name: aborted ? 'aborted' : 'error', message: aborted ? 'Stopped.' : message } })
       this.emit({ t: 'turn.update', id: turnId, patch: { status: aborted ? 'aborted' : 'error', completedAt: Date.now(), error: aborted ? undefined : { name: 'error', message } } })
-      this.setStatus(aborted ? 'idle' : 'error')
+      if (this.turnGen === gen) this.setStatus(aborted ? 'idle' : 'error')
     } finally {
       this.cfAbort = null
     }
   }
 
   private async runBridgeTurn(text: string): Promise<void> {
+    const gen = this.turnGen
     const cfg = this.config()
     const conn = await this.connections()
     if (cfg.harness === 'kimiflare') {
@@ -445,8 +451,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     let stable = 0
     let lastSnapshot = ''
     try {
-      while (Date.now() < deadline) {
+      while (Date.now() < deadline && this.turnGen === gen) {
         await new Promise((r) => setTimeout(r, 600))
+        if (this.turnGen !== gen) break
         const res = await this.bridgeFetch(sandbox, 'GET', '/state')
         const state = (res?.json ?? {}) as { status?: string; turns?: NormTurn[]; todos?: TranscriptState['todos']; permissions?: TranscriptState['permissions'] }
         // The bridge's last assistant turn holds this prompt's parts.
@@ -478,10 +485,15 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         if (state.status === 'idle' && stable >= 1) break
       }
     } finally {
-      for (const turn of this.transcript.turns) {
-        if (turn.role === 'assistant' && turn.status === 'streaming') this.emit({ t: 'turn.update', id: turn.id, patch: { status: 'complete', completedAt: Date.now() } })
+      if (this.turnGen === gen) {
+        for (const turn of this.transcript.turns) {
+          if (turn.role === 'assistant' && turn.status === 'streaming') this.emit({ t: 'turn.update', id: turn.id, patch: { status: 'complete', completedAt: Date.now() } })
+        }
+      } else {
+        this.emit({ t: 'turn.update', id: turnId, patch: { status: 'aborted', completedAt: Date.now() } })
       }
     }
+    if (this.turnGen !== gen) return
     this.setStatus('idle')
     await this.checkpoint()
   }
@@ -568,6 +580,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   /** Kick off the harness turn for an (already transcript-visible) user message. */
   private startTurn(input: QueuedMessage): void {
+    this.turnGen += 1
     this.setStatus('busy')
     const harness = this.config().harness
     const promptText = input.runText ?? input.text
@@ -607,6 +620,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   private async runOpencodeTurn(text: string): Promise<void> {
+    const gen = this.turnGen
     const cfg = this.config()
     const conn = await this.connections()
     if (!hasProviderKey(cfg.provider, conn)) {
@@ -642,8 +656,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     let sawComplete = false
     let loggedPollError = false
     try {
-      while (Date.now() < deadline) {
+      while (Date.now() < deadline && this.turnGen === gen) {
         await new Promise((r) => setTimeout(r, 600))
+        if (this.turnGen !== gen) break
         const res = await client.session
           .messages({ sessionID: ocSession } as never)
           .catch((e: unknown) => {
@@ -710,12 +725,17 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         if (sawComplete && stable >= 1) break
       }
     } finally {
-      for (const turn of this.transcript.turns) {
-        if (turn.role === 'assistant' && turn.status === 'streaming') {
-          this.emit({ t: 'turn.update', id: turn.id, patch: { status: 'complete', completedAt: Date.now() } })
+      if (this.turnGen === gen) {
+        for (const turn of this.transcript.turns) {
+          if (turn.role === 'assistant' && turn.status === 'streaming') {
+            this.emit({ t: 'turn.update', id: turn.id, patch: { status: 'complete', completedAt: Date.now() } })
+          }
         }
+      } else {
+        this.emit({ t: 'turn.update', id: turnId, patch: { status: 'aborted', completedAt: Date.now() } })
       }
     }
+    if (this.turnGen !== gen) return
     this.setStatus('idle')
     await this.checkpoint()
   }
@@ -723,6 +743,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   @callable()
   async stop(): Promise<{ ok: true }> {
     this.putKv('queue', []) // stop means stop: drop queued follow-ups too
+    this.turnGen += 1 // in-flight poll loops see the stale generation and exit
     if (this.opencode && this.opencodeSessionId) {
       try {
         await this.opencode.session.abort({ sessionID: this.opencodeSessionId } as never)
