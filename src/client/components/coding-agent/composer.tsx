@@ -1,11 +1,19 @@
 'use client'
 
-import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
-import { ArrowUp, AtSign, Paperclip } from 'lucide-react'
+import {
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+} from 'react'
+import { ArrowUp, AtSign, File as FileIcon, Loader2, Paperclip, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { countLines } from '~shared/format'
 import type { PastedBlock } from '~shared/protocol'
+import { uploadFiles, type UploadedAttachment } from '@/lib/upload'
 import { Button } from '@/components/ui/button'
 import { PastedBlock as PastedChip } from './pasted-block'
 
@@ -15,16 +23,28 @@ const CHAR_THRESHOLD = 240
 
 let pasteSeq = 0
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function Composer({
   onSend,
   sessionName,
 }: {
-  onSend: (text: string, pasted: PastedBlock[]) => void
+  onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   sessionName: string
 }) {
   const [text, setText] = useState('')
   const [pasted, setPasted] = useState<PastedBlock[]>([])
+  const [attachments, setAttachments] = useState<UploadedAttachment[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragDepth = useRef(0)
 
   const detectLanguage = (content: string): string | undefined => {
     if (/^\s*(import |export |const |function |=>)/m.test(content)) return 'ts'
@@ -52,13 +72,61 @@ export function Composer({
     }
   }
 
-  const canSend = text.trim().length > 0 || pasted.length > 0
+  const uploadSelected = async (files: File[]) => {
+    if (files.length === 0) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const uploaded = await uploadFiles(files)
+      setAttachments((prev) => [...prev, ...uploaded])
+    } catch (err) {
+      setUploadError((err as Error).message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    void uploadSelected(files)
+  }
+
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    dragDepth.current += 1
+    setDragging(true)
+  }
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+  }
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    dragDepth.current -= 1
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0
+      setDragging(false)
+    }
+  }
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    dragDepth.current = 0
+    setDragging(false)
+    void uploadSelected(Array.from(e.dataTransfer.files))
+  }
+
+  const canSend = text.trim().length > 0 || pasted.length > 0 || attachments.length > 0
 
   const submit = () => {
     if (!canSend) return
-    onSend(text.trim(), pasted)
+    onSend(text.trim(), pasted, attachments)
     setText('')
     setPasted([])
+    setAttachments([])
+    setUploadError(null)
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -72,8 +140,17 @@ export function Composer({
   return (
     <div className="border-t border-border bg-background/80 px-4 py-3 backdrop-blur">
       <div className="mx-auto w-full max-w-3xl">
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-2 shadow-sm transition-colors focus-within:border-primary/50">
-          {pasted.length > 0 && (
+        <div
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={cn(
+            'flex flex-col gap-2 rounded-xl border border-border bg-card p-2 shadow-sm transition-colors focus-within:border-primary/50',
+            dragging && 'border-primary bg-primary/5',
+          )}
+        >
+          {(pasted.length > 0 || attachments.length > 0) && (
             <div className="flex flex-wrap gap-2 px-1 pt-1">
               {pasted.map((block) => (
                 <PastedChip
@@ -81,6 +158,30 @@ export function Composer({
                   block={block}
                   onRemove={() => setPasted((prev) => prev.filter((b) => b.id !== block.id))}
                 />
+              ))}
+              {attachments.map((file) => (
+                <span
+                  key={file.key}
+                  className="group inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-muted/60 py-1 pr-1 pl-2 text-sm text-foreground/90 transition-colors hover:border-primary/40 hover:bg-muted"
+                >
+                  <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate font-mono text-xs" title={file.name}>
+                    {file.name}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {formatSize(file.size)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAttachments((prev) => prev.filter((f) => f.key !== file.key))
+                    }
+                    aria-label={`Remove ${file.name}`}
+                    className="grid size-4 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
               ))}
             </div>
           )}
@@ -97,15 +198,38 @@ export function Composer({
           />
 
           <div className="flex items-center gap-1 px-1">
-            <Button variant="ghost" size="icon-sm" aria-label="Attach file">
-              <Paperclip className="size-4" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={handleFileInput}
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={uploading ? 'Uploading files' : 'Attach file'}
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Paperclip className="size-4" />
+              )}
             </Button>
             <Button variant="ghost" size="icon-sm" aria-label="Mention a file">
               <AtSign className="size-4" />
             </Button>
-            <span className="ml-1 hidden text-xs text-muted-foreground sm:inline">
-              Paste large snippets — they collapse into a chip
-            </span>
+            {uploadError ? (
+              <span className="ml-1 truncate text-xs text-destructive">{uploadError}</span>
+            ) : (
+              <span className="ml-1 hidden text-xs text-muted-foreground sm:inline">
+                Paste large snippets — they collapse into a chip
+              </span>
+            )}
             <Button
               size="icon"
               className={cn('ml-auto rounded-lg', !canSend && 'opacity-50')}

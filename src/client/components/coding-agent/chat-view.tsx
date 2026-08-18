@@ -124,7 +124,17 @@ export function ChatView({ session }: { session: SessionApi }) {
             </Button>
           </div>
         )}
-        <Composer onSend={(text) => void session.send(text)} sessionName={meta?.name ?? 'session'} />
+        <Composer
+          onSend={(text, _pasted, attachments) =>
+            void (
+              session.send as (
+                text: string,
+                attachments?: { key: string; name: string; size: number }[],
+              ) => Promise<void>
+            )(text, attachments)
+          }
+          sessionName={meta?.name ?? 'session'}
+        />
       </div>
     </div>
     {dockOpen && (

@@ -47,7 +47,7 @@ export interface SessionApi {
   todos: NormTodo[]
   permissions: NormPermission[]
   connected: boolean
-  send: (text: string) => Promise<void>
+  send: (text: string, attachments?: { key: string; name: string; size: number }[]) => Promise<void>
   stop: () => Promise<void>
   setModel: (id: string) => Promise<void>
   setMode: (mode: SessionMode) => Promise<void>
@@ -109,7 +109,7 @@ export function useSession(sessionId: string): SessionApi {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, attachments?: { key: string; name: string; size: number }[]) => {
     const messageId = `u-${crypto.randomUUID()}`
     // optimistic echo with the SAME id the server will use, so its turn.start replaces this
     dispatch({
@@ -125,7 +125,7 @@ export function useSession(sessionId: string): SessionApi {
         },
       },
     })
-    await agentRef.current.stub.sendMessage({ text, messageId })
+    await agentRef.current.stub.sendMessage({ text, messageId, attachments })
   }, [])
 
   const stop = useCallback(async () => {

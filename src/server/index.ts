@@ -4,6 +4,7 @@ import { proxyToSandbox } from '@cloudflare/sandbox'
 import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
 import { fetchOpenRouterModels } from './api/models'
+import { handleUpload } from './api/uploads'
 
 export { UserAgent } from './agents/user-agent'
 export { SessionAgent } from './agents/session-agent'
@@ -57,6 +58,8 @@ app.get('/api/models', async (c) => {
     return c.json({ models: [], error: (err as Error).message }, 502)
   }
 })
+
+app.post('/api/uploads', handleUpload)
 
 // --- agents (WebSocket + HTTP) ---------------------------------------------------------------
 app.all('/agents/*', async (c) => {

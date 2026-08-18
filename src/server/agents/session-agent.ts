@@ -258,6 +258,24 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
+  /** Copy uploaded files from R2 into the sandbox at /workspace/uploads/. */
+  private async copyAttachments(attachments: { key: string; name: string; size: number }[]): Promise<void> {
+    try {
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '20m' })
+      await sandbox.mkdir('/workspace/uploads', { recursive: true }).catch(() => null)
+      for (const att of attachments) {
+        const obj = await this.env.STORE.get(att.key)
+        if (!obj) continue
+        const bytes = new Uint8Array(await obj.arrayBuffer())
+        await sandbox.writeFile(`/workspace/uploads/${att.name}`, bytes as never).catch((e) => {
+          console.error('[dreamweav] attachment copy failed', att.name, e)
+        })
+      }
+    } catch (e) {
+      console.error('[dreamweav] copyAttachments failed', e)
+    }
+  }
+
   /** Snapshot /workspace to R2 so it survives container sleep. */
   private async checkpoint(): Promise<void> {
     try {
@@ -426,7 +444,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   // --- the turn -----------------------------------------------------------------------------
   @callable()
-  async sendMessage(input: { text: string; messageId?: string }): Promise<{ ok: true }> {
+  async sendMessage(input: { text: string; messageId?: string; attachments?: { key: string; name: string; size: number }[] }): Promise<{ ok: true }> {
     this.hydrate()
     const id = input.messageId ?? `u-${crypto.randomUUID()}`
     const userTurn: NormTurn = {
@@ -434,7 +452,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       role: 'user',
       createdAt: Date.now(),
       status: 'complete',
-      parts: [{ kind: 'text', id: `${id}:text`, text: input.text }],
+      parts: [
+        { kind: 'text', id: `${id}:text`, text: input.text },
+        ...(input.attachments?.length
+          ? [{ kind: 'text' as const, id: `${id}:att`, text: input.attachments.map((a) => `📎 ${a.name}`).join(' · ') }]
+          : []),
+      ],
     }
     this.emit({ t: 'turn.start', turn: userTurn })
     // Auto-title: the first prompt names an untitled session.
@@ -445,7 +468,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
     this.setStatus('busy')
     const harness = this.config().harness
-    const run = harness === 'opencode' ? this.runOpencodeTurn(input.text) : this.runBridgeTurn(input.text)
+    const text = input.attachments?.length
+      ? `${input.text}\n\n[The user attached ${input.attachments.length} file(s), copied into ./uploads/: ${input.attachments.map((a) => a.name).join(', ')}]`
+      : input.text
+    const run = (async () => {
+      if (input.attachments?.length) await this.copyAttachments(input.attachments)
+      return harness === 'opencode' ? this.runOpencodeTurn(text) : this.runBridgeTurn(text)
+    })()
     void run.catch((err) => {
       const message = (err as Error).message
       console.error('[dreamweav] turn failed:', (err as Error).stack ?? err)
