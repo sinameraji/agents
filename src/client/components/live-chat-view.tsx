@@ -27,10 +27,18 @@ export function LiveChatView({ sessionId }: { sessionId: string }) {
     }
   }, [sessionId, s.meta, s.usage, s.messages])
 
+  const status = s.meta?.status
+  const last = s.messages[s.messages.length - 1]
+  const working = (status === 'running' || status === 'provisioning') && last?.role !== 'agent'
+  const workingLabel =
+    s.bridge === 'booting' ? 'Booting the sandbox…' : status === 'provisioning' ? 'Provisioning…' : 'Working…'
+
   return (
     <ChatView
       session={session}
       provider={(s.meta?.provider as import('~shared/protocol').Provider) ?? 'openrouter'}
+      working={working}
+      workingLabel={workingLabel}
       onSend={(text) => void s.send(text)}
       onChangeModel={(id) => void s.setModel(id)}
     />

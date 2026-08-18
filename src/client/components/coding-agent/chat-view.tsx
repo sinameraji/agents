@@ -12,15 +12,20 @@ import { MessageItem } from './message-item'
 import { Composer } from './composer'
 import { SubAgentPanel } from './subagent-panel'
 import { ModelPicker } from '../model-picker'
+import { WorkingIndicator } from '../working-indicator'
 
 export function ChatView({
   session,
   provider,
+  working,
+  workingLabel,
   onSend,
   onChangeModel,
 }: {
   session: Session
   provider: Provider
+  working?: boolean
+  workingLabel?: string
   onSend: (text: string, pasted: PastedBlock[]) => void
   onChangeModel: (modelId: string) => void
 }) {
@@ -30,7 +35,7 @@ export function ChatView({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [session.messages.length, session.id])
+  }, [session.messages.length, session.id, working])
 
   return (
     <div className="flex h-full min-w-0 flex-1">
@@ -94,6 +99,7 @@ export function ChatView({
             {session.messages.map((message) => (
               <MessageItem key={message.id} message={message} />
             ))}
+            {working && <WorkingIndicator label={workingLabel ?? 'Working…'} />}
           </div>
         </div>
 
