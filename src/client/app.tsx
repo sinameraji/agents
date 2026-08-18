@@ -1,5 +1,10 @@
-import { Workspace } from './components/coding-agent/workspace'
+import { RouterProvider } from './router'
+import { WorkspaceShell } from './components/workspace-shell'
 
 export function App() {
-  return <Workspace />
+  return (
+    <RouterProvider>
+      <WorkspaceShell />
+    </RouterProvider>
+  )
 }

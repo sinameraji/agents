@@ -4,7 +4,7 @@ import { GitBranch, Plus, Settings, Terminal } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { formatCost } from '~shared/format'
-import type { Session } from '~shared/protocol'
+import type { SessionSummary } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { StatusDot, statusLabel } from './status-dot'
 import { ThemeToggle } from './theme-toggle'
@@ -15,13 +15,17 @@ export function SessionSidebar({
   onSelect,
   onNew,
   onOpenSettings,
+  email,
 }: {
-  sessions: Session[]
+  sessions: SessionSummary[]
   activeId: string
   onSelect: (id: string) => void
   onNew: () => void
   onOpenSettings: () => void
+  email: string
 }) {
+  const initials = email.slice(0, 2).toUpperCase()
+  const handle = email.split('@')[0]
   return (
     <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       <header className="flex items-center gap-2 px-3 pt-3 pb-2">
@@ -96,11 +100,11 @@ export function SessionSidebar({
 
       <footer className="flex items-center gap-1 border-t border-sidebar-border px-3 py-2.5">
         <div className="grid size-7 place-items-center rounded-full bg-secondary text-xs font-medium text-secondary-foreground">
-          PC
+          {initials}
         </div>
         <div className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate text-xs font-medium">Patrick C.</span>
-          <span className="truncate text-[0.65rem] text-muted-foreground">Pro workspace</span>
+          <span className="truncate text-xs font-medium">{handle}</span>
+          <span className="truncate text-[0.65rem] text-muted-foreground">{email}</span>
         </div>
         <div className="ml-auto flex items-center">
           <ThemeToggle />

@@ -90,8 +90,8 @@ export interface ModelInfo {
 export type Harness = 'pi' | 'opencode' | 'kimiflare' | 'aisdk'
 
 export const HARNESSES: { id: Harness; label: string; blurb: string; enabled: boolean }[] = [
-  { id: 'pi', label: 'pi', blurb: 'Minimal, fast agent by Mario Zechner', enabled: true },
-  { id: 'opencode', label: 'OpenCode', blurb: 'Sub-agents, permissions, LSP (by Anomaly)', enabled: false },
+  { id: 'opencode', label: 'OpenCode', blurb: 'Sub-agents, permissions, LSP (by Anomaly)', enabled: true },
+  { id: 'pi', label: 'pi', blurb: 'Minimal, fast agent by Mario Zechner', enabled: false },
   { id: 'kimiflare', label: 'KimiFlare', blurb: 'Kimi K2 on your Cloudflare account', enabled: false },
   { id: 'aisdk', label: 'Built-in', blurb: 'Vercel AI SDK loop — zero extra deps', enabled: false },
 ]
@@ -122,7 +122,7 @@ export interface UserSettings {
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  defaultHarness: 'pi',
+  defaultHarness: 'opencode',
   defaultProvider: 'openrouter',
   defaultModel: 'anthropic/claude-sonnet-4.5',
   approvalMode: 'auto',

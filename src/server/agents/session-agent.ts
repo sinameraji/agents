@@ -106,7 +106,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       harness: config.harness,
       provider: config.provider,
       model: config.model,
-      status: 'provisioning',
+      status: config.source.kind === 'blank' ? 'idle' : 'provisioning',
       region: 'iad1',
       createdAt: new Date().toISOString(),
       lastActivity: 'now',
@@ -296,6 +296,15 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       }
     }
     this.setStatus('idle')
+    return { ok: true }
+  }
+
+  @callable()
+  setModel(model: string): { ok: true } {
+    const cfg = this.config()
+    this.putKv('config', { ...cfg, model })
+    if (this.state.meta) this.setState({ ...this.state, meta: { ...this.state.meta, model } })
+    void getAgentByName(this.env.UserAgent, cfg.owner).then((u) => u.upsertSessionSummary({ id: this.name, model }))
     return { ok: true }
   }
 
