@@ -3,3 +3,7 @@
 DEV_USER_EMAIL=you@example.com
 # 32 random bytes, base64 — used to encrypt stored provider keys.  openssl rand -base64 32
 ENCRYPTION_KEY=
+# Interim password gate (until Cloudflare Access fronts the app)
+OWNER_EMAIL=you@example.com
+APP_PASSWORD=choose-a-strong-password
+AUTH_SECRET=   # openssl rand -base64 32

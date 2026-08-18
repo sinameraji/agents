@@ -32,6 +32,7 @@
   ],
   "r2_buckets": [{ "binding": "STORE", "bucket_name": "dreamweav-store" }],
   "vars": {
-    "APP_NAME": "Dreamweav"
+    "APP_NAME": "Dreamweav",
+    "OWNER_EMAIL": "sina.meraji@gmail.com"
   }
 }

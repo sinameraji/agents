@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { routeAgentRequest } from 'agents'
 import { proxyToSandbox } from '@cloudflare/sandbox'
 import { resolveIdentity, type Identity } from './auth/access'
+import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
 import { fetchOpenRouterModels } from './api/models'
 
 export { UserAgent } from './agents/user-agent'
@@ -13,6 +14,21 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 /** Header we set (never trust from the client) so agents can authorize per-user access. */
 export const USER_HEADER = 'x-dreamweav-user'
+
+// --- login (unauthenticated) ---------------------------------------------------------------
+app.post('/api/login', async (c) => {
+  const { password } = (await c.req.json().catch(() => ({}))) as { password?: string }
+  if (!password || !(await checkPassword(password, c.env))) {
+    return c.json({ error: 'invalid password' }, 401)
+  }
+  c.header('Set-Cookie', await mintSessionCookie(c.env))
+  return c.json({ ok: true })
+})
+
+app.post('/api/logout', (c) => {
+  c.header('Set-Cookie', clearSessionCookie())
+  return c.json({ ok: true })
+})
 
 // --- auth: everything below requires an identity -------------------------------------------
 app.use('*', async (c, next) => {

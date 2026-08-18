@@ -7,11 +7,12 @@ import { SettingsDialog } from './coding-agent/settings-dialog'
 import { LiveChatView } from './live-chat-view'
 import { NewSession } from './new-session'
 import { EmptyState } from './empty-state'
+import { LoginScreen } from './login-screen'
 
 export function WorkspaceShell() {
   const { me, loading } = useMe()
   if (loading) return <FullScreen>Connecting…</FullScreen>
-  if (!me) return <FullScreen>Not signed in. This workspace sits behind Cloudflare Access.</FullScreen>
+  if (!me) return <LoginScreen />
   return <Shell userId={me.id} email={me.email} />
 }
 

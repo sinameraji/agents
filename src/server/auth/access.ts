@@ -1,3 +1,5 @@
+import { emailFromSessionCookie } from './session'
+
 /**
  * Identity resolution.
  *
@@ -16,6 +18,7 @@ interface AccessEnv {
   DEV_USER_EMAIL?: string
   ACCESS_TEAM_DOMAIN?: string
   ACCESS_AUD?: string
+  AUTH_SECRET?: string
 }
 
 interface Jwk extends JsonWebKey {
@@ -88,6 +91,7 @@ export async function resolveIdentity(request: Request, env: AccessEnv): Promise
       ?.slice('CF_Authorization='.length) ??
     null
   if (jwt) email = await verifyAccessJwt(jwt, env)
+  if (!email) email = await emailFromSessionCookie(request, env)
   if (!email && env.DEV_USER_EMAIL) email = env.DEV_USER_EMAIL
   if (!email) return null
   return { id: await userIdFromEmail(email), email }
