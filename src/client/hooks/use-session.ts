@@ -57,6 +57,9 @@ export interface SessionApi {
   harnessCommands: () => Promise<{ name: string; description?: string }[]>
   runCustomCommand: (name: string) => Promise<string>
   rename: (name: string) => Promise<void>
+  fork: () => Promise<{ id?: string; note: string }>
+  gitStatus: () => Promise<{ repo: boolean; branch: string; dirty: number; remote: string | null; lastCommit: string | null }>
+  gitExport: (input: { message?: string; branch?: string; openPr?: boolean }) => Promise<{ ok: boolean; note: string; branchUrl?: string; prUrl?: string }>
   listFiles: (path?: string) => Promise<{ name: string; path: string; isDirectory: boolean; size: number }[]>
   readFile: (path: string) => Promise<string | null>
   writeFile: (path: string, content: string) => Promise<boolean>
@@ -165,6 +168,16 @@ export function useSession(sessionId: string): SessionApi {
   const rename = useCallback(async (name: string) => {
     await agentRef.current.stub.rename(name)
   }, [])
+  const fork = useCallback(async () => {
+    const r = (await agentRef.current.stub.fork()) as { id?: string; note?: string }
+    return { id: r.id, note: r.note ?? 'Forked.' }
+  }, [])
+  const gitStatus = useCallback(async () => {
+    return (await agentRef.current.stub.gitStatus()) as { repo: boolean; branch: string; dirty: number; remote: string | null; lastCommit: string | null }
+  }, [])
+  const gitExport = useCallback(async (input: { message?: string; branch?: string; openPr?: boolean }) => {
+    return (await agentRef.current.stub.gitExport(input)) as { ok: boolean; note: string; branchUrl?: string; prUrl?: string }
+  }, [])
   const listFiles = useCallback(async (path?: string) => {
     const r = (await agentRef.current.stub.listFiles(path)) as { files: { name: string; path: string; isDirectory: boolean; size: number }[] }
     return r.files
@@ -201,6 +214,9 @@ export function useSession(sessionId: string): SessionApi {
     harnessCommands,
     runCustomCommand,
     rename,
+    fork,
+    gitStatus,
+    gitExport,
     listFiles,
     readFile,
     writeFile,

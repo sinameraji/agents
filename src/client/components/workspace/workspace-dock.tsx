@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
-import { Eye, Files, SlidersHorizontal, X } from 'lucide-react'
+import { Eye, Files, GitBranch, SlidersHorizontal, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { SessionApi } from '@/hooks/use-session'
@@ -9,8 +9,9 @@ import { Button } from '@/components/ui/button'
 import { PreviewPanel } from './preview-panel'
 import { FilesPanel } from './files-panel'
 import { ConfigPanel } from './config-panel'
+import { GitPanel } from './git-panel'
 
-type Tab = 'preview' | 'files' | 'config'
+type Tab = 'preview' | 'files' | 'git' | 'config'
 
 export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('files')
@@ -33,6 +34,12 @@ export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClo
             label="Files"
           />
           <TabButton
+            active={tab === 'git'}
+            onClick={() => setTab('git')}
+            icon={<GitBranch className="size-3.5" />}
+            label="Git"
+          />
+          <TabButton
             active={tab === 'config'}
             onClick={() => setTab('config')}
             icon={<SlidersHorizontal className="size-3.5" />}
@@ -53,6 +60,7 @@ export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClo
       <div className="min-h-0 flex-1">
         {tab === 'preview' && <PreviewPanel session={session} />}
         {tab === 'files' && <FilesPanel session={session} />}
+        {tab === 'git' && <GitPanel session={session} />}
         {tab === 'config' && <ConfigPanel session={session} />}
       </div>
     </aside>

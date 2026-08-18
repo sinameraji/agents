@@ -15,12 +15,14 @@ import { ModelPicker } from '../model-picker'
 import { Transcript } from '../transcript/transcript'
 import { TodoList } from '../transcript/parts/todo-list'
 import { WorkspaceDock } from '../workspace/workspace-dock'
+import { SubagentsPanel } from './subagents-panel'
 
 export function ChatView({ session }: { session: SessionApi }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [dockOpen, setDockOpen] = useState(false)
   const [editingName, setEditingName] = useState<string | null>(null)
   const [dynamicCommands, setDynamicCommands] = useState<{ name: string; description?: string }[]>([])
+  const [subagentsOpen, setSubagentsOpen] = useState(false)
   const dynFetchedFor = useRef<string | null>(null)
   const { navigate } = useRouter()
   const meta = session.meta
@@ -175,6 +177,12 @@ export function ChatView({ session }: { session: SessionApi }) {
               { id: 'workspace', label: 'Workspace', hint: 'toggle the side panel', run: () => setDockOpen((v) => !v) },
               { id: 'new', label: 'New session', hint: 'start another session', run: () => navigate('/new') },
               { id: 'clear', label: 'Clear', hint: 'wipe this conversation', run: () => void session.runCommand('clearTranscript') },
+              {
+                id: 'fork',
+                label: 'Fork',
+                hint: 'duplicate session (workspace + transcript)',
+                run: () => void session.fork().then((r) => r.id && navigate(`/s/${r.id}`)),
+              },
               ...(meta?.harness === 'opencode'
                 ? [
                     { id: 'compact', label: 'Compact', hint: 'summarize older turns', run: () => void session.runCommand('compact') },
@@ -242,7 +250,12 @@ export function ChatView({ session }: { session: SessionApi }) {
                 direction="up"
                 onChange={(id) => void session.setModel(id)}
               />
-              <Button variant="ghost" size="icon-sm" disabled aria-label="Sub-agents">
+              <Button
+                variant={subagentsOpen ? 'secondary' : 'ghost'}
+                size="icon-sm"
+                aria-label="Sub-agents"
+                onClick={() => setSubagentsOpen((v) => !v)}
+              >
                 <Layers className="size-4" />
               </Button>
             </>
@@ -255,8 +268,24 @@ export function ChatView({ session }: { session: SessionApi }) {
               ) => Promise<void>
             )(text, attachments)
           }
+          busy={busy}
+          onSteer={(text, _pasted, attachments) =>
+            void session.stop().then(() =>
+              (
+                session.send as (
+                  text: string,
+                  attachments?: { key: string; name: string; size: number }[],
+                ) => Promise<void>
+              )(text, attachments),
+            )
+          }
           sessionName={meta?.name ?? 'session'}
         />
+        <div className="pointer-events-none absolute inset-x-0 bottom-full">
+          <div className="pointer-events-auto relative mx-auto w-full max-w-3xl px-4">
+            <SubagentsPanel turns={session.turns} open={subagentsOpen} onClose={() => setSubagentsOpen(false)} />
+          </div>
+        </div>
       </div>
     </div>
     {dockOpen && (

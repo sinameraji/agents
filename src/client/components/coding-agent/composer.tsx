@@ -8,7 +8,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react'
-import { ArrowUp, AtSign, File as FileIcon, Loader2, Paperclip, SquareSlash, X } from 'lucide-react'
+import { ArrowUp, AtSign, File as FileIcon, Loader2, Paperclip, SquareSlash, X, Zap } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { countLines } from '~shared/format'
@@ -43,6 +43,8 @@ export function Composer({
   commands,
   listFiles,
   onCommandMenuOpen,
+  busy,
+  onSteer,
 }: {
   onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   sessionName: string
@@ -51,6 +53,9 @@ export function Composer({
   listFiles?: () => Promise<string[]>
   /** Called when the '/' menu opens — lets the host lazily fetch harness-specific commands. */
   onCommandMenuOpen?: () => void
+  /** While the agent runs a turn: Enter queues, and the steer control interrupts-and-sends. */
+  busy?: boolean
+  onSteer?: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
 }) {
   const [text, setText] = useState('')
   const [pasted, setPasted] = useState<PastedBlock[]>([])
@@ -172,6 +177,15 @@ export function Composer({
     setUploadError(null)
   }
 
+  const steer = () => {
+    if (!canSend || !onSteer) return
+    onSteer(text.trim(), pasted, attachments)
+    setText('')
+    setPasted([])
+    setAttachments([])
+    setUploadError(null)
+  }
+
   const menuItems: { id: string; label: string; hint?: string }[] = (() => {
     if (!menu) return []
     if (menu.kind === 'command') {
@@ -236,7 +250,8 @@ export function Composer({
     }
     if (e.key === 'Enter' && !e.shiftKey && !composing) {
       e.preventDefault()
-      submit()
+      if (busy && e.altKey && onSteer) steer()
+      else submit()
     }
   }
 
@@ -333,7 +348,11 @@ export function Composer({
             onBlur={() => setTimeout(() => setMenu(null), 150)}
             onKeyDown={handleKeyDown}
             rows={2}
-            placeholder={`Message the agent working on "${sessionName}"…`}
+            placeholder={
+              busy
+                ? 'Agent is working — Enter queues your message for when it finishes…'
+                : `Message the agent working on "${sessionName}"…`
+            }
             className="scrollbar-thin max-h-48 min-h-11 w-full resize-none bg-transparent px-2 py-1 text-[0.95rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70"
           />
 
@@ -382,19 +401,35 @@ export function Composer({
             </Button>
             {extras}
             {uploadError && <span className="ml-1 truncate text-xs text-destructive">{uploadError}</span>}
+            {busy && onSteer && (
+              <Button
+                variant="outline"
+                size="icon"
+                className={cn('ml-auto rounded-lg', !canSend && 'opacity-50')}
+                disabled={!canSend}
+                onClick={steer}
+                aria-label="Interrupt and steer"
+                title="Interrupt the current turn and send this now (⌥ Enter)"
+              >
+                <Zap className="size-4" />
+              </Button>
+            )}
             <Button
               size="icon"
-              className={cn('ml-auto rounded-lg', !canSend && 'opacity-50')}
+              className={cn(!(busy && onSteer) && 'ml-auto', 'rounded-lg', !canSend && 'opacity-50')}
               disabled={!canSend}
               onClick={submit}
-              aria-label="Send message"
+              aria-label={busy ? 'Queue message' : 'Send message'}
+              title={busy ? 'Queue — runs when the agent finishes (Enter)' : 'Send (Enter)'}
             >
               <ArrowUp className="size-4" />
             </Button>
           </div>
         </div>
         <p className="mt-1.5 px-1 text-center text-[0.7rem] text-muted-foreground/70">
-          Enter to send · Shift + Enter for a new line
+          {busy
+            ? 'Enter queues · ⌥ Enter interrupts & steers · Shift + Enter for a new line'
+            : 'Enter to send · Shift + Enter for a new line'}
         </p>
       </div>
     </div>
