@@ -23,7 +23,7 @@ function Shell({ userId, email }: { userId: string; email: string }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const main = useMemo(() => {
-    if (path === '/new') return <NewSession ua={ua} />
+    if (path === '/new') return <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
     if (sessionId) return <LiveChatView key={sessionId} sessionId={sessionId} />
     return <EmptyState onNew={() => navigate('/new')} hasSessions={ua.sessions.length > 0} />
     // eslint-disable-next-line react-hooks/exhaustive-deps

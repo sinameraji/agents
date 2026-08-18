@@ -416,6 +416,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       if (!conn.cloudflareAccountId || !conn.cloudflareApiToken) {
         throw new Error('KimiFlare runs on YOUR Cloudflare account: add your Cloudflare Account ID and API token (and optionally an AI Gateway id) in Settings → Cloudflare AI Gateway.')
       }
+      const verify = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
+        headers: { Authorization: `Bearer ${conn.cloudflareApiToken}` },
+      }).then((r) => r.json() as Promise<{ success?: boolean }>).catch(() => ({ success: false }))
+      if (!verify.success) {
+        throw new Error('Your Cloudflare API token was rejected (invalid or expired). Create a fresh token with Workers AI + AI Gateway permissions and update it in Settings → Cloudflare AI Gateway.')
+      }
     } else if (!hasProviderKey(cfg.provider, conn)) {
       throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
     }

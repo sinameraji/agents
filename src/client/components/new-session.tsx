@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 
 type Source = 'github' | 'blank'
 
-export function NewSession({ ua }: { ua: UserAgentApi }) {
+export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSettings?: () => void }) {
   const { navigate } = useRouter()
   const [source, setSource] = useState<Source>('github')
   const [url, setUrl] = useState('')
@@ -103,6 +103,20 @@ export function NewSession({ ua }: { ua: UserAgentApi }) {
             ))}
           </div>
         </section>
+
+        {harness === 'kimiflare' && (!ua.connections?.cloudflareApiToken || !ua.connections?.cloudflareAccountId) && (
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5">
+            <p className="text-sm text-foreground/90">
+              KimiFlare runs on <span className="font-medium">your own Cloudflare account</span>. Add your
+              Account ID and an API token (Workers AI + AI Gateway) to authenticate.
+            </p>
+            {onOpenSettings && (
+              <Button variant="secondary" size="sm" className="shrink-0" onClick={onOpenSettings}>
+                Open Settings
+              </Button>
+            )}
+          </div>
+        )}
 
         {err && <p className="text-sm text-destructive">{err}</p>}
 
