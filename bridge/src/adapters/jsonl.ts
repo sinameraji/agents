@@ -8,7 +8,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 export class JsonlProcess {
   private proc: ChildProcessWithoutNullStreams
   private buf = ''
-  constructor(command: string, args: string[], opts: { cwd: string; env: Record<string, string | undefined> }, onEvent: (ev: Record<string, unknown>) => void) {
+  constructor(command: string, args: string[], opts: { cwd: string; env: Record<string, string | undefined> }, onEvent: (ev: Record<string, unknown>) => void, onFatal?: (message: string) => void) {
     this.proc = spawn(command, args, { cwd: opts.cwd, env: { ...process.env, ...opts.env } })
     this.proc.stdout.on('data', (chunk: Buffer) => {
       this.buf += chunk.toString('utf8')
@@ -25,6 +25,10 @@ export class JsonlProcess {
       }
     })
     this.proc.stderr.on('data', () => {})
+    this.proc.on('error', (e) => onFatal?.(`${command}: ${e.message} — is the CLI installed in the sandbox image?`))
+    this.proc.on('exit', (code) => {
+      if (code && code !== 0) onFatal?.(`${command} exited with code ${code}`)
+    })
   }
   send(obj: unknown) {
     this.proc.stdin.write(JSON.stringify(obj) + '\n')

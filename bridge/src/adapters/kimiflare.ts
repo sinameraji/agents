@@ -47,7 +47,10 @@ export function createKimiflareAdapter(): HarnessAdapter {
           CLOUDFLARE_API_TOKEN: c.creds.cloudflareApiToken,
           CLOUDFLARE_AI_GATEWAY_ID: c.creds.cloudflareGatewayId,
         },
-      }, handle)
+      }, handle, (message) => {
+        sink?.done({ name: 'harness', message })
+        resolveDone?.()
+      })
       proc.send({ type: 'new_session' })
     },
     async prompt(text, s) {

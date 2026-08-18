@@ -62,7 +62,10 @@ export function createPiAdapter(): HarnessAdapter {
       if (c.creds.anthropicKey) auth.anthropic = { type: 'api_key', key: c.creds.anthropicKey }
       if (c.creds.openaiKey) auth.openai = { type: 'api_key', key: c.creds.openaiKey }
       await fs.writeFile(path.join(dir, 'auth.json'), JSON.stringify(auth, null, 2), { mode: 0o600 })
-      proc = new JsonlProcess('pi', ['--mode', 'rpc', '--provider', PI_PROVIDER[c.provider], '--model', c.model, '--no-approve'], { cwd: c.cwd, env: {} }, handle)
+      proc = new JsonlProcess('pi', ['--mode', 'rpc', '--provider', PI_PROVIDER[c.provider], '--model', c.model, '--no-approve'], { cwd: c.cwd, env: {} }, handle, (message) => {
+        sink?.done({ name: 'harness', message })
+        resolveDone?.()
+      })
     },
     async prompt(text, s) {
       sink = s

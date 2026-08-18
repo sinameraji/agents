@@ -356,7 +356,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private async runBridgeTurn(text: string): Promise<void> {
     const cfg = this.config()
     const conn = await this.connections()
-    if (!hasProviderKey(cfg.provider, conn)) throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
+    if (cfg.harness === 'kimiflare') {
+      if (!conn.cloudflareAccountId || !conn.cloudflareApiToken) {
+        throw new Error('KimiFlare runs on YOUR Cloudflare account: add your Cloudflare Account ID and API token (and optionally an AI Gateway id) in Settings → Cloudflare AI Gateway.')
+      }
+    } else if (!hasProviderKey(cfg.provider, conn)) {
+      throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
+    }
 
     this.setStatus('booting')
     const sandbox = await this.ensureBridge()
