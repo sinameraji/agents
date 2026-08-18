@@ -21,7 +21,7 @@ RUN git config --system user.email "agent@dreamweav.com" \
 RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent kimiflare || true
 
 # The Dreamweav bridge (built by `npm run build -w bridge`). rev-3 (single-file, no code-split)
-RUN mkdir -p /opt/dreamweav && rm -f /opt/dreamweav/bridge.mjs   # bridge-rev-6 cache-bust
+RUN mkdir -p /opt/dreamweav && rm -f /opt/dreamweav/bridge.mjs   # bridge-rev-7 cache-bust
 COPY bridge/dist/bridge.mjs /opt/dreamweav/bridge.mjs
 
 EXPOSE 7700 4096 3000 5173 8080

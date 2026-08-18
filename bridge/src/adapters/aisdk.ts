@@ -56,7 +56,7 @@ export function createAiSdkAdapter(): HarnessAdapter {
   return {
     async start(c) {
       cfg = c
-      messages = [{ role: 'system', content: SYSTEM }]
+      messages = []
     },
     async prompt(text, sink: AdapterSink) {
       const { url, key, model } = baseURL(cfg)
@@ -136,7 +136,8 @@ export function createAiSdkAdapter(): HarnessAdapter {
 
       try {
         const result = streamText({
-          model: provider(model),
+          model: provider.chatModel(model),
+          system: SYSTEM,
           messages,
           tools,
           stopWhen: stepCountIs(readonly ? 12 : 40),
