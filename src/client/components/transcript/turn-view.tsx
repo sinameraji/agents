@@ -1,4 +1,5 @@
-import { Sparkles, User } from 'lucide-react'
+import { useState } from 'react'
+import { Check, Copy, Sparkles, User } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NormTurn } from '~shared/agent'
@@ -27,12 +28,37 @@ function Avatar({ isUser }: { isUser: boolean }) {
   )
 }
 
+function CopyTurnButton({ turn }: { turn: NormTurn }) {
+  const [copied, setCopied] = useState(false)
+  const text = turn.parts
+    .filter((p): p is Extract<NormTurn['parts'][number], { kind: 'text' }> => p.kind === 'text')
+    .map((p) => p.text)
+    .join('\n\n')
+  if (!text) return null
+  return (
+    <button
+      type="button"
+      aria-label="Copy message"
+      title="Copy message"
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        })
+      }}
+      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover/turn:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 max-sm:opacity-60"
+    >
+      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+    </button>
+  )
+}
+
 /** One turn of the transcript: a user message, or an assistant's ordered stream of parts. */
 export function TurnView({ turn }: { turn: NormTurn }) {
   const isUser = turn.role === 'user'
 
   return (
-    <div className="flex gap-3">
+    <div className="group/turn flex gap-3">
       <Avatar isUser={isUser} />
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <div className="flex items-center gap-2">
@@ -40,6 +66,7 @@ export function TurnView({ turn }: { turn: NormTurn }) {
           <span className="font-mono text-xs text-muted-foreground">
             {timestamp(turn.createdAt)}
           </span>
+          <CopyTurnButton turn={turn} />
         </div>
 
         {isUser ? (

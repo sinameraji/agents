@@ -103,16 +103,23 @@ function Shell({ userId, email }: { userId: string; email: string }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // First-time = no sessions yet: the 3-step wizard IS the home screen (and /new) until the
-  // first session exists. Step 1 adapts to whatever a Cloudflare/GitHub login already provisioned.
+  // The wizard is only for accounts that have never been set up: no sessions AND no credentials.
+  // A configured user with zero sessions (e.g. they deleted them all) goes straight to the
+  // create-session form with their saved defaults.
   const conn = ua.connections
-  const firstTime = conn !== null && ua.sessions.length === 0
+  const configured =
+    !!conn?.openrouterKey || !!conn?.anthropicKey || !!conn?.openaiKey ||
+    (!!conn?.cloudflareApiToken && !!conn?.cloudflareAccountId)
+  const firstTime = conn !== null && ua.sessions.length === 0 && !configured
   const main = useMemo(() => {
     if (sessionId) return <LiveChatView key={sessionId} sessionId={sessionId} />
     if (path === '/new') {
       return firstTime ? <Onboarding ua={ua} /> : <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
     }
     if (firstTime) return <Onboarding ua={ua} />
+    if (ua.sessions.length === 0 && conn !== null) {
+      return <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
+    }
     return <EmptyState onNew={() => navigate('/new')} hasSessions={ua.sessions.length > 0} />
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, sessionId, ua.sessions.length, conn, firstTime])
