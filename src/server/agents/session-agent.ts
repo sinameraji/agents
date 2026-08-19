@@ -254,14 +254,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     try {
       const conn = await this.connections()
       if (!conn.githubPat) return
-      const marker = `gitcred:${conn.githubPat.slice(-6)}`
-      if (this.getKv<string | null>('gitcredMarker', null) === marker) return
+      // Unconditional: the container disk is ephemeral, so a "done" marker would outlive the
+      // credentials it refers to. One fast exec per turn is the price of correctness.
       const login = 'x-access-token'
       await sandbox.exec(
         `sh -lc 'git config --global credential.helper store; git config --global user.name dreamweav; git config --global user.email agent@dreamweav.com; printf "https://${login}:%s@github.com\n" "${conn.githubPat}" > ~/.git-credentials; chmod 600 ~/.git-credentials'`,
         { timeout: 20_000 },
       )
-      this.putKv('gitcredMarker', marker)
     } catch (e) {
       console.error('[dreamweav] git credential setup failed', e)
     }
