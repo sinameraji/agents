@@ -254,7 +254,9 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
         result?: Array<{ id?: string }>
       }
       const list = Array.isArray(res.result) ? res.result : []
-      return (list.find((g) => g.id === 'dreamweav') ?? list[0])?.id ?? null
+      // Only ever adopt OUR gateway — silently reusing an unrelated one would mix the user's
+      // other projects' logs and costs into Dreamweav.
+      return list.find((g) => g.id === 'dreamweav')?.id ?? null
     }
     let id = await pick()
     if (!id) {
