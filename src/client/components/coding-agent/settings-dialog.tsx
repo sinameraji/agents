@@ -421,7 +421,6 @@ function DomainSection({ ua }: { ua: UserAgentApi }) {
   const [manual, setManual] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; note: string; needsReconnect?: boolean } | null>(null)
 
-  const cfConnected = !!ua.connections?.cloudflareApiToken
 
   const wireAuto = async () => {
     setBusy(true)
@@ -463,7 +462,7 @@ function DomainSection({ ua }: { ua: UserAgentApi }) {
         className="h-10 rounded-lg border border-border bg-background px-3 font-mono text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
       />
 
-      {cfConnected && !manual ? (
+      {!manual ? (
         <>
           <Button size="sm" className="mt-1 gap-2 self-start bg-[#F6821F] text-white hover:bg-[#e2760f]" disabled={busy || !domain.trim()} onClick={() => void wireAuto()}>
             <CloudflareMark fill="#fff" className="size-4" />
@@ -497,11 +496,9 @@ function DomainSection({ ua }: { ua: UserAgentApi }) {
             <Button size="sm" disabled={busy || !domain.trim() || !token.trim()} onClick={() => void wireManual()}>
               {busy ? 'Wiring…' : 'Wire domain'}
             </Button>
-            {cfConnected && (
-              <button type="button" onClick={() => setManual(false)} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
-                Use my Cloudflare login instead
-              </button>
-            )}
+            <button type="button" onClick={() => setManual(false)} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              Use my Cloudflare login instead
+            </button>
           </div>
         </>
       )}
