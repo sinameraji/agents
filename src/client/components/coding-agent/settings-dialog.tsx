@@ -140,15 +140,9 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
               )}
             </label>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Used in two places: the <span className="font-medium text-foreground/80">KimiFlare</span> harness
-              (Kimi K2 on your Workers AI), and the{' '}
-              <span className="font-medium text-foreground/80">Cloudflare AI Gateway</span> model provider —
-              OpenCode, Built-in, and Agents SDK sessions can route their LLM calls through your own gateway
-              for caching, request logs, and cost tracking. Create a custom API token with{' '}
-              <span className="font-mono">Workers AI:Read · AI Gateway:Read · AI Gateway:Edit</span> at{' '}
-              <HelpLink href="https://dash.cloudflare.com/profile/api-tokens">dash.cloudflare.com/profile/api-tokens</HelpLink>.
-              Your Account ID is on the right side of any zone page in the{' '}
-              <HelpLink href="https://dash.cloudflare.com">dashboard</HelpLink>.
+              Powers KimiFlare and AI Gateway routing. Token scopes:{' '}
+              <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span> —{' '}
+              <HelpLink href="https://dash.cloudflare.com/profile/api-tokens">create one</HelpLink>
             </p>
             <div className="grid grid-cols-2 gap-2">
               <input
@@ -156,6 +150,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
                 onChange={(e) => setCfAccount(e.target.value)}
                 placeholder={ua.connections?.cloudflareAccountId ? `Account ID · saved (${ua.connections.cloudflareAccountId})` : 'Account ID'}
                 aria-label="Cloudflare Account ID"
+                title="Find it on any zone page in the Cloudflare dashboard"
                 className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
               />
               <input
@@ -181,10 +176,9 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
               GitHub token {patStored && <span className="text-xs font-normal text-success">· saved ({patStored})</span>}
             </label>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Used to clone private repos and for the workspace Git tab (push branches, create repos, open PRs).
-              Generate a <span className="font-medium text-foreground/80">classic token</span> with the{' '}
-              <span className="font-mono">repo</span> scope at{' '}
-              <HelpLink href="https://github.com/settings/tokens">github.com/settings/tokens</HelpLink>.
+              For private repos and the Git tab (push, PRs). Classic token,{' '}
+              <span className="font-mono">repo</span> scope —{' '}
+              <HelpLink href="https://github.com/settings/tokens">create one</HelpLink>
             </p>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
               <KeyRound className="size-4 shrink-0 text-muted-foreground" />
