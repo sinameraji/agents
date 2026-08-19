@@ -70,3 +70,19 @@ export const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.
   pi: PiMark,
   kimiflare: KimiFlareMark,
 }
+
+/** One shared provider-id → logomark map (used by pickers and the session header). */
+export const PROVIDER_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
+  openrouter: OpenRouterMark,
+  cloudflare: CloudflareMark,
+  anthropic: AnthropicMark,
+  openai: OpenAIMark,
+}
+
+/** Human labels for providers, for chips/headers. */
+export const PROVIDER_LABELS: Record<string, string> = {
+  openrouter: 'OpenRouter',
+  cloudflare: 'Cloudflare AI Gateway',
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+}

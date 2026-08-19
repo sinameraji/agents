@@ -9,6 +9,22 @@
 import type { AdapterSink, HarnessAdapter, StartConfig } from './types'
 import { JsonlProcess } from './jsonl'
 
+/** The registry ids KimiFlare actually serves (kimiflare src/models/registry.ts). */
+const KIMIFLARE_IDS = new Set([
+  '@cf/moonshotai/kimi-k2.7-code',
+  '@cf/moonshotai/kimi-k2.6',
+  '@cf/moonshotai/kimi-k2.5',
+  'moonshotai/kimi-k3',
+  '@cf/zai-org/glm-5.2',
+])
+
+/** Map a Dreamweav model id to a KimiFlare registry id, or undefined to use KimiFlare's default. */
+function kimiflareModel(model: string | undefined): string | undefined {
+  if (!model) return undefined
+  const id = model.replace(/^workers-ai\//, '')
+  return KIMIFLARE_IDS.has(id) ? id : undefined
+}
+
 export function createKimiflareAdapter(): HarnessAdapter {
   let proc: JsonlProcess | null = null
   let mode: 'plan' | 'build' | 'auto' = 'build'
@@ -103,6 +119,10 @@ export function createKimiflareAdapter(): HarnessAdapter {
           accountId: c.creds.cloudflareAccountId,
           apiToken: c.creds.cloudflareApiToken,
           aiGatewayId: c.creds.cloudflareGatewayId || undefined,
+          // KimiFlare takes a registry id (@cf/moonshotai/kimi-k2.7-code or moonshotai/kimi-k3);
+          // Dreamweav stores Workers AI models with a workers-ai/ prefix, so strip it. Only pass
+          // a recognized Kimi/GLM id — otherwise let KimiFlare use its own default.
+          model: kimiflareModel(c.model),
         },
       })
     },

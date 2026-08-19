@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Bot, Check, Copy, Download, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'lucide-react'
 
 import type { SessionApi } from '@/hooks/use-session'
-import { HARNESS_MARKS } from '../brand-marks'
+import { HARNESS_MARKS, PROVIDER_MARKS, PROVIDER_LABELS } from '../brand-marks'
 import { HARNESSES } from '~shared/protocol'
 import { useRouter } from '@/router'
 import { Button } from '@/components/ui/button'
@@ -256,6 +256,15 @@ export function ChatView({ session }: { session: SessionApi }) {
               <span className="font-medium text-foreground/90">{harnessLabel}</span>
             </span>
           )}
+          {meta?.provider && (
+            <span className="hidden items-center gap-1.5 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs text-muted-foreground lg:flex">
+              {(() => {
+                const Mark = PROVIDER_MARKS[meta.provider]
+                return Mark ? <Mark className="size-3.5" /> : null
+              })()}
+              <span className="font-medium text-foreground/90">{PROVIDER_LABELS[meta.provider] ?? meta.provider}</span>
+            </span>
+          )}
           <TokenMeter
             tokensIn={session.usage.tokensIn}
             tokensOut={session.usage.tokensOut}
@@ -391,6 +400,7 @@ export function ChatView({ session }: { session: SessionApi }) {
               <ModelPicker
                 value={meta?.model ?? ''}
                 provider={meta?.provider ?? 'openrouter'}
+                harness={meta?.harness}
                 direction="up"
                 onChange={(id) => void session.setModel(id)}
               />

@@ -3,26 +3,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Loader2, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { ModelInfo, Provider } from '~shared/protocol'
+import type { Harness, ModelInfo, Provider } from '~shared/protocol'
 
 const PAGE = 40
 
-// Cache per provider so reopening is instant.
+// Cache per (provider, harness) so reopening is instant and KimiFlare's filtered list is distinct.
 const cache = new Map<string, ModelInfo[]>()
 
 export function ModelPicker({
   value,
   provider,
+  harness,
   onChange,
   direction = 'down',
 }: {
   value: string
   provider: Provider
+  harness?: Harness
   onChange: (id: string) => void
   direction?: 'up' | 'down'
 }) {
+  // KimiFlare serves a fixed set regardless of provider; everything else is keyed by provider.
+  const key = harness === 'kimiflare' ? 'kimiflare' : provider
+  const query$ = harness === 'kimiflare' ? `provider=${provider}&harness=kimiflare` : `provider=${provider}`
   const [open, setOpen] = useState(false)
-  const [models, setModels] = useState<ModelInfo[]>(() => cache.get(provider) ?? [])
+  const [models, setModels] = useState<ModelInfo[]>(() => cache.get(key) ?? [])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
   const [limit, setLimit] = useState(PAGE)
@@ -42,21 +47,21 @@ export function ModelPicker({
 
   // Load-on-open (lazy): fetch the provider's catalog the first time the menu opens.
   useEffect(() => {
-    if (!open || cache.has(provider)) {
-      if (cache.has(provider)) setModels(cache.get(provider)!)
+    if (!open || cache.has(key)) {
+      if (cache.has(key)) setModels(cache.get(key)!)
       return
     }
     setLoading(true)
-    fetch(`/api/models?provider=${provider}`)
+    fetch(`/api/models?${query$}`)
       .then((r) => r.json())
       .then((d: { models?: ModelInfo[] }) => {
         const list = d.models ?? []
-        cache.set(provider, list)
+        cache.set(key, list)
         setModels(list)
       })
       .catch(() => setModels([]))
       .finally(() => setLoading(false))
-  }, [open, provider])
+  }, [open, key, query$])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

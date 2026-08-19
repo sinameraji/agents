@@ -106,8 +106,65 @@ app.get('/api/me', (c) => {
   return c.json({ id, email })
 })
 
+// KimiFlare's supported models, from its registry (src/models/registry.ts in sinameraji/kimiflare):
+// the @cf/ ones are Workers AI (run on the account directly, gateway optional); kimi-k3 is a
+// Cloudflare-catalog model that ONLY works via unified billing (AI Gateway credits).
+const KIMIFLARE_MODELS = [
+  { id: 'workers-ai/@cf/moonshotai/kimi-k2.7-code', label: 'Kimi K2.7 Code · Workers AI', provider: 'cloudflare', inputPerM: 0.95, outputPerM: 4 },
+  { id: 'workers-ai/@cf/moonshotai/kimi-k2.6', label: 'Kimi K2.6 · Workers AI', provider: 'cloudflare', inputPerM: 0.95, outputPerM: 4 },
+  { id: 'workers-ai/@cf/moonshotai/kimi-k2.5', label: 'Kimi K2.5 · Workers AI', provider: 'cloudflare', inputPerM: 0.55, outputPerM: 2.19 },
+  { id: 'moonshotai/kimi-k3', label: 'Kimi K3 · unified billing', provider: 'cloudflare', inputPerM: 3, outputPerM: 15 },
+  { id: 'workers-ai/@cf/zai-org/glm-5.2', label: 'GLM 5.2 · Workers AI', provider: 'cloudflare', inputPerM: 1.4, outputPerM: 4.4 },
+]
+
+// Fallback unified-billing catalog if the live fetch fails. Kept current by hand as a safety net.
+const UNIFIED_FALLBACK = [
+  { id: 'openai/gpt-5.6-sol', label: 'gpt-5.6-sol · unified billing', provider: 'cloudflare', inputPerM: 1.25, outputPerM: 7.5 },
+  { id: 'openai/gpt-5.6-luna', label: 'gpt-5.6-luna · unified billing', provider: 'cloudflare', inputPerM: 0.1, outputPerM: 0.6 },
+  { id: 'openai/gpt-5.1', label: 'gpt-5.1 · unified billing', provider: 'cloudflare', inputPerM: 1.25, outputPerM: 10 },
+  { id: 'openai/gpt-4.1-mini', label: 'gpt-4.1-mini · unified billing', provider: 'cloudflare', inputPerM: 0.4, outputPerM: 1.6 },
+  { id: 'anthropic/claude-sonnet-4.5', label: 'claude-sonnet-4.5 · unified billing', provider: 'cloudflare', inputPerM: 3, outputPerM: 15 },
+  { id: 'anthropic/claude-haiku-4.5', label: 'claude-haiku-4.5 · unified billing', provider: 'cloudflare', inputPerM: 1, outputPerM: 5 },
+]
+
+/** Live unified-billing catalog from the gateway's OpenAI-compatible /models list, filtered to
+ *  chat models from providers Cloudflare bills on the user's behalf. Empty array on any failure. */
+async function fetchUnifiedCatalog(acct: string, token: string, gatewayId: string): Promise<Array<{ id: string; label: string; provider: string; inputPerM: number; outputPerM: number }>> {
+  if (!gatewayId) return []
+  try {
+    const res = (await fetch(`https://gateway.ai.cloudflare.com/v1/${acct}/${gatewayId}/compat/models`, {
+      headers: { 'cf-aig-authorization': `Bearer ${token}` },
+    }).then((r) => r.json())) as { data?: Array<{ id?: string; owned_by?: string; cost_in?: number; cost_out?: number }> }
+    if (!Array.isArray(res.data)) return []
+    const UNIFIED_OWNERS = new Set(['openai', 'anthropic', 'google-ai-studio', 'xai', 'groq'])
+    // Non-chat / specialized / duplicate variants that shouldn't clutter a coding-model picker.
+    const EXCLUDE = /(:batch|embed|whisper|tts|dall|image|imagen|realtime|moderation|audio|transcribe|rerank|robotics|live|translate|omni|-vision|guard|banana|-search|lyria|veo|deep-research|computer-use|clip|learnlm|aqa|-\d{8}$)/i
+    return res.data
+      .filter((m) => {
+        if (!m.id || !UNIFIED_OWNERS.has(String(m.owned_by))) return false
+        // Skip malformed doubled-owner ids like "anthropic/anthropic/..." or "xai/xai/...".
+        const parts = m.id.split('/')
+        if (parts.length > 2 && parts[0] === parts[1]) return false
+        return !EXCLUDE.test(m.id)
+      })
+      .map((m) => ({
+        id: m.id!,
+        label: `${m.id!.split('/').pop()} · unified billing`,
+        provider: 'cloudflare',
+        inputPerM: (m.cost_in ?? 0) * 1_000_000,
+        outputPerM: (m.cost_out ?? 0) * 1_000_000,
+      }))
+  } catch {
+    return []
+  }
+}
+
 app.get('/api/models', async (c) => {
   const provider = c.req.query('provider') ?? 'openrouter'
+  const harness = c.req.query('harness')
+  // KimiFlare only runs Kimi/GLM models on the user's Cloudflare — show exactly those.
+  if (harness === 'kimiflare') return c.json({ models: KIMIFLARE_MODELS })
+
   if (provider === 'openrouter') {
     try {
       return c.json({ models: await fetchOpenRouterModels() })
@@ -116,20 +173,12 @@ app.get('/api/models', async (c) => {
     }
   }
   if (provider === 'cloudflare') {
-    // Workers AI models from the user's own account (billed by Cloudflare), plus popular
-    // upstreams reachable through the gateway's unified billing.
-    // Verified against the unified-billing catalog (accounts/{id}/ai/v1): these exact ids work.
-    const unified = [
-      { id: 'openai/gpt-5.1', label: 'gpt-5.1 (unified billing)', provider: 'cloudflare', inputPerM: 1.25, outputPerM: 10 },
-      { id: 'openai/gpt-4.1-mini', label: 'gpt-4.1-mini (unified billing)', provider: 'cloudflare', inputPerM: 0.4, outputPerM: 1.6 },
-      { id: 'anthropic/claude-sonnet-4.5', label: 'claude-sonnet-4.5 (unified billing)', provider: 'cloudflare', inputPerM: 3, outputPerM: 15 },
-      { id: 'anthropic/claude-haiku-4.5', label: 'claude-haiku-4.5 (unified billing)', provider: 'cloudflare', inputPerM: 1, outputPerM: 5 },
-    ]
     try {
       const identity = c.get('identity')
       const user = await getAgentByName(c.env.UserAgent, identity.id)
-      const conn = (await user.getDecryptedConnections()) as { cloudflareAccountId?: string; cloudflareApiToken?: string }
+      const conn = (await user.getDecryptedConnections()) as { cloudflareAccountId?: string; cloudflareApiToken?: string; cloudflareGatewayId?: string }
       if (conn.cloudflareAccountId && conn.cloudflareApiToken) {
+        // Workers AI models from the user's own account (billed by Cloudflare Workers AI).
         const res = (await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${conn.cloudflareAccountId}/ai/models/search?task=Text%20Generation&per_page=100`,
           { headers: { authorization: `Bearer ${conn.cloudflareApiToken}` } },
@@ -137,15 +186,19 @@ app.get('/api/models', async (c) => {
         const wai = (res.result ?? [])
           .map((m) => String(m.name ?? ''))
           .filter(Boolean)
-          .map((name) => ({ id: `workers-ai/${name}`, label: name.replace('@cf/', ''), provider: 'cloudflare', inputPerM: 0, outputPerM: 0 }))
+          .map((name) => ({ id: `workers-ai/${name}`, label: `${name.replace('@cf/', '')} · Workers AI`, provider: 'cloudflare', inputPerM: 0, outputPerM: 0 }))
+        // Unified-billing vendor models, LIVE from the gateway catalog so new models (e.g. a
+        // freshly-added gpt-5.6-sol) appear automatically. Fall back to the curated set.
+        const live = await fetchUnifiedCatalog(conn.cloudflareAccountId, conn.cloudflareApiToken, conn.cloudflareGatewayId ?? '')
+        const unified = live.length ? live : UNIFIED_FALLBACK
         return c.json({ models: [...wai, ...unified] })
       }
     } catch { /* fall through to the static list */ }
     return c.json({
       models: [
-        { id: 'workers-ai/@cf/openai/gpt-oss-120b', label: 'gpt-oss-120b (Workers AI)', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
-        { id: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'llama-3.3-70b (Workers AI)', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
-        ...unified,
+        { id: 'workers-ai/@cf/openai/gpt-oss-120b', label: 'gpt-oss-120b · Workers AI', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
+        { id: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'llama-3.3-70b · Workers AI', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
+        ...UNIFIED_FALLBACK,
       ],
     })
   }
