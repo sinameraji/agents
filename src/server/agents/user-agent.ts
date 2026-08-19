@@ -132,6 +132,21 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     return { id }
   }
 
+  /** Factory-reset this account: every session (transcripts + sandboxes) and all settings and
+   *  encrypted connections. The user sees the app exactly as a brand-new user would. */
+  @callable()
+  async resetAccount(): Promise<{ ok: true; sessions: number }> {
+    const rows = this.sql<{ id: string }>`SELECT id FROM sessions`
+    for (const r of rows) {
+      await getAgentByName(this.env.SessionAgent, r.id)
+        .then((sa) => sa.wipe())
+        .catch(() => null)
+    }
+    this.sql`DELETE FROM sessions`
+    this.sql`DELETE FROM settings`
+    return { ok: true, sessions: rows.length }
+  }
+
   @callable()
   deleteSession(id: string): { ok: true } {
     this.sql`DELETE FROM sessions WHERE id = ${id}`

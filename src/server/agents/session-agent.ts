@@ -1089,6 +1089,24 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return this.noted({ ok: true, note: `Forked → “${name}”. ${snapshotNote}; the harness starts fresh context there.`, id })
   }
 
+  /** Erase this session completely: transcript, kv (config/creds refs/queue), synced state, and
+   *  its sandbox. Server-to-server only (no @callable) — used by UserAgent.resetAccount(). */
+  async wipe(): Promise<{ ok: true }> {
+    this.turnGen += 1 // kill any in-flight poll loops
+    this.sql`DELETE FROM turns`
+    this.sql`DELETE FROM kv`
+    this.transcript = emptyTranscript()
+    this.hydrated = true
+    this.emittedParts.clear()
+    this.opencode = undefined
+    this.opencodeSessionId = undefined
+    this.setState({ meta: null, status: 'idle', mode: 'build', usage: { tokensIn: 0, tokensOut: 0, costUsd: 0 } })
+    try {
+      await getSandbox(this.env.Sandbox, `sess-${this.name}`).destroy()
+    } catch { /* already gone */ }
+    return { ok: true }
+  }
+
   /** Seed a freshly-created session from a fork: workspace backup pointer + transcript.
    *  Server-to-server only (no @callable): fork() calls it right after creating the child. */
   async adoptFork(input: { backup: unknown; turns: NormTurn[]; todos: TranscriptState['todos'] }): Promise<{ ok: boolean }> {

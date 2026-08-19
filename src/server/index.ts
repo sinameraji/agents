@@ -75,6 +75,14 @@ app.post('/api/connections', async (c) => {
   return c.json(res)
 })
 
+// Factory reset: wipe every session, sandbox, setting, and stored credential for this user.
+app.post('/api/reset', async (c) => {
+  const identity = c.get('identity')
+  const user = await getAgentByName(c.env.UserAgent, identity.id)
+  const res = await user.resetAccount()
+  return c.json(res)
+})
+
 // Download the session workspace as a gzipped tarball, streamed straight from the sandbox.
 app.get('/api/sessions/:id/export', async (c) => {
   const identity = c.get('identity')
