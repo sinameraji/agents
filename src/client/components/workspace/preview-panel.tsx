@@ -20,7 +20,8 @@ export function PreviewPanel({
   const [failed, setFailed] = useState(false)
   const [failReason, setFailReason] = useState<'nothing-listening' | 'expose-failed' | 'reserved-port' | null>(null)
 
-  // Every port the session has ever surfaced (agent-declared or detected): one-click switches.
+  // Ports the session has surfaced (agent-declared or detected) — but only ones that answer
+  // RIGHT NOW get a chip. History is not a menu; a dead server's chip is just a future error.
   const knownPorts = useMemo(
     () => [
       ...new Set(
@@ -28,9 +29,25 @@ export function PreviewPanel({
           t.parts.filter((p): p is Extract<(typeof t.parts)[number], { kind: 'preview' }> => p.kind === 'preview').map((p) => p.port),
         ),
       ),
-    ],
+    ].filter((p) => p !== 3000),
     [session.turns],
   )
+  const [livePorts, setLivePorts] = useState<number[] | null>(null)
+  useEffect(() => {
+    if (!knownPorts.length) {
+      setLivePorts([])
+      return
+    }
+    let alivePoll = true
+    void session
+      .checkPorts(knownPorts)
+      .then((r) => alivePoll && setLivePorts(r.alive))
+      .catch(() => alivePoll && setLivePorts([]))
+    return () => {
+      alivePoll = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [knownPorts.join(',')])
   const [started, setStarted] = useState(false)
   const [frameKey, setFrameKey] = useState(0)
   const [full, setFull] = useState(false)
@@ -108,10 +125,10 @@ export function PreviewPanel({
         </Button>
       </form>
 
-      {knownPorts.length > 0 && (
+      {(livePorts?.length ?? 0) > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">Detected:</span>
-          {knownPorts.map((p) => (
+          <span className="text-xs text-muted-foreground">Running:</span>
+          {(livePorts ?? []).map((p) => (
             <button
               key={p}
               type="button"

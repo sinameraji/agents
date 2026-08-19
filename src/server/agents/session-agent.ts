@@ -1431,6 +1431,26 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
+  /** Which of these ports answer HTTP right now. The preview panel shows only live servers:
+   *  a chip for a dead one is an invitation to an error message. */
+  @callable()
+  async checkPorts(ports: number[]): Promise<{ alive: number[] }> {
+    const candidates = [...new Set(ports)].filter((p) => Number.isInteger(p) && p > 0 && p <= 65535 && p !== 3000).slice(0, 12)
+    if (!candidates.length) return { alive: [] }
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    const script = candidates
+      .map((p) => `printf "%s:" ${p}; curl -s -o /dev/null -m 2 -w "%{http_code}" http://127.0.0.1:${p}/ || printf 000; echo`)
+      .join('; ')
+    const r = (await sandbox.exec(`sh -lc '${script}'`, { timeout: 20_000 }).catch(() => null)) as { stdout?: string } | null
+    const alive = (r?.stdout ?? '')
+      .split('\n')
+      .map((line) => line.trim().split(':'))
+      .filter((f) => f.length === 2 && f[1] !== '000' && f[1] !== '')
+      .map((f) => Number(f[0]))
+      .filter((n) => Number.isFinite(n))
+    return { alive }
+  }
+
   @callable()
   async exposePort(
     port: number,
