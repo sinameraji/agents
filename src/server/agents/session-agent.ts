@@ -727,12 +727,20 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private async detectDevServers(): Promise<void> {
     try {
       const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+      // The container has neither ss nor netstat (both exit 127); /proc/net/tcp is always there.
+      // Listening sockets have state 0A; local_address is hexIP:hexPORT.
       const r = (await sandbox
-        .exec(`sh -lc '(ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -oE ":[0-9]+ " | tr -d ": " '`, { timeout: 15_000 })
+        .exec(`sh -lc 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null'`, { timeout: 15_000 })
         .catch(() => null)) as { stdout?: string } | null
       if (!r?.stdout) return
+      const listening = r.stdout
+        .split('\n')
+        .map((line) => line.trim().split(/\s+/))
+        .filter((f) => f[3] === '0A' && f[1]?.includes(':'))
+        .map((f) => parseInt(f[1].split(':').pop() ?? '', 16))
+        .filter((n) => Number.isFinite(n))
       const reported = new Set(this.getKv<number[]>('reportedPorts', []))
-      const fresh = [...new Set(r.stdout.split('\n').map((l) => Number(l.trim())).filter(Boolean))]
+      const fresh = [...new Set(listening)]
         .filter(
           (p) =>
             p >= 1024 &&

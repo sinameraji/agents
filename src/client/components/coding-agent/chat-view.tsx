@@ -146,12 +146,18 @@ export function ChatView({ session }: { session: SessionApi }) {
           <Button
             variant={dockOpen ? 'secondary' : 'outline'}
             size="sm"
-            className="gap-1.5"
+            className="relative gap-1.5"
             onClick={() => setDockOpen((v) => !v)}
             aria-label="Toggle workspace"
           >
             <PanelRight className="size-3.5" />
             <span className="hidden sm:inline">Workspace</span>
+            {!dockOpen && session.turns.some((t) => t.parts.some((p) => p.kind === 'preview')) && (
+              <span
+                className="absolute -top-1 -right-1 size-2 rounded-full bg-success"
+                title="A dev server is running, preview available"
+              />
+            )}
           </Button>
           <Button variant="ghost" size="icon-sm" aria-label="Session options">
             <MoreHorizontal className="size-4" />

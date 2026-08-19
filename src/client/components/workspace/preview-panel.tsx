@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ExternalLink, Globe, LoaderCircle, MonitorPlay, Play, RefreshCw } from 'lucide-react'
+import { ExternalLink, Globe, LoaderCircle, Maximize2, Minimize2, MonitorPlay, Play, RefreshCw } from 'lucide-react'
 
+import { cn } from '@/lib/utils'
 import type { SessionApi } from '@/hooks/use-session'
 import { Button } from '@/components/ui/button'
 
@@ -19,6 +20,17 @@ export function PreviewPanel({
   const [failed, setFailed] = useState(false)
   const [started, setStarted] = useState(false)
   const [frameKey, setFrameKey] = useState(0)
+  const [full, setFull] = useState(false)
+
+  // Fullscreen closes on Escape.
+  useEffect(() => {
+    if (!full) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFull(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [full])
 
   // A detected dev server chip was clicked: prefill the port and start immediately.
   const handledNonce = useRef(0)
@@ -57,7 +69,7 @@ export function PreviewPanel({
 
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
+    <div className={cn('flex flex-col gap-3 p-4', full ? 'fixed inset-0 z-50 bg-background' : 'h-full')}>
       <form onSubmit={handleStart} className="flex items-center gap-2">
         <label className="flex items-center gap-1.5 rounded-md border border-border bg-card pl-2.5 text-xs text-muted-foreground focus-within:border-ring">
           <span>Port</span>
@@ -94,6 +106,15 @@ export function PreviewPanel({
               aria-label="Refresh preview"
             >
               <RefreshCw className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setFull((v) => !v)}
+              aria-label={full ? 'Exit full screen' : 'Full screen'}
+              title={full ? 'Exit full screen (Esc)' : 'Full screen'}
+            >
+              {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
             </Button>
             <a
               href={url}
