@@ -438,11 +438,18 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       if (!conn.cloudflareAccountId || !conn.cloudflareApiToken) {
         throw new Error('KimiFlare runs on YOUR Cloudflare account: add your Cloudflare Account ID and API token (and optionally an AI Gateway id) in Settings → Cloudflare AI Gateway.')
       }
-      const verify = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
-        headers: { Authorization: `Bearer ${conn.cloudflareApiToken}` },
-      }).then((r) => r.json() as Promise<{ success?: boolean }>).catch(() => ({ success: false }))
-      if (!verify.success) {
-        throw new Error('Your Cloudflare API token was rejected (invalid or expired). Create a fresh token with Workers AI + AI Gateway permissions and update it in Settings → Cloudflare AI Gateway.')
+      // Capability probe instead of /user/tokens/verify: that endpoint only understands API
+      // tokens, but "Log in with Cloudflare" users carry OAuth access tokens. Listing Workers AI
+      // models validates what KimiFlare actually needs, for BOTH token kinds.
+      const probe = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${conn.cloudflareAccountId}/ai/models/search?per_page=1`,
+        { headers: { Authorization: `Bearer ${conn.cloudflareApiToken}` } },
+      ).then((r) => ({ ok: r.ok, status: r.status })).catch(() => ({ ok: false, status: 0 }))
+      if (!probe.ok) {
+        throw new Error(
+          `Your Cloudflare credentials were rejected for Workers AI (HTTP ${probe.status}). ` +
+            'Log in with Cloudflare again, or add a token with Workers AI + AI Gateway permissions in Settings.',
+        )
       }
     } else if (!hasProviderKey(cfg.provider, conn)) {
       throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
