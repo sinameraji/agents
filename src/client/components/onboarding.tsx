@@ -85,7 +85,7 @@ type Step = 1 | 2 | 3
 const STEPS: { n: Step; title: string; hint: string }[] = [
   { n: 1, title: 'Provider', hint: 'where your models run' },
   { n: 2, title: 'Harness', hint: 'the agent that does the work' },
-  { n: 3, title: 'Workspace', hint: 'repo or blank' },
+  { n: 3, title: 'Starting workspace', hint: 'for your first session' },
 ]
 
 /** First-run wizard: provider key → harness → workspace → session. Shown until a model key exists. */
@@ -404,8 +404,10 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
         {step === 3 && (
           <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
             <div className="flex flex-col gap-1">
-              <h2 className="text-sm font-semibold">Pick a workspace</h2>
-              <p className="text-xs text-muted-foreground">An isolated sandbox is created either way.</p>
+              <h2 className="text-sm font-semibold">Pick a starting workspace</h2>
+              <p className="text-xs text-muted-foreground">
+                Just for your first session — every new session picks its own.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button
