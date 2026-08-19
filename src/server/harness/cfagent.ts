@@ -190,7 +190,10 @@ export async function runCfAgentLoop(opts: {
   for await (const ev of result.fullStream) {
     if (ev.type === 'error') {
       const raw = (ev as { error?: unknown }).error
-      streamError = raw instanceof Error ? raw.message : JSON.stringify(raw).slice(0, 600)
+      const body = (raw as { responseBody?: string } | undefined)?.responseBody
+      streamError =
+        (raw instanceof Error ? raw.message : JSON.stringify(raw).slice(0, 600)) +
+        (body ? ` :: ${String(body).slice(0, 400)}` : '')
     } else if (ev.type === 'text-delta') {
       textAcc += ev.text
       flushText()
