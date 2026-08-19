@@ -38,9 +38,9 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
               href={DEPLOY}
               target="_blank"
               rel="noreferrer"
-              className="flex h-11 w-full items-center justify-center gap-2.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              className="flex h-11 w-full items-center justify-center gap-2.5 rounded-lg bg-[#F6821F] text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#e2760f]"
             >
-              <CloudflareMark className="size-5" />
+              <CloudflareMark fill="#fff" className="size-5" />
               Deploy to Cloudflare
             </a>
             <a

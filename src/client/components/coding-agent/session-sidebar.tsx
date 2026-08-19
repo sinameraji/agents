@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { formatCost } from '~shared/format'
 import type { SessionSummary } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
+import { CloudflareMark } from '../login-screen'
 import { StatusDot, statusLabel } from './status-dot'
 import { ThemeToggle } from './theme-toggle'
 
@@ -145,9 +146,14 @@ export function SessionSidebar({
       <footer className="flex items-center gap-1 border-t border-sidebar-border px-3 py-2.5">
         {guest ? (
           deploy ? (
-            <Button size="sm" className="min-w-0" onClick={onSignIn}>
+            <button
+              type="button"
+              onClick={onSignIn}
+              className="flex h-9 min-w-0 items-center justify-center gap-2 rounded-lg bg-[#F6821F] px-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#e2760f]"
+            >
+              <CloudflareMark fill="#fff" className="size-4 shrink-0" />
               <span className="truncate">Deploy to Cloudflare</span>
-            </Button>
+            </button>
           ) : (
             <div className="flex min-w-0 items-center gap-2">
               <Button size="sm" onClick={onSignIn}>
