@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /agents/
+Disallow: /auth/
+Disallow: /s/
+Sitemap: https://dreamweav.com/sitemap.xml

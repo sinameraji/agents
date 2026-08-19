@@ -91,7 +91,7 @@ export function LoginScreen() {
   return (
     <main className="flex h-dvh w-full items-center justify-center bg-background p-6 text-foreground">
       <div className="flex w-full max-w-xs flex-col items-center gap-5">
-        <img src="/icon-192.png" alt="" aria-hidden className="size-14" />
+        <img src="/icon-512.png" alt="Dreamweav logo" className="size-28 drop-shadow-[0_8px_30px_rgba(117,230,99,0.25)] sm:size-36" />
         <div className="text-center">
           <h1 className="text-lg font-semibold tracking-tight">Dreamweav</h1>
           <p className="mt-1 text-sm text-muted-foreground">
