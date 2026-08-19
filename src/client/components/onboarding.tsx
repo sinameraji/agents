@@ -255,54 +255,18 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
               </div>
             </div>
             {!gwStored && <GatewayPicker ua={ua} compact />}
-            <div className="flex flex-col gap-1">
-              <h2 className="text-sm font-semibold">
-                Want more models? <span className="font-normal text-muted-foreground">· optional</span>
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                An OpenRouter key unlocks every frontier model for the other harnesses (OpenCode, pi, Built-in,
-                Agents SDK) — pay as you go. Skip it and add it later anytime.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
-              <KeyRound className="size-4 shrink-0 text-muted-foreground" />
-              <input
-                type="password"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="sk-or-v1-…"
-                aria-label="OpenRouter API key"
-                className="h-10 w-full bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/60"
-              />
-            </div>
             <p className="text-xs text-muted-foreground">
-              No key yet?{' '}
-              <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                openrouter.ai/settings/keys <ExternalLink className="size-3" />
-              </a>
+              Other providers can be added anytime in Settings → Connections.
             </p>
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={() => {
-                  void (async () => {
-                    setBusy(true)
-                    try {
-                      if (key) await ua.saveSettings({ settings: { defaultProvider: 'openrouter' }, connections: { openrouterKey: key } })
-                      setKey('')
-                      setDone((d) => new Set(d).add(1))
-                      setStep(2)
-                    } finally {
-                      setBusy(false)
-                    }
-                  })()
-                }}
-                disabled={busy}
-                className="gap-2"
-              >
-                {busy && <Loader2 className="size-4 animate-spin" />}
-                {key ? 'Save & continue' : 'Continue'}
-              </Button>
-            </div>
+            <Button
+              onClick={() => {
+                setDone((d) => new Set(d).add(1))
+                setStep(2)
+              }}
+              className="self-start"
+            >
+              Continue
+            </Button>
           </section>
         )}
         {step === 1 && !cfFromLogin && (

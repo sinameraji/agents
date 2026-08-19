@@ -53,8 +53,7 @@ function harnessRequirements(h: Harness, conn: MaskedConnections | null): Requir
     {
       label: 'A model provider key',
       ok: hasModelKey,
-      hint: 'OpenRouter is the easiest: one key unlocks every model, pay as you go.',
-      link: { href: 'https://openrouter.ai/settings/keys', text: 'openrouter.ai/settings/keys' },
+      hint: 'Add a key for your provider of choice in Settings → Connections.',
     },
     ghToken,
   ]
