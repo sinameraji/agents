@@ -332,8 +332,9 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
               GitHub token {patStored && <span className="text-xs font-normal text-success">· saved ({patStored})</span>}
             </label>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              For private repos and the Git tab (push, PRs). Classic token,{' '}
-              <span className="font-mono">repo</span> scope —{' '}
+              Sessions can clone any public HTTPS git remote (GitHub, GitLab, self-hosted) — no setup
+              needed. This token adds: private GitHub repos, agent pushes, and the Git tab (push,
+              PRs). Classic token, <span className="font-mono">repo</span> scope —{' '}
               <HelpLink href="https://github.com/settings/tokens">create one</HelpLink>
             </p>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
