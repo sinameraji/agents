@@ -19,12 +19,16 @@ export function SessionSidebar({
   onDelete,
   onRename,
   email,
+  guest,
+  onSignIn,
 }: {
   sessions: SessionSummary[]
   activeId: string
   onSelect: (id: string) => void
   onNew: () => void
   onOpenSettings: () => void
+  guest?: boolean
+  onSignIn?: () => void
   onDelete: (id: string) => void
   onRename: (id: string, name: string) => void
   email: string
@@ -69,12 +73,20 @@ export function SessionSidebar({
       </nav>
 
       <footer className="flex items-center gap-1 border-t border-sidebar-border px-3 py-2.5">
-        <div className="grid size-7 place-items-center rounded-full bg-secondary text-xs font-medium text-secondary-foreground">
-          {initials}
-        </div>
-        <div className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate text-xs font-medium">{handle}</span>
-        </div>
+        {guest ? (
+          <Button size="sm" className="mr-1" onClick={onSignIn}>
+            Sign in
+          </Button>
+        ) : (
+          <>
+            <div className="grid size-7 place-items-center rounded-full bg-secondary text-xs font-medium text-secondary-foreground">
+              {initials}
+            </div>
+            <div className="flex min-w-0 flex-col leading-tight">
+              <span className="truncate text-xs font-medium">{handle}</span>
+            </div>
+          </>
+        )}
         <div className="ml-auto flex items-center">
           <ThemeToggle />
           <Button variant="ghost" size="icon-sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings — keys & connections">
@@ -89,17 +101,19 @@ export function SessionSidebar({
           >
             <Info className="size-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Sign out"
-            title="Sign out"
-            onClick={() => {
-              void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.assign('/'))
-            }}
-          >
-            <LogOut className="size-4" />
-          </Button>
+          {!guest && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Sign out"
+              title="Sign out"
+              onClick={() => {
+                void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.assign('/'))
+              }}
+            >
+              <LogOut className="size-4" />
+            </Button>
+          )}
         </div>
       </footer>
 
