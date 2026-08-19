@@ -49,7 +49,20 @@ export function TurnView({ turn }: { turn: NormTurn }) {
             {turn.parts.map((part) => (
               <PartView key={part.id} part={part} />
             ))}
-            {turn.usage && <UsageStrip usage={turn.usage} />}
+            {turn.parts.length === 0 && !turn.error && (
+              <p className="text-sm text-muted-foreground italic">
+                {turn.status === 'aborted'
+                  ? 'Stopped before responding.'
+                  : turn.status === 'error'
+                    ? 'Failed before producing output.'
+                    : turn.status === 'streaming'
+                      ? 'Interrupted — no output.'
+                      : 'No output produced.'}
+              </p>
+            )}
+            {turn.usage && (turn.parts.length > 0 || (turn.usage.input ?? 0) + (turn.usage.output ?? 0) > 0) && (
+              <UsageStrip usage={turn.usage} />
+            )}
             {turn.error && <ErrorBlock name={turn.error.name} message={turn.error.message} />}
           </>
         )}

@@ -41,9 +41,22 @@ export function Transcript({
     working && (!last || last.role === 'user' || (last.role === 'assistant' && last.parts.length === 0))
   const workingLabel = 'Thinking…'
 
+  // An assistant turn that hasn't produced anything yet is represented by the Thinking row, not an
+  // empty bubble. (Terminal empty turns DO render — TurnView gives them an explicit placeholder.)
+  const visibleTurns = turns.filter(
+    (t) =>
+      !(
+        t.role === 'assistant' &&
+        t.parts.length === 0 &&
+        t.status === 'streaming' &&
+        working &&
+        t === last
+      ),
+  )
+
   return (
     <div className="flex flex-col gap-7">
-      {turns.map((turn) => (
+      {visibleTurns.map((turn) => (
         <TurnView key={turn.id} turn={turn} />
       ))}
 
