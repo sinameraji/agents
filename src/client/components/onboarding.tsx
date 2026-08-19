@@ -121,7 +121,7 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-12">
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold">Welcome to Dreamweav</h1>
-          <p className="text-sm text-muted-foreground">Three steps and you&apos;re coding with an agent.</p>
+          <p className="text-sm text-muted-foreground">One-time setup — you can change all of this later.</p>
         </div>
 
         {/* Stepper */}
