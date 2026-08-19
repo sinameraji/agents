@@ -17,7 +17,10 @@ import { mintSessionCookieFor } from './session'
 const CF_AUTH_URL = 'https://dash.cloudflare.com/oauth2/auth'
 const CF_TOKEN_URL = 'https://dash.cloudflare.com/oauth2/token'
 /** Scope ids (from GET /client/v4/oauth/scopes) matching the registered client. */
-const CF_SCOPES = ['user-details.read', 'account-settings.read', 'ai.read', 'aig.read', 'aig.write', 'aig.run']
+// ai.write (Workers AI Write) is what authorizes inference on accounts/{id}/ai/v1 — ai.read only
+// covers the model catalog. aig.run alone does NOT satisfy that endpoint, and the gateway
+// data-plane (cf-aig-authorization) rejects OAuth tokens outright, so /ai/v1 is the only route.
+const CF_SCOPES = ['user-details.read', 'account-settings.read', 'ai.read', 'ai.write', 'aig.read', 'aig.write', 'aig.run']
 
 const GH_AUTH_URL = 'https://github.com/login/oauth/authorize'
 const GH_TOKEN_URL = 'https://github.com/login/oauth/access_token'
