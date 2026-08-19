@@ -76,7 +76,6 @@ export function SessionSidebar({
         </div>
         <div className="flex min-w-0 flex-col leading-tight">
           <span className="truncate text-xs font-medium">{handle}</span>
-          <span className="truncate text-[0.65rem] text-muted-foreground">{email}</span>
         </div>
         <div className="ml-auto flex items-center">
           <ThemeToggle />
