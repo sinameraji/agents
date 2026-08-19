@@ -8,7 +8,7 @@ import type { UserAgentApi } from '@/hooks/use-user-agent'
 import type { Connections, Provider } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 
-const PROVIDERS: { id: Provider; label: string; field: keyof Connections; placeholder: string; keyUrl: string }[] = [
+export const PROVIDERS: { id: Provider; label: string; field: keyof Connections; placeholder: string; keyUrl: string }[] = [
   { id: 'openrouter', label: 'OpenRouter', field: 'openrouterKey', placeholder: 'sk-or-v1-…', keyUrl: 'https://openrouter.ai/settings/keys' },
   { id: 'cloudflare', label: 'Cloudflare AI Gateway', field: 'cloudflareApiToken', placeholder: 'CF API token', keyUrl: 'https://dash.cloudflare.com/profile/api-tokens' },
   { id: 'anthropic', label: 'Anthropic', field: 'anthropicKey', placeholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/keys' },

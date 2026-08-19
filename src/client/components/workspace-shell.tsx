@@ -6,6 +6,7 @@ import { SessionSidebar } from './coding-agent/session-sidebar'
 import { SettingsDialog } from './coding-agent/settings-dialog'
 import { LiveChatView } from './live-chat-view'
 import { NewSession } from './new-session'
+import { Onboarding } from './onboarding'
 import { EmptyState } from './empty-state'
 import { LoginScreen } from './login-screen'
 
@@ -22,12 +23,20 @@ function Shell({ userId, email }: { userId: string; email: string }) {
   const sessionId = useSessionRoute()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
+  // First-time users (no model key yet) get the 3-step wizard instead of the full session form.
+  const conn = ua.connections
+  const hasModelKey =
+    !!conn?.openrouterKey || !!conn?.anthropicKey || !!conn?.openaiKey ||
+    (!!conn?.cloudflareApiToken && !!conn?.cloudflareAccountId)
   const main = useMemo(() => {
-    if (path === '/new') return <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
+    if (path === '/new') {
+      if (conn !== null && !hasModelKey) return <Onboarding ua={ua} />
+      return <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
+    }
     if (sessionId) return <LiveChatView key={sessionId} sessionId={sessionId} />
     return <EmptyState onNew={() => navigate('/new')} hasSessions={ua.sessions.length > 0} />
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, sessionId, ua.sessions.length])
+  }, [path, sessionId, ua.sessions.length, conn, hasModelKey])
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
