@@ -22,6 +22,17 @@ export function LoginDialog({ onClose }: { onClose: () => void }) {
           <X className="size-4" />
         </Button>
         <LoginOptions />
+        <p className="text-center text-xs text-muted-foreground">
+          Dreamweav is self-hosted: sessions run on the instance owner's Cloudflare account.{' '}
+          <a
+            href="https://github.com/sinameraji/dreamweav#deploy-your-own"
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary hover:underline"
+          >
+            Deploy your own
+          </a>
+        </p>
       </div>
     </div>
   )

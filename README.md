@@ -10,6 +10,37 @@ Gateway, Anthropic, or OpenAI keys — Dreamweav never bills tokens) and your ow
 Everything runs on Cloudflare: one Worker serves the SPA + API, Durable Objects hold state, Sandbox
 containers run the agents, R2 backs up workspaces.
 
+**Dreamweav is self-hosted software.** You deploy it to *your* Cloudflare account: your sessions run
+in your containers, your keys bill to you, nobody else's usage lands on your invoice. There is no
+hosted service — dreamweav.com is the maintainer's own instance.
+
+## Deploy your own
+
+Requires a Cloudflare account on the **Workers Paid** plan (Sandbox containers).
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sinameraji/dreamweav)
+
+Or by hand:
+
+```sh
+git clone https://github.com/sinameraji/dreamweav && cd dreamweav
+npm install
+npm run setup    # wrangler login check → generates + uploads secrets → deploys
+```
+
+Then open the printed workers.dev URL, log in with the password `setup` printed, and paste a model
+provider key in Settings (OpenRouter / Anthropic / OpenAI — or a Cloudflare API token for Workers
+AI + AI Gateway unified billing on your own account).
+
+Optional:
+
+- `ALLOWED_USERS` secret — comma-separated emails allowed to log in. Unset = anyone who can reach
+  your URL and pass the password gate.
+- **Custom domain** — needed for live previews of dev servers (wildcard DNS). Add your zone in the
+  Cloudflare dash, point a route at the worker in `wrangler.jsonc`, and add a `*` DNS record.
+- **Login with Cloudflare / GitHub / email** — each needs its own OAuth client or Email Service
+  setup; the password gate works without any of them.
+
 ## Architecture
 
 ```
@@ -77,8 +108,9 @@ npm run build && npx wrangler deploy
 Secrets (via `npx wrangler secret put`, or `.dev.vars` locally):
 
 - `ENCRYPTION_KEY` — 32 random bytes, base64; encrypts stored provider keys (`openssl rand -base64 32`)
-- `APP_PASSWORD` — the interim password gate
+- `APP_PASSWORD` — the password gate
 - `AUTH_SECRET` — HMAC key for the signed session cookie (`openssl rand -base64 32`)
+- `ALLOWED_USERS` — optional login allowlist (comma-separated emails); unset = open
 
 `.dev.vars` also takes `OWNER_EMAIL` and `DEV_USER_EMAIL` (local auth bypass). To run a real coding
 turn, open Settings in the app and paste a provider key.

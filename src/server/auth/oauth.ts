@@ -28,6 +28,8 @@ const GH_SCOPES = 'repo read:user user:email'
 
 export interface OauthEnv {
   AUTH_SECRET?: string
+  /** Comma/space-separated emails allowed to log in. Unset = open instance (self-host default). */
+  ALLOWED_USERS?: string
   CF_OAUTH_CLIENT_ID?: string
   CF_OAUTH_CLIENT_SECRET?: string
   GITHUB_OAUTH_CLIENT_ID?: string
@@ -109,12 +111,23 @@ function failPage(message: string): Response {
   )
 }
 
+/** Is this email allowed on this instance? Unset allowlist = open (self-hoster's choice). */
+function isAllowedUser(allowed: string | undefined, email: string): boolean {
+  if (!allowed?.trim()) return true
+  return allowed.toLowerCase().split(/[\s,]+/).filter(Boolean).includes(email.trim().toLowerCase())
+}
+
 /** Provision the user's account + mint their session; shared tail of both callbacks. */
 async function completeLogin(
   env: OauthEnv,
   email: string,
   provision: (user: unknown) => Promise<void>,
 ): Promise<Response> {
+  if (!isAllowedUser(env.ALLOWED_USERS, email)) {
+    return failPage(
+      'This Dreamweav instance is private. Dreamweav is self-hosted software: deploy your own at github.com/sinameraji/dreamweav.',
+    )
+  }
   const id = await userIdFromEmail(email)
   const user = await getAgentByName(env.UserAgent, id)
   await provision(user)
