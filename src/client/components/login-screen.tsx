@@ -94,7 +94,7 @@ export function LoginOptions() {
         <div className="text-center">
           <h1 className="text-lg font-semibold tracking-tight">Dreamweav</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your favorite coding model, harness, and provider in your browser.
+            Your favorite coding models, harnesses, and providers in your browser.
           </p>
         </div>
 
