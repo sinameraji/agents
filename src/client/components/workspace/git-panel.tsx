@@ -154,8 +154,13 @@ export function GitPanel({ session }: { session: SessionApi }) {
       )}
 
       <p className="mt-auto text-[11px] leading-relaxed text-muted-foreground">
-        Pushes use your GitHub token from Settings. Blank sessions get a new private repo
-        (dreamweav-…) under your account; GitHub-sourced sessions push a branch to the source repo.
+        Pushes use your GitHub token from Settings — a classic token with the{' '}
+        <span className="font-mono">repo</span> scope from{' '}
+        <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="text-primary hover:underline">
+          github.com/settings/tokens
+        </a>
+        . Blank sessions get a new private repo (dreamweav-…) under your account; GitHub-sourced
+        sessions push a branch to the source repo.
       </p>
     </div>
   )

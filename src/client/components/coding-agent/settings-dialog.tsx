@@ -1,19 +1,27 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Eye, EyeOff, KeyRound, X } from 'lucide-react'
+import { Check, ExternalLink, Eye, EyeOff, KeyRound, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
 import type { Connections, Provider } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 
-const PROVIDERS: { id: Provider; label: string; field: keyof Connections; placeholder: string }[] = [
-  { id: 'openrouter', label: 'OpenRouter', field: 'openrouterKey', placeholder: 'sk-or-v1-…' },
-  { id: 'cloudflare', label: 'Cloudflare AI Gateway', field: 'cloudflareApiToken', placeholder: 'CF API token' },
-  { id: 'anthropic', label: 'Anthropic', field: 'anthropicKey', placeholder: 'sk-ant-…' },
-  { id: 'openai', label: 'OpenAI', field: 'openaiKey', placeholder: 'sk-…' },
+const PROVIDERS: { id: Provider; label: string; field: keyof Connections; placeholder: string; keyUrl: string }[] = [
+  { id: 'openrouter', label: 'OpenRouter', field: 'openrouterKey', placeholder: 'sk-or-v1-…', keyUrl: 'https://openrouter.ai/settings/keys' },
+  { id: 'cloudflare', label: 'Cloudflare AI Gateway', field: 'cloudflareApiToken', placeholder: 'CF API token', keyUrl: 'https://dash.cloudflare.com/profile/api-tokens' },
+  { id: 'anthropic', label: 'Anthropic', field: 'anthropicKey', placeholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/keys' },
+  { id: 'openai', label: 'OpenAI', field: 'openaiKey', placeholder: 'sk-…', keyUrl: 'https://platform.openai.com/api-keys' },
 ]
+
+function HelpLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+      {children} <ExternalLink className="size-3" />
+    </a>
+  )
+}
 
 export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () => void }) {
   const [provider, setProvider] = useState<Provider>(ua.settings.defaultProvider)
@@ -21,6 +29,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
   const [pat, setPat] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [cfAccount, setCfAccount] = useState('')
+  const [cfToken, setCfToken] = useState('')
   const [cfGateway, setCfGateway] = useState('')
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -42,15 +51,15 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
   const save = async () => {
     setBusy(true)
     const connections: Partial<Record<keyof Connections, string>> = {}
-    if (keyInput) connections[current.field] = keyInput
+    if (keyInput && provider !== 'cloudflare') connections[current.field] = keyInput
     if (pat) connections.githubPat = pat
-    if (provider === 'cloudflare') {
-      if (cfAccount) connections.cloudflareAccountId = cfAccount
-      if (cfGateway) connections.cloudflareGatewayId = cfGateway
-    }
+    if (cfAccount) connections.cloudflareAccountId = cfAccount
+    if (cfToken) connections.cloudflareApiToken = cfToken
+    if (cfGateway) connections.cloudflareGatewayId = cfGateway
     await ua.saveSettings({ settings: { defaultProvider: provider }, connections })
     setKeyInput('')
     setPat('')
+    setCfToken('')
     setBusy(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 1600)
@@ -94,36 +103,86 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
             </div>
           </section>
 
-          <section className="flex flex-col gap-2">
-            <label htmlFor="api-key" className="text-sm font-medium">
-              {current.label} key {keyStored && <span className="text-xs font-normal text-success">· saved ({keyStored})</span>}
-            </label>
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
-              <KeyRound className="size-4 shrink-0 text-muted-foreground" />
-              <input
-                id="api-key"
-                type={showKey ? 'text' : 'password'}
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                placeholder={keyStored ? 'Replace stored key…' : current.placeholder}
-                className="h-10 w-full bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/60"
-              />
-              <button type="button" onClick={() => setShowKey((v) => !v)} aria-label={showKey ? 'Hide key' : 'Show key'} className="text-muted-foreground hover:text-foreground">
-                {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
-            {provider === 'cloudflare' && (
-              <div className="mt-1 grid grid-cols-2 gap-2">
-                <input value={cfAccount} onChange={(e) => setCfAccount(e.target.value)} placeholder="Account ID" className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none focus:border-primary/50" />
-                <input value={cfGateway} onChange={(e) => setCfGateway(e.target.value)} placeholder="Gateway ID" className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none focus:border-primary/50" />
+          {provider !== 'cloudflare' ? (
+            <section className="flex flex-col gap-2">
+              <label htmlFor="api-key" className="text-sm font-medium">
+                {current.label} key {keyStored && <span className="text-xs font-normal text-success">· saved ({keyStored})</span>}
+              </label>
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
+                <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+                <input
+                  id="api-key"
+                  type={showKey ? 'text' : 'password'}
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder={keyStored ? 'Replace stored key…' : current.placeholder}
+                  className="h-10 w-full bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/60"
+                />
+                <button type="button" onClick={() => setShowKey((v) => !v)} aria-label={showKey ? 'Hide key' : 'Show key'} className="text-muted-foreground hover:text-foreground">
+                  {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
               </div>
-            )}
+              <p className="text-xs text-muted-foreground">
+                No key yet? <HelpLink href={current.keyUrl}>{current.keyUrl.replace('https://', '')}</HelpLink>
+              </p>
+            </section>
+          ) : (
+            <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              The Cloudflare AI Gateway provider uses your Cloudflare account below.
+            </p>
+          )}
+
+          <section className="flex flex-col gap-2">
+            <label className="text-sm font-medium">
+              Cloudflare account{' '}
+              {ua.connections?.cloudflareAccountId && ua.connections?.cloudflareApiToken && (
+                <span className="text-xs font-normal text-success">· saved</span>
+              )}
+            </label>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Powers the <span className="font-medium text-foreground/80">KimiFlare</span> harness and the AI Gateway
+              provider. Create a custom API token with{' '}
+              <span className="font-mono">Workers AI:Read · AI Gateway:Read · AI Gateway:Edit</span> at{' '}
+              <HelpLink href="https://dash.cloudflare.com/profile/api-tokens">dash.cloudflare.com/profile/api-tokens</HelpLink>.
+              Your Account ID is on the right side of any zone page in the{' '}
+              <HelpLink href="https://dash.cloudflare.com">dashboard</HelpLink>.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={cfAccount}
+                onChange={(e) => setCfAccount(e.target.value)}
+                placeholder={ua.connections?.cloudflareAccountId ? `Account ID · saved (${ua.connections.cloudflareAccountId})` : 'Account ID'}
+                aria-label="Cloudflare Account ID"
+                className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+              />
+              <input
+                value={cfGateway}
+                onChange={(e) => setCfGateway(e.target.value)}
+                placeholder={ua.connections?.cloudflareGatewayId ? `Gateway ID · saved (${ua.connections.cloudflareGatewayId})` : 'AI Gateway ID (optional)'}
+                aria-label="Cloudflare AI Gateway ID"
+                className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+              />
+            </div>
+            <input
+              type="password"
+              value={cfToken}
+              onChange={(e) => setCfToken(e.target.value)}
+              placeholder={ua.connections?.cloudflareApiToken ? `API token · saved (${ua.connections.cloudflareApiToken}) — paste to replace` : 'API token'}
+              aria-label="Cloudflare API token"
+              className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+            />
           </section>
 
           <section className="flex flex-col gap-2">
             <label htmlFor="gh-pat" className="text-sm font-medium">
               GitHub token {patStored && <span className="text-xs font-normal text-success">· saved ({patStored})</span>}
             </label>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Used to clone private repos and for the workspace Git tab (push branches, create repos, open PRs).
+              Generate a <span className="font-medium text-foreground/80">classic token</span> with the{' '}
+              <span className="font-mono">repo</span> scope at{' '}
+              <HelpLink href="https://github.com/settings/tokens">github.com/settings/tokens</HelpLink>.
+            </p>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
               <KeyRound className="size-4 shrink-0 text-muted-foreground" />
               <input
@@ -131,7 +190,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
                 type="password"
                 value={pat}
                 onChange={(e) => setPat(e.target.value)}
-                placeholder={patStored ? 'Replace stored token…' : 'ghp_… (for private repos & pushes)'}
+                placeholder={patStored ? 'Replace stored token…' : 'ghp_…'}
                 className="h-10 w-full bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/60"
               />
             </div>

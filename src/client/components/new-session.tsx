@@ -1,10 +1,89 @@
 import { useState } from 'react'
-import { GitBranch, Loader2, Sparkles } from 'lucide-react'
+import { Check, CircleAlert, ExternalLink, GitBranch, Loader2, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRouter } from '@/router'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
-import { HARNESSES, type Harness, type SessionSource } from '~shared/protocol'
+import { HARNESSES, type Harness, type MaskedConnections, type SessionSource } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
+
+interface Requirement {
+  label: string
+  ok: boolean
+  optional?: boolean
+  hint?: string
+  link?: { href: string; text: string }
+}
+
+/** What a harness needs before its first turn — written for someone who has never used it. */
+function harnessRequirements(h: Harness, conn: MaskedConnections | null): Requirement[] {
+  const hasModelKey =
+    !!conn?.openrouterKey || !!conn?.anthropicKey || !!conn?.openaiKey ||
+    (!!conn?.cloudflareApiToken && !!conn?.cloudflareAccountId && !!conn?.cloudflareGatewayId)
+  const ghToken: Requirement = {
+    label: 'GitHub token',
+    ok: !!conn?.githubPat,
+    optional: true,
+    hint: 'Only for private repos and the Git tab (push, PRs). Classic token with the “repo” scope.',
+    link: { href: 'https://github.com/settings/tokens', text: 'github.com/settings/tokens' },
+  }
+  if (h === 'kimiflare') {
+    return [
+      {
+        label: 'Cloudflare Account ID',
+        ok: !!conn?.cloudflareAccountId,
+        hint: 'Shown on the right side of any zone page in the Cloudflare dashboard.',
+        link: { href: 'https://dash.cloudflare.com', text: 'dash.cloudflare.com' },
+      },
+      {
+        label: 'Cloudflare API token',
+        ok: !!conn?.cloudflareApiToken,
+        hint: 'Create a custom token with: Workers AI:Read · AI Gateway:Read · AI Gateway:Edit.',
+        link: { href: 'https://dash.cloudflare.com/profile/api-tokens', text: 'dash.cloudflare.com/profile/api-tokens' },
+      },
+      {
+        label: 'AI Gateway ID',
+        ok: !!conn?.cloudflareGatewayId,
+        optional: true,
+        hint: 'Name of a gateway in your account — with the Edit permission KimiFlare can create one for you.',
+      },
+      ghToken,
+    ]
+  }
+  return [
+    {
+      label: 'A model provider key',
+      ok: hasModelKey,
+      hint: 'OpenRouter is the easiest: one key unlocks every model, pay as you go.',
+      link: { href: 'https://openrouter.ai/settings/keys', text: 'openrouter.ai/settings/keys' },
+    },
+    ghToken,
+  ]
+}
+
+function RequirementRow({ r }: { r: Requirement }) {
+  return (
+    <div className="flex items-start gap-2">
+      {r.ok ? (
+        <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
+      ) : (
+        <CircleAlert className={cn('mt-0.5 size-3.5 shrink-0', r.optional ? 'text-muted-foreground' : 'text-warning')} />
+      )}
+      <div className="min-w-0 text-xs leading-relaxed">
+        <span className={cn('font-medium', r.ok ? 'text-foreground/80' : 'text-foreground')}>
+          {r.label}
+          {r.optional && <span className="font-normal text-muted-foreground"> · optional</span>}
+          {r.ok && <span className="font-normal text-success"> · configured</span>}
+        </span>
+        {!r.ok && r.hint && <p className="text-muted-foreground">{r.hint}</p>}
+        {!r.ok && r.link && (
+          <a href={r.link.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+            {r.link.text} <ExternalLink className="size-3" />
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
 
 type Source = 'github' | 'blank'
 
@@ -85,13 +164,21 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
           <label className="text-sm font-medium">Harness</label>
           <div className="flex flex-col gap-1.5">
             {HARNESSES.map((h) => (
-              <button
+              <div
                 key={h.id}
-                type="button"
-                disabled={!h.enabled}
-                onClick={() => setHarness(h.id)}
+                role="button"
+                tabIndex={h.enabled ? 0 : -1}
+                aria-pressed={harness === h.id}
+                onClick={() => h.enabled && setHarness(h.id)}
+                onKeyDown={(e) => {
+                  if (h.enabled && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault()
+                    setHarness(h.id)
+                  }
+                }}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-40',
+                  'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
+                  !h.enabled && 'cursor-not-allowed opacity-40',
                   harness === h.id ? 'border-primary/60 bg-primary/10' : 'border-border hover:bg-muted',
                 )}
               >
@@ -99,24 +186,51 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
                   <span className="text-sm">{h.label}{!h.enabled && ' · soon'}</span>
                   <span className="text-xs text-muted-foreground">{h.blurb}</span>
                 </div>
-              </button>
+                <a
+                  href={h.repoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`${h.label} source repository`}
+                  title={h.repoUrl.replace('https://', '')}
+                  className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <ExternalLink className="size-3.5" />
+                </a>
+              </div>
             ))}
           </div>
         </section>
 
-        {harness === 'kimiflare' && (!ua.connections?.cloudflareApiToken || !ua.connections?.cloudflareAccountId) && (
-          <div className="flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5">
-            <p className="text-sm text-foreground/90">
-              KimiFlare runs on <span className="font-medium">your own Cloudflare account</span>. Add your
-              Account ID and an API token (Workers AI + AI Gateway) to authenticate.
-            </p>
-            {onOpenSettings && (
-              <Button variant="secondary" size="sm" className="shrink-0" onClick={onOpenSettings}>
-                Open Settings
-              </Button>
-            )}
-          </div>
-        )}
+        {(() => {
+          const reqs = harnessRequirements(harness, ua.connections)
+          const missing = reqs.some((r) => !r.ok && !r.optional)
+          const label = HARNESSES.find((h) => h.id === harness)?.label ?? harness
+          return (
+            <div
+              className={cn(
+                'flex flex-col gap-2.5 rounded-lg border px-3 py-2.5',
+                missing ? 'border-warning/40 bg-warning/10' : 'border-border bg-card/60',
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-foreground/90">
+                  {missing ? `Before your first ${label} turn:` : `${label} is ready to go.`}
+                </p>
+                {missing && onOpenSettings && (
+                  <Button variant="secondary" size="sm" className="shrink-0" onClick={onOpenSettings}>
+                    Open Settings
+                  </Button>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {reqs.map((r) => (
+                  <RequirementRow key={r.label} r={r} />
+                ))}
+              </div>
+            </div>
+          )
+        })()}
 
         {err && <p className="text-sm text-destructive">{err}</p>}
 

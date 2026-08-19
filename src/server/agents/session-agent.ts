@@ -137,8 +137,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       createdAt: new Date().toISOString(),
       lastActivity: 'now',
     }
-    const status: SessionStatus = config.source.kind === 'blank' ? 'idle' : 'idle'
-    this.setState({ ...this.state, meta, status })
+    this.setState({ ...this.state, meta, status: 'idle' })
+    // Sync the sessions index too — createSession inserts 'provisioning' and nothing else would
+    // clear it until the first turn, leaving never-prompted sessions stuck on that label.
+    void getAgentByName(this.env.UserAgent, config.owner).then((u) =>
+      u.upsertSessionSummary({ id: this.name, status: 'idle' }),
+    )
     return { ok: true }
   }
 
