@@ -88,9 +88,9 @@ function GuestShell() {
         </div>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
-        <Onboarding ua={ua} guest />
+        <Onboarding ua={ua} guest onRequireAuth={() => setLoginOpen(true)} />
       </div>
-      {settingsOpen && <SettingsDialog ua={ua} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsDialog ua={ua} onClose={() => setSettingsOpen(false)} onRequireAuth={() => setLoginOpen(true)} />}
       {loginOpen && <LoginDialog onClose={() => setLoginOpen(false)} />}
     </div>
   )

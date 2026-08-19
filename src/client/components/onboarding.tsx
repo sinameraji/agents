@@ -111,7 +111,7 @@ const STEPS: { n: Step; title: string; hint: string }[] = [
 
 /** First-run wizard: provider key → harness → workspace → session. Guests browse every step
  *  freely, nothing is marked complete until a signed-in user actually commits something. */
-export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean }) {
+export function Onboarding({ ua, guest, onRequireAuth }: { ua: UserAgentApi; guest?: boolean; onRequireAuth?: () => void }) {
   const { navigate } = useRouter()
   const [step, setStep] = useState<Step>(1)
   const [done, setDone] = useState<Set<Step>>(new Set())
@@ -154,7 +154,17 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
     provider === 'cloudflare' ? ((cfStored && gwStored) || (!!key && !!cfAccount)) : keyStored || !!key
   const kimiNeedsCreds = harness === 'kimiflare' && !cfStored && provider !== 'cloudflare'
 
+  /** Guests browse freely, but committing anything asks them to sign in. */
+  const gate = (): boolean => {
+    if (guest) {
+      onRequireAuth?.()
+      return true
+    }
+    return false
+  }
+
   const finishStep1 = async () => {
+    if (gate()) return
     setErr(null)
     setBusy(true)
     try {
@@ -176,6 +186,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
   }
 
   const finishStep2 = async () => {
+    if (gate()) return
     setErr(null)
     setBusy(true)
     try {
@@ -196,6 +207,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
   }
 
   const create = async () => {
+    if (gate()) return
     setErr(null)
     if (source === 'github' && !/^https:\/\/[^\s/]+\.[^\s/]+\/.+/.test(url)) {
       setErr('Enter an HTTPS git URL, e.g. https://github.com/owner/repo')
@@ -283,7 +295,8 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
             </p>
             <Button
               onClick={() => {
-                if (!guest) setDone((d) => new Set(d).add(1))
+                if (gate()) return
+                setDone((d) => new Set(d).add(1))
                 setStep(2)
               }}
               className="self-start"
@@ -318,9 +331,16 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
                     Cloudflare connected from your login
                   </div>
                 ) : (
-                  <button type="button" onClick={() => window.location.assign('/auth/cloudflare')} className={cfBtnCls}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (gate()) return
+                      window.location.assign('/auth/cloudflare')
+                    }}
+                    className={cfBtnCls}
+                  >
                     <CloudflareMark className="size-5" />
-                    Connect Cloudflare, one click, no tokens
+                    Connect Cloudflare
                   </button>
                 )}
                 {cfStored &&
@@ -404,9 +424,16 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
             {kimiNeedsCreds && (
               <div className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
                 <p className="text-xs text-foreground/90">KimiFlare runs on your Cloudflare account.</p>
-                <button type="button" onClick={() => window.location.assign('/auth/cloudflare')} className={cn(cfBtnCls, 'h-9 self-start px-3 text-xs')}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (gate()) return
+                    window.location.assign('/auth/cloudflare')
+                  }}
+                  className={cn(cfBtnCls, 'h-9 self-start px-3 text-xs')}
+                >
                   <CloudflareMark className="size-4" />
-                  Connect Cloudflare, one click, no tokens
+                  Connect Cloudflare
                 </button>
                 <p className="text-xs text-muted-foreground">
                   Or paste a token with <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span>{' '}

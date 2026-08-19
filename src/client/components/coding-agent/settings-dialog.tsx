@@ -41,7 +41,7 @@ function HelpLink({ href, children }: { href: string; children: React.ReactNode 
   )
 }
 
-export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () => void }) {
+export function SettingsDialog({ ua, onClose, onRequireAuth }: { ua: UserAgentApi; onClose: () => void; onRequireAuth?: () => void }) {
   const [provider, setProvider] = useState<Provider>(ua.settings.defaultProvider)
   const [keyInput, setKeyInput] = useState('')
   const [pat, setPat] = useState('')
@@ -59,6 +59,87 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
   const gwDashUrl = ua.connections?.cloudflareAccountId
     ? `https://dash.cloudflare.com/${ua.connections.cloudflareAccountId}/ai/ai-gateway`
     : 'https://dash.cloudflare.com/?to=/:account/ai/ai-gateway'
+
+  const cfAccountSection = (
+          <section className="flex flex-col gap-2">
+            <label className="text-sm font-medium">
+              Cloudflare account {cfConnected && <span className="text-xs font-normal text-success">· connected</span>}
+            </label>
+            <p className="text-xs leading-relaxed text-muted-foreground">Powers KimiFlare and AI Gateway routing.</p>
+            {!cfConnected && (
+              <button
+                type="button"
+                onClick={() => (onRequireAuth ? onRequireAuth() : window.location.assign('/auth/cloudflare'))}
+                className="flex h-10 items-center justify-center gap-2.5 rounded-lg border border-black/10 bg-white text-sm font-medium text-[#222] shadow-sm transition-colors hover:bg-[#faf7f2] dark:border-white/10"
+              >
+                <CloudflareMark className="size-5" />
+                Connect Cloudflare
+              </button>
+            )}
+            {cfConnected &&
+              (gwId ? (
+                <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs">
+                  <Check className="size-3.5 shrink-0 text-success" />
+                  <span className="min-w-0 truncate">
+                    AI Gateway <span className="font-mono">“{gwId}”</span>
+                  </span>
+                  <HelpLink href={gwDashUrl}>dashboard</HelpLink>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void ua.saveSettings({ connections: { cloudflareGatewayId: '' } })
+                    }}
+                    className="ml-auto shrink-0 text-muted-foreground underline underline-offset-2 hover:text-destructive"
+                    title="Stop using this gateway in Dreamweav (it stays in your Cloudflare account)"
+                  >
+                    Detach
+                  </button>
+                </div>
+              ) : (
+                <GatewayPicker ua={ua} compact />
+              ))}
+            {!cfConnected && (
+              <button type="button" onClick={() => setManualCf((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+                {manualCf ? 'Hide manual setup' : 'Enter credentials manually instead'}
+              </button>
+            )}
+            {!cfConnected && manualCf && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Token scopes: <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span>,{' '}
+                <HelpLink href="https://dash.cloudflare.com/profile/api-tokens">create one</HelpLink>
+              </p>
+            )}
+            <div className={cn('grid grid-cols-2 gap-2', !cfConnected && !manualCf && 'hidden')}>
+              <input
+                value={cfAccount}
+                onChange={(e) => setCfAccount(e.target.value)}
+                placeholder={ua.connections?.cloudflareAccountId ? `Account ID · saved (${ua.connections.cloudflareAccountId})` : 'Account ID'}
+                aria-label="Cloudflare Account ID"
+                title="Find it on any zone page in the Cloudflare dashboard"
+                className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+              />
+              <input
+                value={cfGateway}
+                onChange={(e) => setCfGateway(e.target.value)}
+                placeholder={ua.connections?.cloudflareGatewayId ? `Gateway ID · saved (${ua.connections.cloudflareGatewayId})` : 'AI Gateway ID (optional)'}
+                aria-label="Cloudflare AI Gateway ID"
+                className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+              />
+            </div>
+            <input
+              type="password"
+              value={cfToken}
+              onChange={(e) => setCfToken(e.target.value)}
+              placeholder={ua.connections?.cloudflareApiToken ? 'API token · saved, paste to replace' : 'API token'}
+              aria-label="Cloudflare API token"
+              className={cn(
+                'h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50',
+                !cfConnected && !manualCf && 'hidden',
+              )}
+            />
+          </section>
+  )
+
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -203,93 +284,14 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
               </p>
             </section>
           ) : (
-            <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              The Cloudflare AI Gateway provider uses your Cloudflare account below.
-            </p>
+            cfAccountSection
           )}
-
-          <section className="flex flex-col gap-2">
-            <label className="text-sm font-medium">
-              Cloudflare account {cfConnected && <span className="text-xs font-normal text-success">· connected</span>}
-            </label>
-            <p className="text-xs leading-relaxed text-muted-foreground">Powers KimiFlare and AI Gateway routing.</p>
-            {!cfConnected && (
-              <button
-                type="button"
-                onClick={() => window.location.assign('/auth/cloudflare')}
-                className="flex h-10 items-center justify-center gap-2.5 rounded-lg border border-black/10 bg-white text-sm font-medium text-[#222] shadow-sm transition-colors hover:bg-[#faf7f2] dark:border-white/10"
-              >
-                <CloudflareMark className="size-5" />
-                Connect Cloudflare, one click, no tokens
-              </button>
-            )}
-            {cfConnected &&
-              (gwId ? (
-                <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs">
-                  <Check className="size-3.5 shrink-0 text-success" />
-                  <span className="min-w-0 truncate">
-                    AI Gateway <span className="font-mono">“{gwId}”</span>
-                  </span>
-                  <HelpLink href={gwDashUrl}>dashboard</HelpLink>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void ua.saveSettings({ connections: { cloudflareGatewayId: '' } })
-                    }}
-                    className="ml-auto shrink-0 text-muted-foreground underline underline-offset-2 hover:text-destructive"
-                    title="Stop using this gateway in Dreamweav (it stays in your Cloudflare account)"
-                  >
-                    Detach
-                  </button>
-                </div>
-              ) : (
-                <GatewayPicker ua={ua} compact />
-              ))}
-            {!cfConnected && (
-              <button type="button" onClick={() => setManualCf((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
-                {manualCf ? 'Hide manual setup' : 'Enter credentials manually instead'}
-              </button>
-            )}
-            {!cfConnected && manualCf && (
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Token scopes: <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span>,{' '}
-                <HelpLink href="https://dash.cloudflare.com/profile/api-tokens">create one</HelpLink>
-              </p>
-            )}
-            <div className={cn('grid grid-cols-2 gap-2', !cfConnected && !manualCf && 'hidden')}>
-              <input
-                value={cfAccount}
-                onChange={(e) => setCfAccount(e.target.value)}
-                placeholder={ua.connections?.cloudflareAccountId ? `Account ID · saved (${ua.connections.cloudflareAccountId})` : 'Account ID'}
-                aria-label="Cloudflare Account ID"
-                title="Find it on any zone page in the Cloudflare dashboard"
-                className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
-              />
-              <input
-                value={cfGateway}
-                onChange={(e) => setCfGateway(e.target.value)}
-                placeholder={ua.connections?.cloudflareGatewayId ? `Gateway ID · saved (${ua.connections.cloudflareGatewayId})` : 'AI Gateway ID (optional)'}
-                aria-label="Cloudflare AI Gateway ID"
-                className="h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
-              />
-            </div>
-            <input
-              type="password"
-              value={cfToken}
-              onChange={(e) => setCfToken(e.target.value)}
-              placeholder={ua.connections?.cloudflareApiToken ? 'API token · saved, paste to replace' : 'API token'}
-              aria-label="Cloudflare API token"
-              className={cn(
-                'h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50',
-                !cfConnected && !manualCf && 'hidden',
-              )}
-            />
-          </section>
 
           </>
           )}
 
           {tab === 'harness' && (
+            <>
             <section className="flex flex-col gap-2">
               <label className="text-sm font-medium">Default harness</label>
               <p className="text-xs text-muted-foreground">
@@ -353,6 +355,8 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
               </div>
               <p className="text-[11px] text-muted-foreground">Green dot = runs with your current connections.</p>
             </section>
+            {cfAccountSection}
+            </>
           )}
 
           {tab === 'git' && (
