@@ -300,18 +300,38 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     return { ok: true, gatewayId: created.result.id }
   }
 
+  /** Wire a custom domain using the token stored from "Log in with Cloudflare" — no manual token.
+   *  Needs the login to carry DNS + Workers Routes scopes (added to the OAuth client). */
+  @callable()
+  async setupCustomDomainAuto(domain: string): Promise<{ ok: boolean; note: string; needsReconnect?: boolean }> {
+    const conn = await this.getDecryptedConnections()
+    if (!conn.cloudflareApiToken) {
+      return { ok: false, note: 'Connect Cloudflare first (log in with Cloudflare), then try again.', needsReconnect: true }
+    }
+    return this.wireDomain(domain, conn.cloudflareApiToken, true)
+  }
+
   /** Wire a custom domain for a self-hosted instance: proxied DNS for the apex and wildcard
    *  (previews need *.domain) plus worker routes. The token is used once and never stored. */
   @callable()
   async setupCustomDomain(domain: string, apiToken: string): Promise<{ ok: boolean; note: string }> {
+    if (!apiToken.trim()) return { ok: false, note: 'Paste an API token with Zone DNS Edit + Workers Routes Edit.' }
+    return this.wireDomain(domain, apiToken.trim(), false)
+  }
+
+  private async wireDomain(domain: string, apiToken: string, viaLogin: boolean): Promise<{ ok: boolean; note: string; needsReconnect?: boolean }> {
     const clean = domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
     if (!/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(clean)) return { ok: false, note: 'Enter a domain like example.com.' }
-    if (!apiToken.trim()) return { ok: false, note: 'Paste an API token with Zone DNS Edit + Workers Routes Edit.' }
+    let permDenied = false
     const api = (path: string, init?: RequestInit) =>
       fetch(`https://api.cloudflare.com/client/v4${path}`, {
         ...init,
-        headers: { authorization: `Bearer ${apiToken.trim()}`, 'content-type': 'application/json' },
-      }).then((r) => r.json().catch(() => ({}))) as Promise<{ success?: boolean; result?: unknown; errors?: Array<{ message?: string }> }>
+        headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
+      })
+        .then(async (r) => {
+          if (r.status === 403) permDenied = true
+          return r.json().catch(() => ({}))
+        }) as Promise<{ success?: boolean; result?: unknown; errors?: Array<{ message?: string; code?: number }> }>
 
     // The entered name may be a subdomain; walk up the labels to find its zone.
     const labels = clean.split('.')
@@ -323,9 +343,18 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       if (z?.id) zone = { id: z.id, name: z.name ?? name }
     }
     if (!zone) {
+      if (permDenied && viaLogin) {
+        return {
+          ok: false,
+          needsReconnect: true,
+          note: 'Your Cloudflare login does not include DNS access yet. Reconnect Cloudflare to grant it, then try again.',
+        }
+      }
       return {
         ok: false,
-        note: `No zone for ${clean} on this token's account. The token needs Zone:Read (to find the zone), plus DNS:Edit and Workers Routes:Edit. Add the domain to Cloudflare first.`,
+        note: viaLogin
+          ? `No Cloudflare zone found for ${clean} on your account. Add the domain to Cloudflare first.`
+          : `No zone for ${clean} on this token's account. The token needs Zone:Read (to find the zone), plus DNS:Edit and Workers Routes:Edit. Add the domain to Cloudflare first.`,
       }
     }
     const script = (this.env as unknown as { WORKER_NAME?: string }).WORKER_NAME ?? 'dreamweav'
@@ -373,7 +402,19 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       await ensureRoute(`*.${clean}/*`),
     ]
     if (results.every(Boolean)) return { ok: true, note: `https://${clean} is wired: app + wildcard previews.` }
-    return { ok: false, note: 'Some records or routes failed. Check the token has Zone DNS Edit and Workers Routes Edit for this zone.' }
+    if (permDenied && viaLogin) {
+      return {
+        ok: false,
+        needsReconnect: true,
+        note: 'Your Cloudflare login is missing DNS or Workers Routes access. Reconnect Cloudflare to grant it, then try again.',
+      }
+    }
+    return {
+      ok: false,
+      note: viaLogin
+        ? 'Some records or routes could not be created. Try reconnecting Cloudflare, or use a manual token.'
+        : 'Some records or routes failed. Check the token has Zone DNS Edit and Workers Routes Edit for this zone.',
+    }
   }
 
   /** Delete the attached (or 'dreamweav'-named) gateway from the USER'S Cloudflare account and

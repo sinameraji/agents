@@ -28,7 +28,20 @@ const CF_TOKEN_URL = 'https://dash.cloudflare.com/oauth2/token'
 // ai.write (Workers AI Write) is what authorizes inference on accounts/{id}/ai/v1 — ai.read only
 // covers the model catalog. aig.run alone does NOT satisfy that endpoint, and the gateway
 // data-plane (cf-aig-authorization) rejects OAuth tokens outright, so /ai/v1 is the only route.
-const CF_SCOPES = ['user-details.read', 'account-settings.read', 'ai.read', 'ai.write', 'aig.read', 'aig.write', 'aig.run']
+// zone.read/dns.write/workers-routes.write let the app wire a custom domain (proxied DNS +
+// wildcard for previews + worker routes) straight from the login — no manual API token.
+const CF_SCOPES = [
+  'user-details.read',
+  'account-settings.read',
+  'ai.read',
+  'ai.write',
+  'aig.read',
+  'aig.write',
+  'aig.run',
+  'zone.read',
+  'dns.write',
+  'workers-routes.write',
+]
 
 const GH_AUTH_URL = 'https://github.com/login/oauth/authorize'
 const GH_TOKEN_URL = 'https://github.com/login/oauth/access_token'

@@ -57,6 +57,7 @@ function GuestShell({ deploy }: { deploy?: boolean }) {
     listAiGateways: async () => ({ ok: false, gateways: [], note: 'Sign in to list your gateways.' }),
     createAiGateway: () => ask({ ok: false as const, note: 'Sign in first.' }),
     setupCustomDomain: () => ask({ ok: false as const, note: 'Sign in first.' }),
+    setupCustomDomainAuto: () => ask({ ok: false as const, note: 'Sign in first.' }),
   }
 
   const sidebar = (
