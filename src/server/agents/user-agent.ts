@@ -323,14 +323,23 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     const clean = domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
     if (!/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(clean)) return { ok: false, note: 'Enter a domain like example.com.' }
     let permDenied = false
+    const AUTH_CODES = new Set([9109, 9106, 10000, 9038, 1001])
     const api = (path: string, init?: RequestInit) =>
       fetch(`https://api.cloudflare.com/client/v4${path}`, {
         ...init,
         headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
       })
         .then(async (r) => {
-          if (r.status === 403) permDenied = true
-          return r.json().catch(() => ({}))
+          const j = (await r.json().catch(() => ({}))) as { success?: boolean; errors?: Array<{ code?: number; message?: string }> }
+          // An under-scoped token may 403, OR return 200 with an auth error code / message.
+          if (r.status === 403 || r.status === 401) permDenied = true
+          if (j.success === false) {
+            for (const e of j.errors ?? []) {
+              if ((e.code && AUTH_CODES.has(e.code)) || /unauthor|authenticat|not allowed|permission/i.test(e.message ?? ''))
+                permDenied = true
+            }
+          }
+          return j
         }) as Promise<{ success?: boolean; result?: unknown; errors?: Array<{ message?: string; code?: number }> }>
 
     // The entered name may be a subdomain; walk up the labels to find its zone.
@@ -343,18 +352,20 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       if (z?.id) zone = { id: z.id, name: z.name ?? name }
     }
     if (!zone) {
-      if (permDenied && viaLogin) {
+      if (viaLogin) {
+        // Either the login lacks DNS scopes (stale token) or the domain isn't on the account.
+        // Both are fixed the same way from here, so offer reconnect.
         return {
           ok: false,
           needsReconnect: true,
-          note: 'Your Cloudflare login does not include DNS access yet. Reconnect Cloudflare to grant it, then try again.',
+          note: permDenied
+            ? 'Your Cloudflare login does not include DNS access yet. Reconnect Cloudflare to grant it, then try again.'
+            : `Couldn't find ${clean} on your Cloudflare account. If it is there, your login may need DNS access — reconnect Cloudflare and retry. Otherwise, add the domain to Cloudflare first.`,
         }
       }
       return {
         ok: false,
-        note: viaLogin
-          ? `No Cloudflare zone found for ${clean} on your account. Add the domain to Cloudflare first.`
-          : `No zone for ${clean} on this token's account. The token needs Zone:Read (to find the zone), plus DNS:Edit and Workers Routes:Edit. Add the domain to Cloudflare first.`,
+        note: `No zone for ${clean} on this token's account. The token needs Zone:Read (to find the zone), plus DNS:Edit and Workers Routes:Edit. Add the domain to Cloudflare first.`,
       }
     }
     const script = (this.env as unknown as { WORKER_NAME?: string }).WORKER_NAME ?? 'dreamweav'
