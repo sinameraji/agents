@@ -44,6 +44,32 @@ export function ChatView({ session }: { session: SessionApi }) {
     window.addEventListener('dw:preview', onPreview)
     return () => window.removeEventListener('dw:preview', onPreview)
   }, [])
+
+  // A dev server coming up IS the ask to see it: auto-open the preview when a detection part
+  // ARRIVES. Parts already in the transcript on load only seed the set, so reopening an old
+  // session never pops the dock.
+  const seenPreviews = useRef<Set<string> | null>(null)
+  const seenPreviewsSession = useRef<string | null>(null)
+  useEffect(() => {
+    const sid = session.meta?.id ?? null
+    if (seenPreviewsSession.current !== sid) {
+      seenPreviewsSession.current = sid
+      seenPreviews.current = null
+    }
+    const parts = session.turns.flatMap((t) =>
+      t.parts.filter((p): p is Extract<(typeof t.parts)[number], { kind: 'preview' }> => p.kind === 'preview'),
+    )
+    if (seenPreviews.current === null) {
+      seenPreviews.current = new Set(parts.map((p) => p.id))
+      return
+    }
+    for (const part of parts) {
+      if (seenPreviews.current.has(part.id)) continue
+      seenPreviews.current.add(part.id)
+      window.dispatchEvent(new CustomEvent('dw:preview', { detail: { port: part.port } }))
+    }
+  }, [session.turns, session.meta?.id])
+
   const dynFetchedFor = useRef<string | null>(null)
   const { navigate } = useRouter()
   const meta = session.meta
