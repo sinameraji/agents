@@ -18,7 +18,7 @@ export function PreviewPanel({
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [failReason, setFailReason] = useState<'nothing-listening' | 'expose-failed' | 'reserved-port' | null>(null)
+  const [failReason, setFailReason] = useState<'nothing-listening' | 'expose-failed' | 'reserved-port' | 'needs-domain' | null>(null)
 
   // Ports the session has surfaced (agent-declared or detected) — but only ones that answer
   // RIGHT NOW get a chip. History is not a menu; a dead server's chip is just a future error.
@@ -207,14 +207,18 @@ export function PreviewPanel({
                   ? `Nothing is answering on port ${port}`
                   : failReason === 'reserved-port'
                     ? 'Port 3000 is reserved by the sandbox'
-                    : 'Could not open a preview URL'}
+                    : failReason === 'needs-domain'
+                      ? 'Live preview needs a custom domain'
+                      : 'Could not open a preview URL'}
               </p>
               <p className="max-w-xs text-xs text-muted-foreground">
                 {failReason === 'nothing-listening'
                   ? 'The server may have stopped or crashed. Ask the agent to restart it, then try again.'
                   : failReason === 'reserved-port'
                     ? 'Ask the agent to run the server on another port, like 8080.'
-                    : 'Something went wrong exposing the port. Try again in a moment.'}
+                    : failReason === 'needs-domain'
+                      ? 'This instance runs on workers.dev, where previews use slow, unreliable temporary tunnels. Add a domain in Settings → Domain for instant previews.'
+                      : 'Something went wrong exposing the port. Try again in a moment.'}
               </p>
             </>
           ) : (

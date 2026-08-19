@@ -1462,7 +1462,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async exposePort(
     port: number,
     hostname = 'dreamweav.com',
-  ): Promise<{ url: string | null; reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' }> {
+  ): Promise<{ url: string | null; reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' | 'needs-domain' }> {
     if (!Number.isInteger(port) || port < 1 || port > 65535) return { url: null, reason: 'expose-failed' }
     if (port === 3000) return { url: null, reason: 'reserved-port' }
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
@@ -1494,6 +1494,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         console.error(`[preview] getExposedPorts failed:`, (e as Error).message)
       }
     }
+    // Domain-less fallback: a trycloudflare quick tunnel. These are slow to establish (~90s
+    // cold) and can enter an unrecoverable state, so a failure here on a workers.dev host means
+    // "you really want a custom domain", not a transient error.
     try {
       const tunnels = (sandbox as unknown as { tunnels: { get(p: number): Promise<{ url?: string }> } }).tunnels
       const t = await tunnels.get(port)
@@ -1501,6 +1504,6 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     } catch (e) {
       console.error(`[preview] quick tunnel for ${port} failed:`, (e as Error).message)
     }
-    return { url: null, reason: 'expose-failed' }
+    return { url: null, reason: isWorkersDev ? 'needs-domain' : 'expose-failed' }
   }
 }

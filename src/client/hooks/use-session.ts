@@ -67,7 +67,7 @@ export interface SessionApi {
   exposePort: (
     port: number,
     hostname?: string,
-  ) => Promise<{ url: string | null; reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' }>
+  ) => Promise<{ url: string | null; reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' | 'needs-domain' }>
 }
 
 /** Subscribe to a SessionAgent: synced meta/status/usage + the normalized AgentEvent transcript stream. */
@@ -200,7 +200,7 @@ export function useSession(sessionId: string): SessionApi {
   const exposePort = useCallback(async (port: number, hostname?: string) => {
     return (await agentRef.current.stub.exposePort(port, hostname)) as {
       url: string | null
-      reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port'
+      reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' | 'needs-domain'
     }
   }, [])
 
