@@ -47,6 +47,8 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
   const meta = PROVIDERS.find((p) => p.id === provider)!
   const keyStored = !!ua.connections?.[meta.field]
   const cfStored = !!ua.connections?.cloudflareAccountId && !!ua.connections?.cloudflareApiToken
+  /** "Log in with Cloudflare" already provisioned creds — step 1 becomes a confirmation + optional extras. */
+  const cfFromLogin = cfStored
   const providerReady =
     provider === 'cloudflare' ? (cfStored || (!!key && !!cfAccount)) : keyStored || !!key
   const kimiNeedsCreds = harness === 'kimiflare' && !cfStored && provider !== 'cloudflare'
@@ -154,7 +156,67 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
         </ol>
 
         {/* Step 1 — provider */}
-        {step === 1 && (
+        {step === 1 && cfFromLogin && (
+          <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
+            <div className="flex items-start gap-2.5 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5">
+              <Check className="mt-0.5 size-4 shrink-0 text-success" />
+              <div className="text-sm">
+                <p className="font-medium">Cloudflare connected from your login</p>
+                <p className="text-xs text-muted-foreground">
+                  The KimiFlare harness is ready to use right now — no keys needed.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <h2 className="text-sm font-semibold">
+                Add an OpenRouter key <span className="font-normal text-muted-foreground">· optional</span>
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Unlocks every model for the other harnesses (OpenCode, pi, Built-in, Agents SDK) — pay as you go.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
+              <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+              <input
+                type="password"
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder="sk-or-v1-…"
+                aria-label="OpenRouter API key"
+                className="h-10 w-full bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/60"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              No key yet?{' '}
+              <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                openrouter.ai/settings/keys <ExternalLink className="size-3" />
+              </a>
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => {
+                  void (async () => {
+                    setBusy(true)
+                    try {
+                      if (key) await ua.saveSettings({ settings: { defaultProvider: 'openrouter' }, connections: { openrouterKey: key } })
+                      setKey('')
+                      setDone((d) => new Set(d).add(1))
+                      setStep(2)
+                    } finally {
+                      setBusy(false)
+                    }
+                  })()
+                }}
+                disabled={busy}
+                className="gap-2"
+              >
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                {key ? 'Save & continue' : 'Continue'}
+              </Button>
+            </div>
+          </section>
+        )}
+        {step === 1 && !cfFromLogin && (
           <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-semibold">Where should your models run?</h2>

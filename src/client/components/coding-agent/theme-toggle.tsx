@@ -25,6 +25,7 @@ export function ThemeToggle() {
       size="icon-sm"
       onClick={() => setLight((v) => !v)}
       aria-label={light ? 'Switch to dark mode' : 'Switch to light mode'}
+      title={light ? 'Switch to dark mode' : 'Switch to light mode'}
     >
       {light ? <Moon className="size-4" /> : <Sun className="size-4" />}
     </Button>

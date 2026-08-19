@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { GitBranch, LogOut, MoreHorizontal, Pencil, Plus, Settings, Terminal, Trash2 } from 'lucide-react'
+import { ExternalLink, GitBranch, Info, LogOut, MoreHorizontal, Pencil, Plus, Settings, Terminal, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { formatCost } from '~shared/format'
@@ -31,6 +31,7 @@ export function SessionSidebar({
 }) {
   const initials = email.slice(0, 2).toUpperCase()
   const handle = email.split('@')[0]
+  const [aboutOpen, setAboutOpen] = useState(false)
   return (
     <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       <header className="flex items-center gap-2 px-3 pt-3 pb-2">
@@ -79,8 +80,17 @@ export function SessionSidebar({
         </div>
         <div className="ml-auto flex items-center">
           <ThemeToggle />
-          <Button variant="ghost" size="icon-sm" onClick={onOpenSettings} aria-label="Open settings">
+          <Button variant="ghost" size="icon-sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings — keys & connections">
             <Settings className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="About Dreamweav"
+            title="About Dreamweav"
+            onClick={() => setAboutOpen(true)}
+          >
+            <Info className="size-4" />
           </Button>
           <Button
             variant="ghost"
@@ -95,6 +105,43 @@ export function SessionSidebar({
           </Button>
         </div>
       </footer>
+
+      {aboutOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="About Dreamweav">
+          <button type="button" aria-label="Close" onClick={() => setAboutOpen(false)} className="absolute inset-0 cursor-default bg-background/70 backdrop-blur-sm" />
+          <div className="relative flex w-full max-w-sm flex-col gap-3 rounded-xl border border-border bg-card p-5 shadow-2xl">
+            <div className="flex items-center gap-2.5">
+              <div className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
+                <Terminal className="size-4.5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold">Dreamweav</h2>
+                <p className="text-xs text-muted-foreground">Coding agents in your browser.</p>
+              </div>
+            </div>
+            <p className="text-sm text-foreground/90">
+              Built by{' '}
+              <a href="https://github.com/sinameraji" target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                Sina Meraji
+              </a>
+              . Open source:
+            </p>
+            <a
+              href="https://github.com/sinameraji/dreamweav"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground/90 transition-colors hover:bg-muted"
+            >
+              github.com/sinameraji/dreamweav <ExternalLink className="size-3" />
+            </a>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Runs entirely on Cloudflare (Workers, Durable Objects, Sandboxes, R2). Harnesses by their
+              authors: OpenCode (Anomaly), pi (Mario Zechner), KimiFlare (Sina Meraji), AI SDK (Vercel),
+              Agents SDK (Cloudflare). Your keys stay encrypted in your account.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

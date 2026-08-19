@@ -23,20 +23,19 @@ function Shell({ userId, email }: { userId: string; email: string }) {
   const sessionId = useSessionRoute()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // First-time users (no model key yet) get the 3-step wizard instead of the full session form.
+  // First-time = no sessions yet: the 3-step wizard IS the home screen (and /new) until the
+  // first session exists. Step 1 adapts to whatever a Cloudflare/GitHub login already provisioned.
   const conn = ua.connections
-  const hasModelKey =
-    !!conn?.openrouterKey || !!conn?.anthropicKey || !!conn?.openaiKey ||
-    (!!conn?.cloudflareApiToken && !!conn?.cloudflareAccountId)
+  const firstTime = conn !== null && ua.sessions.length === 0
   const main = useMemo(() => {
-    if (path === '/new') {
-      if (conn !== null && !hasModelKey) return <Onboarding ua={ua} />
-      return <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
-    }
     if (sessionId) return <LiveChatView key={sessionId} sessionId={sessionId} />
+    if (path === '/new') {
+      return firstTime ? <Onboarding ua={ua} /> : <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
+    }
+    if (firstTime) return <Onboarding ua={ua} />
     return <EmptyState onNew={() => navigate('/new')} hasSessions={ua.sessions.length > 0} />
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, sessionId, ua.sessions.length, conn, hasModelKey])
+  }, [path, sessionId, ua.sessions.length, conn, firstTime])
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
