@@ -120,7 +120,9 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     const provider = input.provider ?? settings.defaultProvider
     const model = input.model ?? settings.defaultModel
     const repo =
-      input.source.kind === 'github' ? input.source.url.replace(/^https?:\/\/github\.com\//, '') : ''
+      input.source.kind === 'github'
+        ? input.source.url.replace(/^https?:\/\/(www\.)?github\.com\//, '').replace(/^https?:\/\//, '').replace(/\.git$/, '')
+        : ''
     const name = input.name ?? (repo || 'Untitled session')
     const branch = `dreamweav/${id.slice(0, 8)}`
     this.sql`INSERT INTO sessions (id, name, repo, branch, harness, status, model, provider, source_json, created_at)

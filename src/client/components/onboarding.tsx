@@ -175,8 +175,8 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
 
   const create = async () => {
     setErr(null)
-    if (source === 'github' && !/github\.com\/.+\/.+/.test(url)) {
-      setErr('Enter a GitHub repo URL, e.g. https://github.com/owner/repo')
+    if (source === 'github' && !/^https:\/\/[^\s/]+\.[^\s/]+\/.+/.test(url)) {
+      setErr('Enter an HTTPS git URL, e.g. https://github.com/owner/repo')
       return
     }
     setBusy(true)
@@ -423,13 +423,13 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                 className={cn('flex flex-col gap-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors',
                   source === 'github' ? 'border-primary/60 bg-primary/10' : 'border-border hover:bg-muted')}
               >
-                <span className="flex items-center gap-1.5 text-sm"><GitBranch className="size-3.5" /> GitHub repo</span>
-                <span className="text-xs text-muted-foreground">Clone &amp; work on real code</span>
+                <span className="flex items-center gap-1.5 text-sm"><GitBranch className="size-3.5" /> Git repo</span>
+                <span className="text-xs text-muted-foreground">GitHub, GitLab, any HTTPS remote</span>
               </button>
             </div>
             {source === 'github' && (
               <div className="flex flex-col gap-2">
-                <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/repo" aria-label="Repository URL" className={inputCls} />
+                <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/repo — or any HTTPS git URL" aria-label="Repository URL" className={inputCls} />
                 <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch (optional)" aria-label="Branch" className={inputCls} />
                 {!ua.connections?.githubPat && (
                   <p className="text-xs text-muted-foreground">Private repo? Add a GitHub token later in Settings.</p>

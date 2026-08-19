@@ -97,8 +97,8 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
 
   const create = async () => {
     setErr(null)
-    if (source === 'github' && !/github\.com\/.+\/.+/.test(url)) {
-      setErr('Enter a GitHub repo URL, e.g. https://github.com/owner/repo')
+    if (source === 'github' && !/^https:\/\/[^\s/]+\.[^\s/]+\/.+/.test(url)) {
+      setErr('Enter an HTTPS git URL, e.g. https://github.com/owner/repo')
       return
     }
     setBusy(true)
@@ -128,7 +128,7 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
         <section className="flex flex-col gap-2">
           <label className="text-sm font-medium">Source</label>
           <div className="grid grid-cols-2 gap-2">
-            <SourceCard active={source === 'github'} onClick={() => setSource('github')} icon={<GitBranch className="size-4" />} label="GitHub repo" hint="Clone & branch" />
+            <SourceCard active={source === 'github'} onClick={() => setSource('github')} icon={<GitBranch className="size-4" />} label="Git repo" hint="GitHub, GitLab, any HTTPS remote" />
             <SourceCard active={source === 'blank'} onClick={() => setSource('blank')} icon={<Sparkles className="size-4" />} label="Blank" hint="Empty workspace" />
           </div>
         </section>
@@ -139,7 +139,7 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://github.com/owner/repo"
+              placeholder="https://github.com/owner/repo — or any HTTPS git URL"
               className="h-10 rounded-lg border border-border bg-background px-3 font-mono text-sm outline-none focus:border-primary/50"
             />
             <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3">
@@ -153,7 +153,7 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
             </div>
             {!ua.connections?.githubPat && (
               <p className="text-xs text-muted-foreground">
-                Private repos need a GitHub token — add one in Settings.
+                Private GitHub repos need a token (Settings → Git). Other hosts: public repos for now.
               </p>
             )}
           </section>
