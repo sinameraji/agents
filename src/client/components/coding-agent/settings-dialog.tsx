@@ -41,7 +41,19 @@ function HelpLink({ href, children }: { href: string; children: React.ReactNode 
   )
 }
 
-export function SettingsDialog({ ua, onClose, onRequireAuth }: { ua: UserAgentApi; onClose: () => void; onRequireAuth?: () => void }) {
+export type SettingsTab = 'providers' | 'harness' | 'git'
+
+export function SettingsDialog({
+  ua,
+  onClose,
+  onRequireAuth,
+  initialTab,
+}: {
+  ua: UserAgentApi
+  onClose: () => void
+  onRequireAuth?: () => void
+  initialTab?: SettingsTab
+}) {
   const [provider, setProvider] = useState<Provider>(ua.settings.defaultProvider)
   const [keyInput, setKeyInput] = useState('')
   const [pat, setPat] = useState('')
@@ -52,7 +64,7 @@ export function SettingsDialog({ ua, onClose, onRequireAuth }: { ua: UserAgentAp
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [manualCf, setManualCf] = useState(false)
-  const [tab, setTab] = useState<'providers' | 'harness' | 'git'>('providers')
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'providers')
 
   const cfConnected = !!ua.connections?.cloudflareAccountId && !!ua.connections?.cloudflareApiToken
   const gwId = ua.connections?.cloudflareGatewayId ?? null

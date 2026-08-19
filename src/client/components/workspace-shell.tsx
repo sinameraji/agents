@@ -101,7 +101,12 @@ function Shell({ userId, email }: { userId: string; email: string }) {
   const { path, navigate } = useRouter()
   const sessionId = useSessionRoute()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'providers' | 'harness' | 'git'>('providers')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const openSettings = (tab?: 'providers' | 'harness' | 'git') => {
+    setSettingsTab(tab ?? 'providers')
+    setSettingsOpen(true)
+  }
 
   // The wizard is only for accounts that have never been set up: no sessions AND no credentials.
   // A configured user with zero sessions (e.g. they deleted them all) goes straight to the
@@ -114,11 +119,11 @@ function Shell({ userId, email }: { userId: string; email: string }) {
   const main = useMemo(() => {
     if (sessionId) return <LiveChatView key={sessionId} sessionId={sessionId} />
     if (path === '/new') {
-      return firstTime ? <Onboarding ua={ua} /> : <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
+      return firstTime ? <Onboarding ua={ua} /> : <NewSession ua={ua} onOpenSettings={openSettings} />
     }
     if (firstTime) return <Onboarding ua={ua} />
     if (ua.sessions.length === 0 && conn !== null) {
-      return <NewSession ua={ua} onOpenSettings={() => setSettingsOpen(true)} />
+      return <NewSession ua={ua} onOpenSettings={openSettings} />
     }
     return <EmptyState onNew={() => navigate('/new')} hasSessions={ua.sessions.length > 0} />
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,7 +178,7 @@ function Shell({ userId, email }: { userId: string; email: string }) {
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1">{main}</div>
-      {settingsOpen && <SettingsDialog ua={ua} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsDialog ua={ua} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />}
     </div>
   )
 }

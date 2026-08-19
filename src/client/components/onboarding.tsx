@@ -190,6 +190,7 @@ export function Onboarding({ ua, guest, onRequireAuth }: { ua: UserAgentApi; gue
     setErr(null)
     setBusy(true)
     try {
+      await ua.saveSettings({ settings: { defaultHarness: harness } })
       if (kimiNeedsCreds && (kfAccount || kfToken)) {
         const connections: Record<string, string> = {}
         if (kfAccount) connections.cloudflareAccountId = kfAccount

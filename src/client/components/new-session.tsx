@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, CircleAlert, ExternalLink, File, GitBranch, Loader2 } from 'lucide-react'
+import { File, GitBranch, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRouter } from '@/router'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
@@ -7,6 +7,16 @@ import { HARNESSES, type Harness, type MaskedConnections, type SessionSource } f
 import { Button } from '@/components/ui/button'
 import { CloudflareMark } from './login-screen'
 import { KimiFlareMark, OpenCodeMark, PiMark, VercelMark } from './brand-marks'
+
+import { PROVIDERS } from './coding-agent/settings-dialog'
+import { AnthropicMark, OpenAIMark, OpenRouterMark } from './brand-marks'
+
+const PROVIDER_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
+  openrouter: OpenRouterMark,
+  cloudflare: CloudflareMark,
+  anthropic: AnthropicMark,
+  openai: OpenAIMark,
+}
 
 const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
   opencode: OpenCodeMark,
@@ -69,39 +79,21 @@ export function harnessRequirements(h: Harness, conn: MaskedConnections | null):
   ]
 }
 
-function RequirementRow({ r }: { r: Requirement }) {
-  return (
-    <div className="flex items-start gap-2">
-      {r.ok ? (
-        <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
-      ) : (
-        <CircleAlert className={cn('mt-0.5 size-3.5 shrink-0', r.optional ? 'text-muted-foreground' : 'text-warning')} />
-      )}
-      <div className="min-w-0 text-xs leading-relaxed">
-        <span className={cn('font-medium', r.ok ? 'text-foreground/80' : 'text-foreground')}>
-          {r.label}
-          {r.optional && <span className="font-normal text-muted-foreground"> · optional</span>}
-          {r.ok && <span className="font-normal text-success"> · configured</span>}
-        </span>
-        {!r.ok && r.hint && <p className="text-muted-foreground">{r.hint}</p>}
-        {!r.ok && r.link && (
-          <a href={r.link.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-            {r.link.text} <ExternalLink className="size-3" />
-          </a>
-        )}
-      </div>
-    </div>
-  )
-}
 
 type Source = 'github' | 'blank'
 
-export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSettings?: () => void }) {
+export function NewSession({
+  ua,
+  onOpenSettings,
+}: {
+  ua: UserAgentApi
+  onOpenSettings?: (tab?: 'providers' | 'harness' | 'git') => void
+}) {
   const { navigate } = useRouter()
   const [source, setSource] = useState<Source>('github')
   const [url, setUrl] = useState('')
   const [branch, setBranch] = useState('')
-  const [harness, setHarness] = useState<Harness>(ua.settings.defaultHarness)
+  const harness = ua.settings.defaultHarness
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -117,7 +109,7 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
         source === 'github'
           ? { kind: 'github', url: url.trim(), branch: branch.trim() || undefined }
           : { kind: 'blank' }
-      const id = await ua.createSession({ source: sessionSource, harness })
+      const id = await ua.createSession({ source: sessionSource })
       navigate(`/s/${id}`)
     } catch (e) {
       setErr((e as Error).message)
@@ -169,79 +161,70 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
           </section>
         )}
 
-        <section className="flex flex-col gap-2">
-          <label className="text-sm font-medium">Harness</label>
-          <div className="flex flex-col gap-1.5">
-            {HARNESSES.map((h) => (
-              <div
-                key={h.id}
-                role="button"
-                tabIndex={h.enabled ? 0 : -1}
-                aria-pressed={harness === h.id}
-                onClick={() => h.enabled && setHarness(h.id)}
-                onKeyDown={(e) => {
-                  if (h.enabled && (e.key === 'Enter' || e.key === ' ')) {
-                    e.preventDefault()
-                    setHarness(h.id)
-                  }
-                }}
-                className={cn(
-                  'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
-                  !h.enabled && 'cursor-not-allowed opacity-40',
-                  harness === h.id ? 'border-primary/60 bg-primary/10' : 'border-border hover:bg-muted',
-                )}
-              >
-                {(() => {
-                  const M = HARNESS_MARKS[h.id]
-                  return M ? <M className="size-4 shrink-0" /> : null
-                })()}
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-sm">{h.label}{!h.enabled && ' · soon'}</span>
-                  <span className="text-xs text-muted-foreground">{h.blurb}</span>
-                </div>
-                <a
-                  href={h.repoUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label={`${h.label} source repository`}
-                  title={h.repoUrl.replace('https://', '')}
-                  className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <ExternalLink className="size-3.5" />
-                </a>
-              </div>
-            ))}
-          </div>
-        </section>
-
         {(() => {
+          const h = HARNESSES.find((x) => x.id === harness)!
+          const HM = HARNESS_MARKS[harness]
+          const p = PROVIDERS.find((x) => x.id === ua.settings.defaultProvider)!
+          const PM = PROVIDER_MARKS[p.id]
           const reqs = harnessRequirements(harness, ua.connections)
-          const missing = reqs.some((r) => !r.ok && !r.optional)
-          const label = HARNESSES.find((h) => h.id === harness)?.label ?? harness
-          return (
-            <div
-              className={cn(
-                'flex flex-col gap-2.5 rounded-lg border px-3 py-2.5',
-                missing ? 'border-warning/40 bg-warning/10' : 'border-border bg-card/60',
-              )}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-medium text-foreground/90">
-                  {missing ? `Before your first ${label} turn:` : `${label} is ready to go.`}
-                </p>
-                {missing && onOpenSettings && (
-                  <Button variant="secondary" size="sm" className="shrink-0" onClick={onOpenSettings}>
-                    Open Settings
-                  </Button>
-                )}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                {reqs.map((r) => (
-                  <RequirementRow key={r.label} r={r} />
-                ))}
-              </div>
+          const missing = reqs.filter((r) => !r.ok && !r.optional)
+          const providerConfigured =
+            p.id === 'cloudflare'
+              ? !!ua.connections?.cloudflareAccountId && !!ua.connections?.cloudflareApiToken && !!ua.connections?.cloudflareGatewayId
+              : !!ua.connections?.[p.field]
+          const Row = ({
+            label,
+            mark,
+            value,
+            ok,
+            tab,
+          }: {
+            label: string
+            mark: React.ReactNode
+            value: string
+            ok: boolean
+            tab: 'providers' | 'harness'
+          }) => (
+            <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card/60 px-3 py-2">
+              <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
+              {mark}
+              <span className="min-w-0 flex-1 truncate text-sm">{value}</span>
+              <span
+                aria-hidden
+                title={ok ? 'Ready' : 'Needs setup'}
+                className={cn('size-1.5 shrink-0 rounded-full', ok ? 'bg-success' : 'bg-warning')}
+              />
+              <button
+                type="button"
+                onClick={() => onOpenSettings?.(tab)}
+                className="shrink-0 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Change
+              </button>
             </div>
+          )
+          return (
+            <section className="flex flex-col gap-1.5">
+              <Row
+                label="Harness"
+                mark={HM ? <HM className="size-4 shrink-0" /> : null}
+                value={h.label}
+                ok={missing.length === 0}
+                tab="harness"
+              />
+              <Row
+                label="Provider"
+                mark={PM ? <PM className="size-4 shrink-0" /> : null}
+                value={`${p.label}${providerConfigured ? ' · configured' : ''}`}
+                ok={providerConfigured || harness === 'kimiflare'}
+                tab="providers"
+              />
+              {missing.length > 0 && (
+                <p className="text-xs text-warning">
+                  {h.label} needs: {missing.map((r) => r.label).join(', ')} — use Change to set it up.
+                </p>
+              )}
+            </section>
           )
         })()}
 
