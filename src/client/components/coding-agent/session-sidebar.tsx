@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ExternalLink, GitBranch, Info, LogOut, MoreHorizontal, Pencil, Plus, Settings, Terminal, Trash2 } from 'lucide-react'
+import { ExternalLink, GitBranch, Info, LogOut, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { formatCost } from '~shared/format'
@@ -35,9 +35,7 @@ export function SessionSidebar({
   return (
     <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       <header className="flex items-center gap-2 px-3 pt-3 pb-2">
-        <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
-          <Terminal className="size-4" />
-        </div>
+        <img src="/icon-192.png" alt="" aria-hidden className="size-8 shrink-0" />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold tracking-tight">Dreamweav</span>
           <span className="text-[0.7rem] text-muted-foreground">coding agents in your browser</span>
@@ -110,9 +108,7 @@ export function SessionSidebar({
           <button type="button" aria-label="Close" onClick={() => setAboutOpen(false)} className="absolute inset-0 cursor-default bg-background/70 backdrop-blur-sm" />
           <div className="relative flex w-full max-w-sm flex-col gap-3 rounded-xl border border-border bg-card p-5 shadow-2xl">
             <div className="flex items-center gap-2.5">
-              <div className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-                <Terminal className="size-4.5" />
-              </div>
+              <img src="/icon-192.png" alt="" aria-hidden className="size-9" />
               <div>
                 <h2 className="text-sm font-semibold">Dreamweav</h2>
                 <p className="text-xs text-muted-foreground">Coding agents in your browser.</p>

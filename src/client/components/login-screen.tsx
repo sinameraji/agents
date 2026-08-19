@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Lock, Mail, Terminal } from 'lucide-react'
+import { Loader2, Lock, Mail } from 'lucide-react'
 
 /** Official Cloudflare logomark (Simple Icons, CC0) in brand orange. */
 export function CloudflareMark({ className }: { className?: string }) {
@@ -91,9 +91,7 @@ export function LoginScreen() {
   return (
     <main className="flex h-dvh w-full items-center justify-center bg-background p-6 text-foreground">
       <div className="flex w-full max-w-xs flex-col items-center gap-5">
-        <div className="grid size-12 place-items-center rounded-xl bg-primary text-primary-foreground">
-          <Terminal className="size-6" />
-        </div>
+        <img src="/icon-192.png" alt="" aria-hidden className="size-14" />
         <div className="text-center">
           <h1 className="text-lg font-semibold tracking-tight">Dreamweav</h1>
           <p className="mt-1 text-sm text-muted-foreground">
