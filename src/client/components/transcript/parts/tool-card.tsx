@@ -78,9 +78,7 @@ function ToolBody({ part }: { part: ToolPartData }) {
   }
 
   if (!output) {
-    if (state.input && Object.keys(state.input).length > 0) {
-      return <CodeBlock code={JSON.stringify(state.input, null, 2)} lang="json" maxHeight={240} />
-    }
+    // The command/primary arg is already in the header — never dump raw input JSON as a body.
     return (
       <p className="px-1 text-xs text-muted-foreground">
         {state.status === 'running' || state.status === 'pending' ? 'Running…' : 'No output'}
