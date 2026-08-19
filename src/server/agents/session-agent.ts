@@ -290,17 +290,24 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   private async ensureWorkspace(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
     await this.ensureGitCredentials(sandbox)
-    await this.ensureAgentContext(sandbox)
+
+    // Hydrate (restore/clone) BEFORE writing anything into /workspace. Writing AGENTS.md first
+    // both fails the emptiness check AND makes `git clone .` refuse a non-empty directory — that
+    // ordering silently skipped every GitHub clone.
     const empty = await sandbox
       .exec('sh -lc \'[ -z "$(ls -A /workspace 2>/dev/null)" ] && echo EMPTY || echo FULL\'')
       .then((r) => (r as { stdout?: string }).stdout?.includes('EMPTY'))
       .catch(() => false)
-    if (!empty) return
+    if (!empty) {
+      await this.ensureAgentContext(sandbox)
+      return
+    }
 
     const backup = this.getKv<{ id: string; dir: string; localBucket?: boolean } | null>('backup', null)
     if (backup) {
       try {
         await sandbox.restoreBackup(backup as never)
+        await this.ensureAgentContext(sandbox)
         return
       } catch (e) {
         console.error('[dreamweav] restore failed', e)
@@ -321,6 +328,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
           console.error('[dreamweav] clone failed', String((e as Error).message ?? e).replaceAll(conn.githubPat ?? '\u0000', '***'))
         })
     }
+
+    // Repo cloned (or intentionally blank) — now inject the Dreamweav context block. Idempotent.
+    await this.ensureAgentContext(sandbox)
   }
 
   /** Copy uploaded files from R2 into the sandbox at /workspace/uploads/. */
