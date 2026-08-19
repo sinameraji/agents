@@ -128,7 +128,7 @@ export interface UserSettings {
  *  stored default model's shape (e.g. an OpenRouter id on the Cloudflare gateway). */
 export const DEFAULT_MODEL_BY_PROVIDER: Record<Provider, string> = {
   openrouter: 'openai/gpt-5.6-luna',
-  cloudflare: 'workers-ai/@cf/moonshotai/kimi-k2-instruct',
+  cloudflare: 'workers-ai/@cf/moonshotai/kimi-k2.7-code',
   anthropic: 'claude-sonnet-4-5',
   openai: 'gpt-5.1',
 }
