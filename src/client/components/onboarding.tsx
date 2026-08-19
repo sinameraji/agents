@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, ExternalLink, File, GitBranch, KeyRound, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { Check, ExternalLink, File, GitBranch, KeyRound, Loader2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useRouter } from '@/router'
@@ -27,8 +27,8 @@ const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNo
 }
 import { GatewayPicker } from './gateway-picker'
 
-/** Themed dropdown (the native <select> looks like the OS, not like Dreamweav). */
-function Dropdown<T extends string>({
+/** Every option visible, one click to pick. A dropdown hides the menu; this IS the menu. */
+function OptionGrid<T extends string>({
   value,
   options,
   onChange,
@@ -39,64 +39,25 @@ function Dropdown<T extends string>({
   onChange: (v: T) => void
   ariaLabel: string
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-  const current = options.find((o) => o.id === value)
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-10 w-full items-center justify-between rounded-lg border border-border bg-background px-3 text-sm transition-colors hover:bg-muted/40 focus:border-primary/50 focus:outline-none"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          {current?.icon}
-          <span className="truncate">{current?.label ?? value}</span>
-        </span>
-        <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div role="listbox" aria-label={ariaLabel} className="absolute inset-x-0 top-[calc(100%+0.375rem)] z-30 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-xl">
-          {options.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              role="option"
-              aria-selected={o.id === value}
-              onClick={() => {
-                onChange(o.id)
-                setOpen(false)
-              }}
-              className={cn(
-                'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors',
-                o.id === value ? 'bg-muted text-foreground' : 'text-foreground/90 hover:bg-muted',
-              )}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                {o.icon}
-                <span className="truncate">{o.label}</span>
-              </span>
-              {o.id === value && <Check className="size-3.5 shrink-0 text-primary" />}
-            </button>
-          ))}
-        </div>
-      )}
+    <div role="radiogroup" aria-label={ariaLabel} className="grid grid-cols-2 gap-2">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={o.id === value}
+          onClick={() => onChange(o.id)}
+          className={cn(
+            'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors',
+            o.id === value ? 'border-primary/60 bg-primary/10' : 'border-border bg-background hover:bg-muted',
+          )}
+        >
+          {o.icon}
+          <span className="min-w-0 truncate font-medium">{o.label}</span>
+          {o.id === value && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
+        </button>
+      ))}
     </div>
   )
 }
@@ -314,7 +275,7 @@ export function Onboarding({ ua, guest, onRequireAuth }: { ua: UserAgentApi; gue
                 Bring your own key, it&apos;s encrypted and only used to run your sessions.
               </p>
             </div>
-            <Dropdown
+            <OptionGrid
               value={provider}
               onChange={setProvider}
               ariaLabel="Model provider"
@@ -407,7 +368,7 @@ export function Onboarding({ ua, guest, onRequireAuth }: { ua: UserAgentApi; gue
                 The open-source agent that reads, edits, and runs your code. OpenCode is a great default, you can pick a different one per session anytime.
               </p>
             </div>
-            <Dropdown
+            <OptionGrid
               value={harness}
               onChange={setHarness}
               ariaLabel="Harness"

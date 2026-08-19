@@ -40,8 +40,30 @@ app.post('/api/logout', (c) => {
 })
 
 // Which login providers are configured (drives the login screen buttons).
+/** Host role for this request: the public landing host, the owner host, or a plain app host. */
+function hostRole(c: { req: { url: string }; env: unknown }): 'landing' | 'owner' | 'app' {
+  const host = new URL(c.req.url).hostname.toLowerCase()
+  const env = c.env as Record<string, string | undefined>
+  const landing = (env.LANDING_HOSTS ?? '').toLowerCase().split(/[\s,]+/).filter(Boolean)
+  if (landing.includes(host)) return 'landing'
+  if ((env.OWNER_HOST ?? '').toLowerCase() === host) return 'owner'
+  return 'app'
+}
+
+// What this host IS (drives landing page vs app shell client-side).
+app.get('/api/config', (c) => c.json({ mode: hostRole(c) === 'landing' ? 'landing' : 'app' }))
+
 app.get('/api/auth/providers', (c) => {
   const env = c.env as unknown as Record<string, string | undefined>
+  // The owner host is Cloudflare-only by design: one door, no password/GitHub/email fallbacks.
+  if (hostRole(c) === 'owner') {
+    return c.json({
+      cloudflare: !!env.CF_OAUTH_CLIENT_ID && !!env.CF_OAUTH_CLIENT_SECRET,
+      github: false,
+      email: false,
+      password: false,
+    })
+  }
   return c.json({
     cloudflare: !!env.CF_OAUTH_CLIENT_ID && !!env.CF_OAUTH_CLIENT_SECRET,
     github: !!env.GITHUB_OAUTH_CLIENT_ID && !!env.GITHUB_OAUTH_CLIENT_SECRET,

@@ -12,12 +12,18 @@ import { NewSession } from './new-session'
 import { Onboarding } from './onboarding'
 import { EmptyState } from './empty-state'
 import { LoginDialog } from './login-dialog'
+import { Landing } from './landing'
+import { useConfig } from '@/hooks/use-config'
 import { DEFAULT_SETTINGS } from '~shared/protocol'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
 
 export function WorkspaceShell() {
+  const { config } = useConfig()
   const { me, loading } = useMe()
-  if (loading) return <FullScreen>Connecting…</FullScreen>
+  if (!config || loading) return <FullScreen>Connecting…</FullScreen>
+  // The public host is a storefront with ONE call to action: deploy your own. The app itself
+  // lives on each owner's host (OWNER_HOST / workers.dev / their custom domain).
+  if (config.mode === 'landing') return <Landing />
   if (!me) return <GuestShell />
   return <Shell userId={me.id} email={me.email} />
 }

@@ -149,7 +149,9 @@ export function LoginOptions() {
                   </Button>
                 </form>
               ))}
-            {!providers.email && (
+            {/* The "coming soon" teaser only makes sense on a general instance. A locked-down
+                Cloudflare-only host (the owner host) shows exactly one door and nothing else. */}
+            {!providers.email && !(providers.cloudflare && !providers.github && !providers.password) && (
               <Button variant="outline" className="w-full gap-2 opacity-50" disabled title="Coming soon">
                 <Mail className="size-4" />
                 Email magic link · soon
