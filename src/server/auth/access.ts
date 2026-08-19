@@ -19,6 +19,12 @@ interface AccessEnv {
   ACCESS_TEAM_DOMAIN?: string
   ACCESS_AUD?: string
   AUTH_SECRET?: string
+  // Presence of any of these means "real auth is configured" — the dev bypass is then ignored,
+  // so a stray DEV_USER_EMAIL in a deployed env can never become an unauthenticated backdoor.
+  APP_PASSWORD?: string
+  CF_OAUTH_CLIENT_ID?: string
+  GITHUB_OAUTH_CLIENT_ID?: string
+  EMAIL?: unknown
 }
 
 interface Jwk extends JsonWebKey {
@@ -92,7 +98,11 @@ export async function resolveIdentity(request: Request, env: AccessEnv): Promise
     null
   if (jwt) email = await verifyAccessJwt(jwt, env)
   if (!email) email = await emailFromSessionCookie(request, env)
-  if (!email && env.DEV_USER_EMAIL) email = env.DEV_USER_EMAIL
+  // Dev bypass: only when NO real auth mechanism is configured, so it can never silently
+  // authenticate anonymous requests on a deployed instance that has a password/OAuth/email.
+  const realAuthConfigured =
+    !!env.APP_PASSWORD || !!env.CF_OAUTH_CLIENT_ID || !!env.GITHUB_OAUTH_CLIENT_ID || !!env.EMAIL
+  if (!email && env.DEV_USER_EMAIL && !realAuthConfigured) email = env.DEV_USER_EMAIL
   if (!email) return null
   return { id: await userIdFromEmail(email), email }
 }

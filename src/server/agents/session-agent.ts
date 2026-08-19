@@ -1,5 +1,10 @@
 import { Agent, callable, getAgentByName } from 'agents'
-import { getSandbox } from '@cloudflare/sandbox'
+import { getSandbox as sdkGetSandbox } from '@cloudflare/sandbox'
+
+/** All sandbox access uses the RPC transport: tunnels (domain-less previews) require it, and the
+ *  SDK requires ONE consistent transport per sandbox - mixing disconnects active clients. */
+const getSandbox: typeof sdkGetSandbox = (ns, id, opts) =>
+  sdkGetSandbox(ns, id, { ...opts, transport: 'rpc' })
 import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 import { buildOpencodeConfig, hasProviderKey } from '../opencode-config'
@@ -763,7 +768,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         fresh.map(async (port) => {
           const c = (await sandbox
             .exec(
-              `sh -lc 'curl -s -o /dev/null -m 3 -w "%{http_code}:%{content_type}" http://127.0.0.1:${port}/ || echo 000:'`,
+              `sh -lc 'curl -s -o /dev/null -m 3 -w "%{http_code}:%{content_type}" http://127.0.0.1:${port}/ || true'`,
               { timeout: 10_000 },
             )
             .catch(() => null)) as { stdout?: string } | null
@@ -1438,8 +1443,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const candidates = [...new Set(ports)].filter((p) => Number.isInteger(p) && p > 0 && p <= 65535 && p !== 3000).slice(0, 12)
     if (!candidates.length) return { alive: [] }
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    // curl -w prints 000 itself on connection failure; appending another 000 via || would make
+    // dead ports read "000000" and pass a !== "000" check. Swallow the exit status only.
     const script = candidates
-      .map((p) => `printf "%s:" ${p}; curl -s -o /dev/null -m 2 -w "%{http_code}" http://127.0.0.1:${p}/ || printf 000; echo`)
+      .map((p) => `printf "%s:" ${p}; curl -s -o /dev/null -m 2 -w "%{http_code}" http://127.0.0.1:${p}/ || true; echo`)
       .join('; ')
     const r = (await sandbox.exec(`sh -lc '${script}'`, { timeout: 20_000 }).catch(() => null)) as { stdout?: string } | null
     const alive = (r?.stdout ?? '')
@@ -1456,12 +1463,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     port: number,
     hostname = 'dreamweav.com',
   ): Promise<{ url: string | null; reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' }> {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return { url: null, reason: 'expose-failed' }
     if (port === 3000) return { url: null, reason: 'reserved-port' }
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
     // Probe first so a dead server gets an honest "nothing is answering" instead of an
-    // infrastructure-sounding failure.
+    // infrastructure-sounding failure. curl -w prints 000 itself on connection failure.
     const probe = (await sandbox
-      .exec(`sh -lc 'curl -s -o /dev/null -m 3 -w "%{http_code}" http://127.0.0.1:${port}/ || echo 000'`, {
+      .exec(`sh -lc 'curl -s -o /dev/null -m 3 -w "%{http_code}" http://127.0.0.1:${port}/ || true'`, {
         timeout: 10_000,
       })
       .catch(() => null)) as { stdout?: string } | null

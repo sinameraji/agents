@@ -449,7 +449,7 @@ function DomainSection({ ua }: { ua: UserAgentApi }) {
       />
       <label htmlFor="dw-domain-token" className="text-sm font-medium">API token</label>
       <p className="text-xs text-muted-foreground">
-        Zone DNS Edit + Workers Routes Edit for that zone. Used once, never stored.
+        Zone:Read + DNS:Edit + Workers Routes:Edit for that zone. Used once, never stored.
       </p>
       <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
         <KeyRound className="size-4 shrink-0 text-muted-foreground" />

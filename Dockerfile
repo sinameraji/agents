@@ -17,6 +17,13 @@ RUN git config --system user.email "agent@dreamweav.com" \
   && git config --system user.name "Dreamweav Agent" \
   && git config --system init.defaultBranch main
 
+# cloudflared: the Sandbox SDK's quick-tunnel API (sandbox.tunnels) spawns this to mint
+# trycloudflare.com preview URLs — the domain-less preview fallback for self-hosters.
+RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+      -o /usr/local/bin/cloudflared \
+  && chmod +x /usr/local/bin/cloudflared \
+  && cloudflared --version
+
 # Harness CLIs (best-effort — if a registry hiccups the image still builds with OpenCode + AI-SDK).
 RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent kimiflare || true
 

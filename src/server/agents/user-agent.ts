@@ -322,11 +322,30 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       const z = (Array.isArray(r.result) ? r.result : [])[0] as { id?: string; name?: string } | undefined
       if (z?.id) zone = { id: z.id, name: z.name ?? name }
     }
-    if (!zone) return { ok: false, note: `No zone for ${clean} on this token's account. Add the domain to Cloudflare first.` }
+    if (!zone) {
+      return {
+        ok: false,
+        note: `No zone for ${clean} on this token's account. The token needs Zone:Read (to find the zone), plus DNS:Edit and Workers Routes:Edit. Add the domain to Cloudflare first.`,
+      }
+    }
+    const script = (this.env as unknown as { WORKER_NAME?: string }).WORKER_NAME ?? 'dreamweav'
 
+    // A record must be an A record and proxied (orange-cloud) for the worker route to catch it;
+    // an existing CNAME or grey-cloud record would silently break previews, so verify, don't
+    // just "exists".
     const ensureRecord = async (name: string) => {
       const list = await api(`/zones/${zone!.id}/dns_records?name=${encodeURIComponent(name)}`)
-      if (Array.isArray(list.result) && list.result.length) return true
+      const existing = (Array.isArray(list.result) ? list.result : []) as Array<{ id?: string; type?: string; proxied?: boolean }>
+      const ours = existing.find((r) => r.type === 'A' && r.proxied === true)
+      if (ours) return true
+      const conflict = existing.find((r) => r.type === 'CNAME' || r.proxied === false)
+      if (conflict?.id) {
+        const upd = await api(`/zones/${zone!.id}/dns_records/${conflict.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ type: 'A', name, content: '192.0.2.1', proxied: true, ttl: 1, comment: 'dreamweav' }),
+        })
+        return upd.success === true
+      }
       const r = await api(`/zones/${zone!.id}/dns_records`, {
         method: 'POST',
         body: JSON.stringify({ type: 'A', name, content: '192.0.2.1', proxied: true, ttl: 1, comment: 'dreamweav' }),
@@ -335,11 +354,14 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     }
     const ensureRoute = async (pattern: string) => {
       const list = await api(`/zones/${zone!.id}/workers/routes`)
-      const routes = (Array.isArray(list.result) ? list.result : []) as Array<{ pattern?: string }>
-      if (routes.some((rt) => rt.pattern === pattern)) return true
+      const routes = (Array.isArray(list.result) ? list.result : []) as Array<{ pattern?: string; script?: string }>
+      // A route with our pattern pointing at a DIFFERENT script would swallow the traffic; only
+      // treat it as satisfied when it already targets this worker.
+      const match = routes.find((rt) => rt.pattern === pattern)
+      if (match) return match.script === script
       const r = await api(`/zones/${zone!.id}/workers/routes`, {
         method: 'POST',
-        body: JSON.stringify({ pattern, script: 'dreamweav' }),
+        body: JSON.stringify({ pattern, script }),
       })
       return r.success === true
     }

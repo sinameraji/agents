@@ -12,7 +12,15 @@
  */
 import { getAgentByName } from 'agents'
 import { userIdFromEmail } from './access'
-import { mintSessionCookieFor } from './session'
+import { isAllowedUser, mintSessionCookieFor } from './session'
+
+/** Constant-time string compare, to keep HMAC signature checks off the timing side channel. */
+function safeStrEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
+}
 
 const CF_AUTH_URL = 'https://dash.cloudflare.com/oauth2/auth'
 const CF_TOKEN_URL = 'https://dash.cloudflare.com/oauth2/token'
@@ -84,7 +92,7 @@ async function readFlow(request: Request, secret: string): Promise<FlowState | n
   const [payload, sig] = raw.split('.')
   if (!payload || !sig) return null
   const expected = b64url(await hmac(secret, payload))
-  if (sig !== expected) return null
+  if (!safeStrEqual(sig, expected)) return null
   try {
     const st = JSON.parse(new TextDecoder().decode(fromB64url(payload))) as FlowState
     if (!st.exp || st.exp < Date.now()) return null
@@ -109,12 +117,6 @@ function failPage(message: string): Response {
      <div style="text-align:center"><h2>Login failed</h2><p>${safe}</p><p><a href="/">Back to Dreamweav</a></p></div>`,
     { status: 400, headers: { 'content-type': 'text/html', 'set-cookie': clearFlowCookie() } },
   )
-}
-
-/** Is this email allowed on this instance? Unset allowlist = open (self-hoster's choice). */
-function isAllowedUser(allowed: string | undefined, email: string): boolean {
-  if (!allowed?.trim()) return true
-  return allowed.toLowerCase().split(/[\s,]+/).filter(Boolean).includes(email.trim().toLowerCase())
 }
 
 /** Provision the user's account + mint their session; shared tail of both callbacks. */
@@ -253,6 +255,9 @@ export async function startEmailLogin(request: Request, env: OauthEnv, email0: s
   if (!emailBinding || !env.AUTH_SECRET) return Response.json({ error: 'Email login is not configured yet.' }, { status: 503 })
   const email = email0.trim().toLowerCase()
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Response.json({ error: 'Enter a valid email address.' }, { status: 400 })
+  // Don't email addresses that could never log in (avoids using the sender as an email bomb /
+  // reputation sink). Return ok either way so this isn't an allowlist-membership oracle.
+  if (!isAllowedUser(env.ALLOWED_USERS, email)) return Response.json({ ok: true })
   const origin = new URL(request.url).origin
   const nonce = rand(18)
   const payload = b64url(enc.encode(JSON.stringify({ e: email, n: nonce, exp: Date.now() + 15 * 60_000 } satisfies LoginToken)))
@@ -288,7 +293,7 @@ export async function finishEmailLogin(request: Request, env: OauthEnv): Promise
   if (!env.AUTH_SECRET) return failPage('Email login is not configured yet.')
   const token = new URL(request.url).searchParams.get('token') ?? ''
   const [payload, sig] = token.split('.')
-  if (!payload || !sig || sig !== b64url(await hmac(env.AUTH_SECRET, payload))) {
+  if (!payload || !sig || !safeStrEqual(sig, b64url(await hmac(env.AUTH_SECRET, payload)))) {
     return failPage('This login link is invalid.')
   }
   let parsed: LoginToken

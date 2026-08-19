@@ -12,6 +12,14 @@ interface SessionEnv {
   AUTH_SECRET?: string
   APP_PASSWORD?: string
   OWNER_EMAIL?: string
+  ALLOWED_USERS?: string
+}
+
+/** Is this email allowed to log in? Unset allowlist = open instance (self-hoster's choice).
+ *  Enforced at EVERY session-minting point (password, OAuth, email) so no path bypasses it. */
+export function isAllowedUser(allowed: string | undefined, email: string): boolean {
+  if (!allowed?.trim()) return true
+  return allowed.toLowerCase().split(/[\s,]+/).filter(Boolean).includes(email.trim().toLowerCase())
 }
 
 function b64urlEncode(bytes: Uint8Array): string {
@@ -58,8 +66,12 @@ export async function mintSessionCookieFor(email: string, env: Pick<SessionEnv, 
   return `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`
 }
 
-export async function mintSessionCookie(env: SessionEnv): Promise<string> {
-  return mintSessionCookieFor(env.OWNER_EMAIL ?? 'owner@dreamweav.local', env)
+/** Mint the owner session for the password gate. Returns null if the allowlist excludes the
+ *  owner identity — the password path must not bypass ALLOWED_USERS. */
+export async function mintSessionCookie(env: SessionEnv): Promise<string | null> {
+  const owner = env.OWNER_EMAIL ?? 'owner@dreamweav.local'
+  if (!isAllowedUser(env.ALLOWED_USERS, owner)) return null
+  return mintSessionCookieFor(owner, env)
 }
 
 export function clearSessionCookie(): string {

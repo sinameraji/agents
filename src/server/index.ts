@@ -1,6 +1,10 @@
 import { Hono } from 'hono'
 import { routeAgentRequest } from 'agents'
-import { collectFile, getSandbox, proxyToSandbox } from '@cloudflare/sandbox'
+import { collectFile, getSandbox as sdkGetSandbox, proxyToSandbox } from '@cloudflare/sandbox'
+
+/** Same RPC transport as session-agent.ts - the SDK requires one consistent transport per sandbox. */
+const getSandbox: typeof sdkGetSandbox = (ns, id, opts) =>
+  sdkGetSandbox(ns, id, { ...opts, transport: 'rpc' })
 import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
 import { finishCfLogin, finishEmailLogin, finishGithubLogin, startCfLogin, startEmailLogin, startGithubLogin } from './auth/oauth'
@@ -24,7 +28,9 @@ app.post('/api/login', async (c) => {
   if (!password || !(await checkPassword(password, c.env))) {
     return c.json({ error: 'invalid password' }, 401)
   }
-  c.header('Set-Cookie', await mintSessionCookie(c.env))
+  const cookie = await mintSessionCookie(c.env)
+  if (!cookie) return c.json({ error: 'owner is not in the allowlist' }, 403)
+  c.header('Set-Cookie', cookie)
   return c.json({ ok: true })
 })
 
