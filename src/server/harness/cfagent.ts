@@ -23,17 +23,32 @@ export interface CfAgentEmit {
   usage(usage: NormUsage): void
 }
 
+/** The model id as the provider's API expects it. Cloudflare's /ai/v1 takes Workers AI models
+ *  as bare @cf/... ids (no workers-ai/ prefix) and vendor models as vendor/model. */
+function wireModel(provider: Provider, model: string): string {
+  return provider === 'cloudflare' ? model.replace(/^workers-ai\//, '') : model
+}
+
+/** Anthropic models via Cloudflare's unified endpoint REQUIRE max_tokens; OpenAI's gpt-5 family
+ *  rejects it. Only set a cap where it's mandatory. */
+function maxTokensFor(provider: Provider, model: string): number | undefined {
+  return provider === 'cloudflare' && model.startsWith('anthropic/') ? 8192 : undefined
+}
+
 function providerBase(provider: Provider, conn: Connections): { url: string; key: string; headers?: Record<string, string> } {
   switch (provider) {
     case 'openrouter':
       return { url: 'https://openrouter.ai/api/v1', key: conn.openrouterKey ?? '' }
     case 'cloudflare':
-      // The gateway authenticates via cf-aig-authorization; a plain Authorization header would be
-      // forwarded upstream as the provider key (which is how CF tokens ended up at OpenAI).
+      // Cloudflare's unified inference endpoint: Workers AI models (@cf/...) AND vendor models
+      // (openai/..., anthropic/...) via unified billing. Auth is the account token (OAuth works);
+      // cf-aig-gateway-id attributes the traffic to the user's chosen gateway. NOT the
+      // gateway.ai.cloudflare.com compat URL: that one forwards Authorization upstream as the
+      // provider key, which is how CF tokens ended up at OpenAI.
       return {
-        url: `https://gateway.ai.cloudflare.com/v1/${conn.cloudflareAccountId}/${conn.cloudflareGatewayId}/compat`,
+        url: `https://api.cloudflare.com/client/v4/accounts/${conn.cloudflareAccountId}/ai/v1`,
         key: conn.cloudflareApiToken ?? '',
-        headers: { 'cf-aig-authorization': `Bearer ${conn.cloudflareApiToken ?? ''}` },
+        headers: { 'cf-aig-gateway-id': conn.cloudflareGatewayId ?? '' },
       }
     case 'anthropic':
       return { url: 'https://api.anthropic.com/v1', key: conn.anthropicKey ?? '' }
@@ -56,7 +71,8 @@ export async function summarizeMessages(opts: {
     .join('\n')
     .slice(-24_000)
   const res = await generateText({
-    model: provider.chatModel(opts.model),
+    model: provider.chatModel(wireModel(opts.provider, opts.model)),
+    maxOutputTokens: maxTokensFor(opts.provider, opts.model),
     system:
       'Summarize this coding-agent conversation into a compact briefing that preserves: the user goals, key decisions, files touched, current state, and open items. Output only the summary.',
     messages: [{ role: 'user', content: `Conversation so far:\n\n${plain}` }],
@@ -182,7 +198,8 @@ export async function runCfAgentLoop(opts: {
   let streamError: string | null = null
 
   const result = streamText({
-    model: provider.chatModel(opts.model),
+    model: provider.chatModel(wireModel(opts.provider, opts.model)),
+    maxOutputTokens: maxTokensFor(opts.provider, opts.model),
     system: SYSTEM,
     messages: opts.messages,
     tools,

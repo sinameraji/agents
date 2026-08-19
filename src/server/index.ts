@@ -90,10 +90,12 @@ app.get('/api/models', async (c) => {
   if (provider === 'cloudflare') {
     // Workers AI models from the user's own account (billed by Cloudflare), plus popular
     // upstreams reachable through the gateway's unified billing.
+    // Verified against the unified-billing catalog (accounts/{id}/ai/v1): these exact ids work.
     const unified = [
-      { id: 'openai/gpt-5.6-luna', label: 'gpt-5.6-luna (unified billing)', provider: 'cloudflare', inputPerM: 0.2, outputPerM: 1.2 },
-      { id: 'openai/gpt-5.1', label: 'gpt-5.1 (unified billing)', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
-      { id: 'anthropic/claude-sonnet-4-5', label: 'claude-sonnet-4-5 (unified billing)', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
+      { id: 'openai/gpt-5.1', label: 'gpt-5.1 (unified billing)', provider: 'cloudflare', inputPerM: 1.25, outputPerM: 10 },
+      { id: 'openai/gpt-4.1-mini', label: 'gpt-4.1-mini (unified billing)', provider: 'cloudflare', inputPerM: 0.4, outputPerM: 1.6 },
+      { id: 'anthropic/claude-sonnet-4.5', label: 'claude-sonnet-4.5 (unified billing)', provider: 'cloudflare', inputPerM: 3, outputPerM: 15 },
+      { id: 'anthropic/claude-haiku-4.5', label: 'claude-haiku-4.5 (unified billing)', provider: 'cloudflare', inputPerM: 1, outputPerM: 5 },
     ]
     try {
       const identity = c.get('identity')

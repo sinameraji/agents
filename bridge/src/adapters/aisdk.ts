@@ -17,11 +17,15 @@ function baseURL(cfg: StartConfig): { url: string; key: string; model: string; h
     case 'openrouter':
       return { url: 'https://openrouter.ai/api/v1', key: cfg.creds.openrouterKey ?? '', model: cfg.model }
     case 'cloudflare':
+      // Cloudflare's unified inference endpoint: Workers AI models as bare @cf/... ids plus
+      // vendor models via unified billing. Account-token auth; cf-aig-gateway-id attributes the
+      // traffic to the user's gateway. (The gateway compat URL forwards Authorization upstream
+      // as the provider key — never use it here.)
       return {
-        url: `https://gateway.ai.cloudflare.com/v1/${cfg.creds.cloudflareAccountId}/${cfg.creds.cloudflareGatewayId}/compat`,
+        url: `https://api.cloudflare.com/client/v4/accounts/${cfg.creds.cloudflareAccountId}/ai/v1`,
         key: cfg.creds.cloudflareApiToken ?? '',
-        model: cfg.model,
-        headers: { 'cf-aig-authorization': `Bearer ${cfg.creds.cloudflareApiToken ?? ''}` },
+        model: cfg.model.replace(/^workers-ai\//, ''),
+        headers: { 'cf-aig-gateway-id': cfg.creds.cloudflareGatewayId ?? '' },
       }
     case 'anthropic':
       return { url: 'https://api.anthropic.com/v1', key: cfg.creds.anthropicKey ?? '', model: cfg.model }
