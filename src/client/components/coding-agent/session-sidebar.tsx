@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ExternalLink, GitBranch, Info, LogOut, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-react'
+import { ExternalLink, GitBranch, Info, LogOut, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Search, Settings, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { formatCost } from '~shared/format'
@@ -21,6 +21,8 @@ export function SessionSidebar({
   email,
   guest,
   onSignIn,
+  collapsed,
+  onToggleCollapse,
 }: {
   sessions: SessionSummary[]
   activeId: string
@@ -32,10 +34,46 @@ export function SessionSidebar({
   onDelete: (id: string) => void
   onRename: (id: string, name: string) => void
   email: string
+  collapsed?: boolean
+  onToggleCollapse?: () => void
 }) {
   const initials = email.slice(0, 2).toUpperCase()
   const handle = email.split('@')[0]
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? sessions.filter((s) =>
+        [s.name, s.repo, s.branch, s.model].some((v) => v?.toLowerCase().includes(q)),
+      )
+    : sessions
+
+  if (collapsed) {
+    return (
+      <div className="flex h-full w-full flex-col items-center gap-1 bg-sidebar py-3 text-sidebar-foreground">
+        <img src="/icon-192.png" alt="" aria-hidden className="size-8 shrink-0" />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="mt-1"
+          onClick={onToggleCollapse}
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+        >
+          <PanelLeftOpen className="size-4" />
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={onNew} aria-label="New session" title="New session">
+          <Plus className="size-4" />
+        </Button>
+        <div className="mt-auto">
+          <Button variant="ghost" size="icon-sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings">
+            <Settings className="size-4" />
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       <header className="flex items-center gap-2 px-3 pt-3 pb-2">
@@ -44,6 +82,18 @@ export function SessionSidebar({
           <span className="text-sm font-semibold tracking-tight">Dreamweav</span>
           <span className="text-[0.7rem] text-muted-foreground">coding agents in your browser</span>
         </div>
+        {onToggleCollapse && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-auto shrink-0 max-md:hidden"
+            onClick={onToggleCollapse}
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose className="size-4" />
+          </Button>
+        )}
       </header>
 
       <div className="px-3 pb-2">
@@ -59,8 +109,23 @@ export function SessionSidebar({
         </span>
       </div>
 
+      {sessions.length > 0 && (
+        <div className="px-3 pb-1.5">
+          <label className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2 focus-within:border-ring">
+            <Search className="size-3.5 shrink-0 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search sessions…"
+              aria-label="Search sessions"
+              className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
+            />
+          </label>
+        </div>
+      )}
+
       <nav className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-2 pb-2">
-        {sessions.map((session) => (
+        {filtered.map((session) => (
           <SessionRow
             key={session.id}
             session={session}
@@ -70,6 +135,9 @@ export function SessionSidebar({
             onRename={(name) => onRename(session.id, name)}
           />
         ))}
+        {q && filtered.length === 0 && (
+          <p className="px-2 pt-2 text-xs text-muted-foreground">No sessions match.</p>
+        )}
       </nav>
 
       <footer className="flex items-center gap-1 border-t border-sidebar-border px-3 py-2.5">

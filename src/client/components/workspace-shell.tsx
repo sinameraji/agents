@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Menu } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useMe } from '@/hooks/use-me'
 import { useUserAgent } from '@/hooks/use-user-agent'
@@ -129,8 +130,20 @@ function Shell({ userId, email }: { userId: string; email: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, sessionId, ua.sessions.length, conn, firstTime])
 
-  const sidebar = (
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('dw:sidebarCollapsed') === '1',
+  )
+  const toggleSidebar = () =>
+    setSidebarCollapsed((v) => {
+      localStorage.setItem('dw:sidebarCollapsed', v ? '0' : '1')
+      return !v
+    })
+
+  // The mobile drawer always renders expanded; only the desktop rail collapses.
+  const sidebar = (collapsed: boolean) => (
     <SessionSidebar
+      collapsed={collapsed}
+      onToggleCollapse={toggleSidebar}
       sessions={ua.sessions}
       activeId={sessionId ?? ''}
       email={email}
@@ -165,14 +178,16 @@ function Shell({ userId, email }: { userId: string; email: string }) {
         <span className="text-sm font-semibold">Dreamweav</span>
       </div>
 
-      <div className="hidden w-72 shrink-0 border-r border-border md:block">{sidebar}</div>
+      <div className={cn('hidden shrink-0 border-r border-border md:block', sidebarCollapsed ? 'w-12' : 'w-72')}>
+        {sidebar(sidebarCollapsed)}
+      </div>
 
       {/* Mobile slide-over drawer */}
       {drawerOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <button type="button" aria-label="Close menu" onClick={() => setDrawerOpen(false)} className="absolute inset-0 bg-background/70 backdrop-blur-sm" />
           <div className="absolute inset-y-0 left-0 w-80 max-w-[85vw] border-r border-border bg-background shadow-2xl">
-            {sidebar}
+            {sidebar(false)}
           </div>
         </div>
       )}
