@@ -64,6 +64,7 @@ interface TurnRow {
 }
 
 interface QueuedMessage {
+  messageId?: string
   text: string
   runText?: string
   attachments?: { key: string; name: string; size: number }[]
@@ -219,6 +220,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   @callable()
   getTurns(): { turns: NormTurn[]; todos: TranscriptState['todos']; permissions: TranscriptState['permissions']; status: SessionStatus } {
     this.hydrate()
+    this.drainQueue() // stranded queue from a DO eviction drains when a client reconnects
     // Self-heal: a deploy can kill an isolate mid-turn, leaving status stuck on busy/booting.
     // If nothing has progressed in 5 minutes, the run is dead — report idle (or error if the
     // last assistant turn errored) and sync the sidebar.
@@ -263,9 +265,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       const url = cfg.source.url.replace(/\.git$/, '').replace(/\/$/, '')
       const auth = conn.githubPat ? url.replace('https://github.com/', `https://x-access-token:${conn.githubPat}@github.com/`) : url
       const branch = cfg.source.branch ? `-b ${cfg.source.branch}` : ''
-      await sandbox.exec(`sh -lc 'cd /workspace && git clone --depth 50 ${branch} ${auth}.git . 2>&1 | tail -3'`).catch((e) => {
-        console.error('[dreamweav] clone failed', e)
-      })
+      // Clone with the token in the URL, then IMMEDIATELY reset the remote to the clean URL so the
+      // PAT never persists in .git/config (it would leak via gitStatus, exports, and R2 backups).
+      await sandbox
+        .exec(`sh -lc 'cd /workspace && git clone --depth 50 ${branch} ${auth}.git . >/tmp/dw-clone.log 2>&1; git remote set-url origin ${url}.git 2>/dev/null; tail -2 /tmp/dw-clone.log'`)
+        .catch((e) => {
+          console.error('[dreamweav] clone failed', String((e as Error).message ?? e).replaceAll(conn.githubPat ?? '\u0000', '***'))
+        })
     }
   }
 
@@ -293,7 +299,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
       const backup = await sandbox.createBackup({
         dir: '/workspace',
-        excludes: ['node_modules', '.git/objects', '*.log', '.cache', 'dist', '.next'],
+        excludes: ['node_modules', '*.log', '.cache', 'dist', '.next'],
         localBucket: true,
         ttl: 7 * 24 * 60 * 60,
       } as never)
@@ -569,12 +575,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
     // While a turn runs, new messages QUEUE (the user turn is already in the transcript) and
     // drain in order after the current turn finishes. Stop clears the queue.
-    if (this.state.status === 'busy' || this.state.status === 'booting') {
-      const q = this.getKv<QueuedMessage[]>('queue', [])
-      this.putKv('queue', [...q, { text: input.text, runText: input.runText, attachments: input.attachments }])
+    const pending = this.getKv<QueuedMessage[]>('queue', [])
+    if (this.state.status === 'busy' || this.state.status === 'booting' || pending.length > 0) {
+      this.putKv('queue', [...pending, { messageId: id, text: input.text, runText: input.runText, attachments: input.attachments }])
+      if (this.state.status !== 'busy' && this.state.status !== 'booting') this.drainQueue()
       return { ok: true }
     }
-    this.startTurn({ text: input.text, runText: input.runText, attachments: input.attachments })
+    this.startTurn({ messageId: id, text: input.text, runText: input.runText, attachments: input.attachments })
     return { ok: true }
   }
 
@@ -742,7 +749,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   @callable()
   async stop(): Promise<{ ok: true }> {
+    const dropped = this.getKv<QueuedMessage[]>('queue', [])
     this.putKv('queue', []) // stop means stop: drop queued follow-ups too
+    for (const q of dropped) {
+      if (q.messageId)
+        this.emit({ t: 'part.upsert', turnId: q.messageId, part: { kind: 'text', id: `${q.messageId}:cancelled`, text: '_(cancelled — this queued message was not delivered)_' } })
+    }
     this.turnGen += 1 // in-flight poll loops see the stale generation and exit
     if (this.opencode && this.opencodeSessionId) {
       try {
@@ -802,6 +814,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   @callable()
   async compact(): Promise<{ ok: boolean; note: string }> {
+    if (this.state.status === 'busy' || this.state.status === 'booting')
+      return this.noted({ ok: false, note: 'The agent is mid-turn — wait for it to finish before compacting.' })
     const harness = this.config().harness
     if (harness === 'opencode') {
       await this.ocOp((sid) => this.opencode!.session.summarize({ sessionID: sid } as never))
@@ -933,7 +947,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       repo: grab('REPO') === '1',
       branch: grab('BRANCH'),
       dirty: Number(grab('DIRTY')) || 0,
-      remote: grab('REMOTE') || null,
+      // Strip any userinfo (tokens) that may live in the remote URL — never send credentials to the client.
+      remote: (grab('REMOTE') || null)?.replace(/\/\/[^@/]+@/, '//') ?? null,
       lastCommit: grab('LAST') || null,
     }
   }
@@ -982,7 +997,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       }
     }
 
-    const branch = (input.branch ?? cfg.branch).replace(/[^\w/.-]/g, '-')
+    const branch = (input.branch ?? cfg.branch).replace(/[^\w/.-]/g, '-').replace(/^[-.]+/, '') || `dreamweav/${this.name.slice(0, 8)}`
     // The message is interpolated into a double-quoted sh word — keep it single-line and quote-free.
     const message = (input.message?.trim() || `Dreamweav: ${this.state.meta?.name ?? 'session export'}`)
       .replace(/[\r\n]+/g, ' ')
@@ -993,16 +1008,27 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const pushUrl = `https://x-access-token:${pat}@github.com/${owner}/${repo}.git`
     // Single-line script (exec wrapper JSON-stringifies it); push result via explicit markers
     // because the trailing `tail` would otherwise mask git's exit code.
-    const r = await this.sandboxSh(
-      sandbox,
-      `cd /workspace && git config --global --add safe.directory /workspace >/dev/null 2>&1; ` +
-        `git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -b ${branch} >/dev/null 2>&1; ` +
-        `git config user.name "${login}"; git config user.email "${login}@users.noreply.github.com"; ` +
-        `git checkout -B ${branch} >/dev/null 2>&1; git add -A; ` +
-        `git commit -m "${message}" >/dev/null 2>&1 || echo NOTHING_TO_COMMIT; ` +
-        `git push -f ${pushUrl} ${branch} >/tmp/dw-push.log 2>&1 && echo PUSH_OK || echo PUSH_FAIL; ` +
-        `tail -3 /tmp/dw-push.log`,
-    )
+    let r: { exitCode: number; stdout: string; stderr: string }
+    try {
+      r = await this.sandboxSh(
+        sandbox,
+        `cd /workspace && git config --global --add safe.directory /workspace >/dev/null 2>&1; ` +
+          `git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -b ${branch} >/dev/null 2>&1; ` +
+          `git config user.name "${login}"; git config user.email "${login}@users.noreply.github.com"; ` +
+          `git checkout -B ${branch} >/dev/null 2>&1; git add -A; ` +
+          `if git status --porcelain | grep -q .; then git commit -m "${message}" >/tmp/dw-commit.log 2>&1 && echo COMMIT_OK || echo COMMIT_FAIL; else echo NOTHING_TO_COMMIT; fi; ` +
+          `git push -f ${pushUrl} ${branch} >/tmp/dw-push.log 2>&1 && echo PUSH_OK || echo PUSH_FAIL; ` +
+          `tail -3 /tmp/dw-push.log 2>/dev/null; tail -3 /tmp/dw-commit.log 2>/dev/null`,
+      )
+    } catch (e) {
+      // Never let a transport/timeout error escape with the PAT-bearing command inside it.
+      const msg = String((e as Error).message ?? e).replaceAll(pat, '***').slice(0, 300)
+      return this.noted({ ok: false, note: `Git push failed: ${msg}` })
+    }
+    if (r.stdout.includes('COMMIT_FAIL')) {
+      const scrubbed = (r.stdout + r.stderr).replaceAll(pat, '***').slice(-400)
+      return this.noted({ ok: false, note: `Git commit failed: ${scrubbed}` })
+    }
     if (!r.stdout.includes('PUSH_OK')) {
       const scrubbed = (r.stdout + r.stderr).replaceAll(pat, '***').slice(-400)
       return this.noted({ ok: false, note: `Git push failed: ${scrubbed}` })
@@ -1011,6 +1037,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const branchUrl = `https://github.com/${owner}/${repo}/tree/${branch}`
 
     let prUrl: string | undefined
+    let prProblem: string | undefined
     if (input.openPr && base && branch !== base) {
       const pr = await gh(`/repos/${owner}/${repo}/pulls`, {
         method: 'POST',
@@ -1021,11 +1048,14 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         // A PR for this branch may already exist — find it.
         const list = await gh(`/repos/${owner}/${repo}/pulls?head=${owner}:${branch}&state=open`)
         prUrl = String((list.json as unknown as Array<{ html_url?: string }>)[0]?.html_url ?? '') || undefined
-      }
+        if (!prUrl) prProblem = `PR could not be opened (${String(pr.json.message ?? 'no new commits vs base?')})`
+      } else prProblem = `PR could not be opened (HTTP ${pr.status})`
+    } else if (input.openPr && !base) {
+      prProblem = 'PR skipped — this repo was just created, there is no base branch to target.'
     }
     const note = nothingNew
       ? `Nothing new to commit — branch is up to date: ${branchUrl}`
-      : `Pushed ${branch} → ${owner}/${repo}${prUrl ? ` · PR: ${prUrl}` : ''}\n${branchUrl}`
+      : `Pushed ${branch} → ${owner}/${repo}${prUrl ? ` · PR: ${prUrl}` : ''}${prProblem ? ` · ${prProblem}` : ''}\n${branchUrl}`
     return this.noted({ ok: true, note, branchUrl, prUrl })
   }
 
@@ -1044,19 +1074,32 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       source: cfg.source, name, harness: cfg.harness, provider: cfg.provider, model: cfg.model,
     })
     const child = await getAgentByName(this.env.SessionAgent, id)
+    // createSession fires init at the child asynchronously — init here explicitly so the child is
+    // never adopted while unconfigured (it would sit in 'provisioning' forever).
+    await child.init({
+      owner: cfg.owner, source: cfg.source, harness: cfg.harness, provider: cfg.provider,
+      model: cfg.model, name, repo: cfg.repo, branch: `dreamweav/${id.slice(0, 8)}`,
+    })
     await child.adoptFork({ backup, turns: this.transcript.turns, todos: this.transcript.todos })
-    return this.noted({ ok: true, note: `Forked → “${name}”. Workspace snapshot and transcript copied; the harness starts fresh context there.`, id })
+    const snapshotNote = backup ? 'Workspace snapshot and transcript copied' : 'Transcript copied (workspace snapshot unavailable — the fork starts from the repo/blank state)'
+    return this.noted({ ok: true, note: `Forked → “${name}”. ${snapshotNote}; the harness starts fresh context there.`, id })
   }
 
-  /** Seed a freshly-created session from a fork: workspace backup pointer + transcript. */
-  @callable()
-  async adoptFork(input: { backup: unknown; turns: NormTurn[]; todos: TranscriptState['todos'] }): Promise<{ ok: true }> {
+  /** Seed a freshly-created session from a fork: workspace backup pointer + transcript.
+   *  Server-to-server only (no @callable): fork() calls it right after creating the child. */
+  async adoptFork(input: { backup: unknown; turns: NormTurn[]; todos: TranscriptState['todos'] }): Promise<{ ok: boolean }> {
+    const existing = this.sql<{ n: number }>`SELECT COUNT(*) as n FROM turns`
+    if ((existing[0]?.n ?? 0) > 0) return { ok: false } // never wipe a session that already has history
     if (input.backup) this.putKv('backup', input.backup)
     this.sql`DELETE FROM turns`
-    this.transcript = { turns: input.turns, todos: input.todos ?? [], permissions: [] }
+    // A fork can happen mid-turn: freeze any still-streaming turns as aborted in the copy.
+    const turns = input.turns.map((t) =>
+      t.status === 'streaming' ? { ...t, status: 'aborted' as const, completedAt: Date.now() } : t,
+    )
+    this.transcript = { turns, todos: input.todos ?? [], permissions: [] }
     this.hydrated = true
     let seq = 0
-    for (const t of input.turns) this.persistTurn(t.id, ++seq)
+    for (const t of turns) this.persistTurn(t.id, ++seq)
     this.putKv('todos', this.transcript.todos)
     this.putKv('permissions', [])
     return { ok: true }

@@ -15,7 +15,15 @@ import { ModelPicker } from '../model-picker'
 import { Transcript } from '../transcript/transcript'
 import { TodoList } from '../transcript/parts/todo-list'
 import { WorkspaceDock } from '../workspace/workspace-dock'
+import type { PastedBlock } from '~shared/protocol'
 import { SubagentsPanel } from './subagents-panel'
+
+/** Collapsed paste-chips carry real content — fold it back into the outgoing prompt. */
+function withPasted(text: string, pasted: PastedBlock[]): string {
+  if (!pasted.length) return text
+  const blocks = pasted.map((p) => '```' + (p.language ?? '') + '\n' + p.content + '\n```').join('\n\n')
+  return text ? `${text}\n\n${blocks}` : blocks
+}
 
 export function ChatView({ session }: { session: SessionApi }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -260,23 +268,23 @@ export function ChatView({ session }: { session: SessionApi }) {
               </Button>
             </>
           }
-          onSend={(text, _pasted, attachments) =>
+          onSend={(text, pasted, attachments) =>
             void (
               session.send as (
                 text: string,
                 attachments?: { key: string; name: string; size: number }[],
               ) => Promise<void>
-            )(text, attachments)
+            )(withPasted(text, pasted), attachments)
           }
           busy={busy}
-          onSteer={(text, _pasted, attachments) =>
+          onSteer={(text, pasted, attachments) =>
             void session.stop().then(() =>
               (
                 session.send as (
                   text: string,
                   attachments?: { key: string; name: string; size: number }[],
                 ) => Promise<void>
-              )(text, attachments),
+              )(withPasted(text, pasted), attachments),
             )
           }
           sessionName={meta?.name ?? 'session'}

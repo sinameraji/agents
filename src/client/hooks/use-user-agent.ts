@@ -72,7 +72,16 @@ export function useUserAgent(userId: string): UserAgentApi {
   // created by the server itself (/fork), so poll lightly instead of trusting mount-time data.
   useEffect(() => {
     if (!connected) return
-    const t = setInterval(() => void refresh().catch(() => {}), 5000)
+    let inFlight = false
+    const t = setInterval(() => {
+      if (inFlight) return
+      inFlight = true
+      void refresh()
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false
+        })
+    }, 5000)
     return () => clearInterval(t)
   }, [connected, refresh])
 

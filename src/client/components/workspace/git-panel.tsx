@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Download, ExternalLink, GitBranch, GitPullRequest, Loader2, RefreshCw, Upload } from 'lucide-react'
 
 import type { SessionApi } from '@/hooks/use-session'
@@ -23,18 +23,23 @@ export function GitPanel({ session }: { session: SessionApi }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; note: string; branchUrl?: string; prUrl?: string } | null>(null)
 
+  // useSession returns a fresh object every render — key the fetch on the session ID, and read the
+  // latest API through a ref, or this panel refetches (sandbox exec!) on every parent render.
+  const sessionRef = useRef(session)
+  sessionRef.current = session
   const refresh = useCallback(() => {
     setLoading(true)
-    void session
+    void sessionRef.current
       .gitStatus()
       .then(setInfo)
       .catch(() => setInfo(null))
       .finally(() => setLoading(false))
-  }, [session])
+  }, [])
 
+  const sessionId = session.meta?.id
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    if (sessionId) refresh()
+  }, [sessionId, refresh])
 
   const doExport = async () => {
     setBusy(true)
@@ -49,8 +54,6 @@ export function GitPanel({ session }: { session: SessionApi }) {
       setBusy(false)
     }
   }
-
-  const sessionId = session.meta?.id
 
   return (
     <div className="scrollbar-thin flex h-full flex-col gap-3 overflow-y-auto p-4">

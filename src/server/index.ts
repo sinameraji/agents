@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { routeAgentRequest } from 'agents'
-import { getSandbox, proxyToSandbox } from '@cloudflare/sandbox'
+import { collectFile, getSandbox, proxyToSandbox } from '@cloudflare/sandbox'
 import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
 import { fetchOpenRouterModels } from './api/models'
@@ -85,17 +85,23 @@ app.get('/api/sessions/:id/export', async (c) => {
   // listFiles restores /workspace from backup if the container was recycled while asleep.
   await getAgentByName(c.env.SessionAgent, id).then((sa) => sa.listFiles()).catch(() => null)
   const sandbox = getSandbox(c.env.Sandbox, `sess-${id}`)
+  // .git is excluded entirely: backups strip its objects (repo would be corrupt) and its config
+  // can carry an authenticated clone URL — the export is a source snapshot, not a repository.
   const tar = (await sandbox
     .exec(
       `sh -lc ${JSON.stringify(
-        'cd /workspace && tar --exclude=node_modules --exclude=.git/objects --exclude=.cache --exclude=dist --exclude=.next -czf /tmp/dw-export.tgz .',
+        'cd /workspace && tar --exclude=node_modules --exclude=.git --exclude=.cache --exclude=dist --exclude=.next -czf /tmp/dw-export.tgz .',
       )}`,
       { timeout: 120_000 },
     )
-    .catch(() => ({ exitCode: 1 }))) as { exitCode?: number }
-  if (tar.exitCode) return c.json({ error: 'could not archive the workspace' }, 500)
+    .catch(() => ({ exitCode: 2 }))) as { exitCode?: number }
+  // GNU tar exit 1 = "file changed while reading" — the archive is still valid.
+  if ((tar.exitCode ?? 0) > 1) return c.json({ error: 'could not archive the workspace' }, 500)
+  // readFileStream emits SSE-framed FileStreamEvents, not raw bytes — collectFile decodes them.
   const stream = await sandbox.readFileStream('/tmp/dw-export.tgz')
-  return new Response(stream, {
+  const { content } = await collectFile(stream)
+  const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content
+  return new Response(bytes, {
     headers: {
       'content-type': 'application/gzip',
       'content-disposition': `attachment; filename="dreamweav-${id.slice(0, 8)}.tgz"`,
