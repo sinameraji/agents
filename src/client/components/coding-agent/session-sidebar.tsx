@@ -20,6 +20,7 @@ export function SessionSidebar({
   onRename,
   email,
   guest,
+  deploy,
   onSignIn,
   collapsed,
   onToggleCollapse,
@@ -30,6 +31,7 @@ export function SessionSidebar({
   onNew: () => void
   onOpenSettings: () => void
   guest?: boolean
+  deploy?: boolean
   onSignIn?: () => void
   onDelete: (id: string) => void
   onRename: (id: string, name: string) => void
@@ -142,20 +144,26 @@ export function SessionSidebar({
 
       <footer className="flex items-center gap-1 border-t border-sidebar-border px-3 py-2.5">
         {guest ? (
-          <div className="flex min-w-0 items-center gap-2">
-            <Button size="sm" onClick={onSignIn}>
-              Sign in
+          deploy ? (
+            <Button size="sm" className="min-w-0" onClick={onSignIn}>
+              <span className="truncate">Deploy to Cloudflare</span>
             </Button>
-            <a
-              href="https://github.com/sinameraji/dreamweav#deploy-your-own"
-              target="_blank"
-              rel="noreferrer"
-              className="truncate text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-              title="Dreamweav is self-hosted: run it on your own Cloudflare account"
-            >
-              Deploy your own
-            </a>
-          </div>
+          ) : (
+            <div className="flex min-w-0 items-center gap-2">
+              <Button size="sm" onClick={onSignIn}>
+                Sign in
+              </Button>
+              <a
+                href="https://github.com/sinameraji/dreamweav#deploy-your-own"
+                target="_blank"
+                rel="noreferrer"
+                className="truncate text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                title="Dreamweav is self-hosted: run it on your own Cloudflare account"
+              >
+                Deploy your own
+              </a>
+            </div>
+          )
         ) : (
           <>
             <div className="grid size-7 place-items-center rounded-full bg-secondary text-xs font-medium text-secondary-foreground">

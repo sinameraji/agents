@@ -4,10 +4,14 @@ import { useEffect } from 'react'
 import { X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { LoginOptions } from './login-screen'
+import { LoginOptions, CloudflareMark } from './login-screen'
 
-/** Raised when a guest attempts something consequential, browsing stays free, doing requires an account. */
-export function LoginDialog({ onClose }: { onClose: () => void }) {
+const REPO = 'https://github.com/sinameraji/dreamweav'
+const DEPLOY = `https://deploy.workers.cloudflare.com/?url=${REPO}`
+
+/** Raised when a guest attempts something consequential. On a normal instance it offers login;
+ *  on the public host (`deploy`) it points to deploying your own, since there's no hosted service. */
+export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     document.addEventListener('keydown', onKey)
@@ -21,18 +25,49 @@ export function LoginDialog({ onClose }: { onClose: () => void }) {
         <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className="absolute top-3 right-3">
           <X className="size-4" />
         </Button>
-        <LoginOptions />
-        <p className="text-center text-xs text-muted-foreground">
-          Dreamweav is self-hosted: sessions run on the instance owner's Cloudflare account.{' '}
-          <a
-            href="https://github.com/sinameraji/dreamweav#deploy-your-own"
-            target="_blank"
-            rel="noreferrer"
-            className="text-primary hover:underline"
-          >
-            Deploy your own
-          </a>
-        </p>
+        {deploy ? (
+          <>
+            <div className="text-center">
+              <h2 className="text-base font-semibold">Deploy your own Dreamweav</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Dreamweav is self-hosted software. Deploy it to your Cloudflare account to start
+                building — your containers, your keys, your bill.
+              </p>
+            </div>
+            <a
+              href={DEPLOY}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-11 w-full items-center justify-center gap-2.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              <CloudflareMark className="size-5" />
+              Deploy to Cloudflare
+            </a>
+            <a
+              href={`${REPO}#deploy-your-own`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-center text-xs text-muted-foreground hover:text-foreground"
+            >
+              Read the setup guide
+            </a>
+          </>
+        ) : (
+          <>
+            <LoginOptions />
+            <p className="text-center text-xs text-muted-foreground">
+              Dreamweav is self-hosted: sessions run on the instance owner's Cloudflare account.{' '}
+              <a
+                href={`${REPO}#deploy-your-own`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary hover:underline"
+              >
+                Deploy your own
+              </a>
+            </p>
+          </>
+        )}
       </div>
     </div>
   )

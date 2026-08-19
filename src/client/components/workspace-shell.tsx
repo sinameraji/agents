@@ -12,7 +12,6 @@ import { NewSession } from './new-session'
 import { Onboarding } from './onboarding'
 import { EmptyState } from './empty-state'
 import { LoginDialog } from './login-dialog'
-import { Landing } from './landing'
 import { useConfig } from '@/hooks/use-config'
 import { DEFAULT_SETTINGS } from '~shared/protocol'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
@@ -21,15 +20,16 @@ export function WorkspaceShell() {
   const { config } = useConfig()
   const { me, loading } = useMe()
   if (!config || loading) return <FullScreen>Connecting…</FullScreen>
-  // The public host is a storefront with ONE call to action: deploy your own. The app itself
-  // lives on each owner's host (OWNER_HOST / workers.dev / their custom domain).
-  if (config.mode === 'landing') return <Landing />
+  // The public host shows the real product, fully browsable — the only difference is that the
+  // sign-in call to action becomes "Deploy to Cloudflare", since Dreamweav is self-hosted.
+  if (config.mode === 'landing') return <GuestShell deploy />
   if (!me) return <GuestShell />
   return <Shell userId={me.id} email={me.email} />
 }
 
-/** The app IS the homepage: guests browse the real UI; consequential actions raise the login dialog. */
-function GuestShell() {
+/** The app IS the homepage: guests browse the real UI. Consequential actions raise the login
+ *  dialog — or, on the public host (`deploy`), the "deploy your own" dialog. */
+function GuestShell({ deploy }: { deploy?: boolean }) {
   const { navigate } = useRouter()
   const [loginOpen, setLoginOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -65,6 +65,7 @@ function GuestShell() {
       activeId=""
       email="guest"
       guest
+      deploy={deploy}
       onSignIn={() => setLoginOpen(true)}
       onSelect={() => setLoginOpen(true)}
       onNew={() => {
@@ -99,7 +100,7 @@ function GuestShell() {
         <Onboarding ua={ua} guest onRequireAuth={() => setLoginOpen(true)} />
       </div>
       {settingsOpen && <SettingsDialog ua={ua} onClose={() => setSettingsOpen(false)} onRequireAuth={() => setLoginOpen(true)} />}
-      {loginOpen && <LoginDialog onClose={() => setLoginOpen(false)} />}
+      {loginOpen && <LoginDialog deploy={deploy} onClose={() => setLoginOpen(false)} />}
     </div>
   )
 }
