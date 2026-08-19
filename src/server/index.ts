@@ -3,6 +3,7 @@ import { routeAgentRequest } from 'agents'
 import { collectFile, getSandbox, proxyToSandbox } from '@cloudflare/sandbox'
 import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
+import { finishCfLogin, finishGithubLogin, startCfLogin, startGithubLogin } from './auth/oauth'
 import { fetchOpenRouterModels } from './api/models'
 import { handleUpload } from './api/uploads'
 import { getAgentByName } from 'agents'
@@ -31,6 +32,22 @@ app.post('/api/logout', (c) => {
   c.header('Set-Cookie', clearSessionCookie())
   return c.json({ ok: true })
 })
+
+// Which login providers are configured (drives the login screen buttons).
+app.get('/api/auth/providers', (c) => {
+  const env = c.env as unknown as Record<string, string | undefined>
+  return c.json({
+    cloudflare: !!env.CF_OAUTH_CLIENT_ID && !!env.CF_OAUTH_CLIENT_SECRET,
+    github: !!env.GITHUB_OAUTH_CLIENT_ID && !!env.GITHUB_OAUTH_CLIENT_SECRET,
+    password: !!env.APP_PASSWORD,
+  })
+})
+
+// OAuth logins (unauthenticated by design)
+app.get('/auth/cloudflare', (c) => startCfLogin(c.req.raw, c.env as never))
+app.get('/auth/cloudflare/callback', (c) => finishCfLogin(c.req.raw, c.env as never))
+app.get('/auth/github', (c) => startGithubLogin(c.req.raw, c.env as never))
+app.get('/auth/github/callback', (c) => finishGithubLogin(c.req.raw, c.env as never))
 
 // --- auth: guard only the API and agent routes, never the static app --------------------------
 // (The SPA must always load so it can render the login screen and call /api/login.)

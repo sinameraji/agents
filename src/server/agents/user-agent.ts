@@ -228,6 +228,50 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     return this.getSettings()
   }
 
+  /** Store the Cloudflare OAuth token bundle (from "Log in with Cloudflare"), encrypted. */
+  async storeCfOauth(bundle: { access: string; refresh: string | null; expiresAt: number }): Promise<{ ok: true }> {
+    this.putSetting('cfOauth', await encryptSecret(JSON.stringify(bundle), this.env.ENCRYPTION_KEY))
+    // Mirror into the regular connection slot so the UI/presence checks light up.
+    await this.saveSettings({ connections: { cloudflareApiToken: bundle.access } })
+    return { ok: true }
+  }
+
+  /** Return a live CF access token from the OAuth bundle, refreshing it when near expiry. */
+  private async freshCfOauthToken(): Promise<string | null> {
+    const encBundle = this.getSetting<string | null>('cfOauth', null)
+    if (!encBundle) return null
+    try {
+      const bundle = JSON.parse(await decryptSecret(encBundle, this.env.ENCRYPTION_KEY)) as {
+        access: string
+        refresh: string | null
+        expiresAt: number
+      }
+      const envx = this.env as unknown as Record<string, string | undefined>
+      if (bundle.expiresAt - Date.now() < 5 * 60_000 && bundle.refresh && envx.CF_OAUTH_CLIENT_ID && envx.CF_OAUTH_CLIENT_SECRET) {
+        const res = await fetch('https://dash.cloudflare.com/oauth2/token', {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: bundle.refresh,
+            client_id: envx.CF_OAUTH_CLIENT_ID,
+            client_secret: envx.CF_OAUTH_CLIENT_SECRET,
+          }),
+        })
+        const j = (await res.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number }
+        if (res.ok && j.access_token) {
+          bundle.access = j.access_token
+          bundle.refresh = j.refresh_token ?? bundle.refresh
+          bundle.expiresAt = Date.now() + (j.expires_in ?? 3600) * 1000
+          await this.storeCfOauth(bundle)
+        }
+      }
+      return bundle.expiresAt > Date.now() ? bundle.access : null
+    } catch {
+      return null
+    }
+  }
+
   /** Decrypt all stored connections (server-side use only, e.g. handed to a SessionAgent). */
   async getDecryptedConnections(): Promise<Connections> {
     const out: Connections = {}
@@ -236,6 +280,9 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       const enc = this.getSetting<string | null>(`conn:${f}`, null)
       if (enc) out[f] = await decryptSecret(enc, key)
     }
+    // "Log in with Cloudflare" users get a live (auto-refreshed) OAuth token as their CF token.
+    const oauthToken = await this.freshCfOauthToken()
+    if (oauthToken) out.cloudflareApiToken = oauthToken
     return out
   }
 }

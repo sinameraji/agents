@@ -50,13 +50,16 @@ export async function checkPassword(password: string, env: SessionEnv): Promise<
   return timingSafeEqual(a, b)
 }
 
-export async function mintSessionCookie(env: SessionEnv): Promise<string> {
-  const email = env.OWNER_EMAIL ?? 'owner@dreamweav.local'
+export async function mintSessionCookieFor(email: string, env: Pick<SessionEnv, 'AUTH_SECRET'>): Promise<string> {
   const payload = b64urlEncode(enc.encode(JSON.stringify({ email, exp: Date.now() + TTL_MS })))
   const sig = b64urlEncode(await hmac(env.AUTH_SECRET ?? '', `v1.${payload}`))
   const token = `v1.${payload}.${sig}`
   const maxAge = Math.floor(TTL_MS / 1000)
   return `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`
+}
+
+export async function mintSessionCookie(env: SessionEnv): Promise<string> {
+  return mintSessionCookieFor(env.OWNER_EMAIL ?? 'owner@dreamweav.local', env)
 }
 
 export function clearSessionCookie(): string {
