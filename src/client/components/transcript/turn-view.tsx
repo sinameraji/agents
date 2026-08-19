@@ -8,6 +8,17 @@ import { PartView } from './part'
 import { ErrorBlock } from './parts/error-block'
 import { UsageStrip } from './parts/usage-strip'
 
+/** Split a turn's parts into runs: consecutive tool parts group together, others stand alone. */
+function groupParts(parts: NormTurn['parts']): NormTurn['parts'][number][][] {
+  const groups: NormTurn['parts'][number][][] = []
+  for (const part of parts) {
+    const last = groups[groups.length - 1]
+    if (part.kind === 'tool' && last && last[last.length - 1].kind === 'tool') last.push(part)
+    else groups.push([part])
+  }
+  return groups
+}
+
 function timestamp(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
@@ -73,9 +84,18 @@ export function TurnView({ turn }: { turn: NormTurn }) {
           <UserBody turn={turn} />
         ) : (
           <>
-            {turn.parts.map((part) => (
-              <PartView key={part.id} part={part} />
-            ))}
+            {groupParts(turn.parts).map((group) =>
+              group.length > 1 || group[0].kind === 'tool' ? (
+                // Consecutive tool calls render as one tight action log, not spaced cards.
+                <div key={group[0].id} className="flex flex-col gap-0.5">
+                  {group.map((part) => (
+                    <PartView key={part.id} part={part} />
+                  ))}
+                </div>
+              ) : (
+                <PartView key={group[0].id} part={group[0]} />
+              ),
+            )}
             {turn.parts.length === 0 && !turn.error && (
               <p className="text-sm text-muted-foreground italic">
                 {turn.status === 'aborted'

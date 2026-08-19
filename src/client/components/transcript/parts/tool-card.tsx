@@ -15,24 +15,14 @@ function looksLikeDiff(text: string): boolean {
   return /^(diff --git |@@ |--- |\+\+\+ |index )/m.test(text)
 }
 
-function firstLine(text: string): string {
-  const line = text.split('\n').find((l) => l.trim().length > 0)
-  return line ? line.trim() : ''
-}
-
 function StatusChip({ status }: { status: NormToolState['status'] }) {
   switch (status) {
     case 'running':
-      return (
-        <span className="flex shrink-0 items-center gap-1 text-xs text-primary">
-          <Loader2 className="size-3.5 animate-spin" />
-          running
-        </span>
-      )
+      return <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
     case 'completed':
-      return <Check className="size-3.5 shrink-0 text-success" />
+      return <Check className="size-3 shrink-0 text-success/80" />
     case 'error':
-      return <X className="size-3.5 shrink-0 text-destructive" />
+      return <X className="size-3 shrink-0 text-destructive" />
     default:
       return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" aria-hidden />
   }
@@ -102,55 +92,41 @@ function ToolBody({ part }: { part: ToolPartData }) {
   }
 }
 
-/** A single tool call: a collapsible header with live status and a polymorphic result body. */
+/** A single tool call: one compact row (icon · name · arg · status), expandable on click.
+ *  Errors open themselves; everything else stays a quiet one-liner in the action log. */
 export function ToolCard({ part }: { part: ToolPartData }) {
   const { name, state } = part
   const { icon: Icon, label } = toolMeta(name)
   const arg = primaryArg(name, state.input)
 
-  const auto = state.status === 'error' || state.status === 'running'
   const [override, setOverride] = useState<boolean | null>(null)
-  const open = override ?? auto
-
-  const preview =
-    !open && state.status === 'completed' && state.output ? firstLine(state.output) : ''
+  const open = override ?? state.status === 'error'
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card/60">
+    <div className="min-w-0">
       <button
         type="button"
         onClick={() => setOverride(!open)}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/40"
+        className="group/tool flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-muted/50"
       >
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 text-sm font-medium">{label}</span>
+        <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />
+        <span className="shrink-0 text-[13px] font-medium text-foreground/80">{label}</span>
         {arg && (
           <code className="min-w-0 truncate font-mono text-xs text-muted-foreground">{arg}</code>
         )}
-        {state.title && state.title !== arg && (
-          <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground/70 sm:inline">
-            {state.title}
-          </span>
-        )}
-        <span className="ml-auto flex shrink-0 items-center gap-2">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
           <StatusChip status={state.status} />
           <ChevronRight
             className={cn(
-              'size-3.5 text-muted-foreground/60 transition-transform',
-              open && 'rotate-90',
+              'size-3 text-muted-foreground/40 opacity-0 transition-all group-hover/tool:opacity-100',
+              open && 'rotate-90 opacity-100',
             )}
           />
         </span>
       </button>
 
-      {preview && (
-        <div className="truncate border-t border-border px-2.5 py-1 font-mono text-xs text-muted-foreground/70">
-          {preview}
-        </div>
-      )}
-
       {open && (
-        <div className="border-t border-border p-2">
+        <div className="mt-1 mb-0.5 ml-[13px] border-l-2 border-border pl-3">
           <ToolBody part={part} />
         </div>
       )}

@@ -5,6 +5,19 @@ import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
 
+/** The port of a link that targets the sandbox itself (localhost & friends), else null. */
+function localhostPort(href?: string): number | null {
+  if (!href) return null
+  try {
+    const u = new URL(href)
+    if (!/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?)$/i.test(u.hostname)) return null
+    const port = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80
+    return Number.isFinite(port) ? port : null
+  } catch {
+    return null
+  }
+}
+
 type CodeProps = ComponentPropsWithoutRef<'code'> & ExtraProps
 type PreProps = ComponentPropsWithoutRef<'pre'> & ExtraProps
 type AnchorProps = ComponentPropsWithoutRef<'a'> & ExtraProps
@@ -29,6 +42,24 @@ const components: Components = {
     return <>{children}</>
   },
   a({ children, href }: AnchorProps) {
+    // localhost links point INSIDE the sandbox: a new browser tab can never reach them.
+    // Open the in-app preview on that port instead.
+    const port = localhostPort(href)
+    if (port !== null) {
+      return (
+        <a
+          href={href}
+          title={`Open in Dreamweav preview (port ${port})`}
+          onClick={(e) => {
+            e.preventDefault()
+            window.dispatchEvent(new CustomEvent('dw:preview', { detail: { port } }))
+          }}
+          className="text-primary underline underline-offset-2 hover:opacity-80"
+        >
+          {children}
+        </a>
+      )
+    }
     return (
       <a
         href={href}
