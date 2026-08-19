@@ -90,25 +90,39 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
 
         <div className="scrollbar-thin flex flex-col gap-6 overflow-y-auto px-5 py-5">
           <section className="flex flex-col gap-2">
-            <label className="text-sm font-medium">Provider</label>
-            <p className="text-xs text-muted-foreground">
-              Bring your own credits. Keys are encrypted and used only to run your sessions.
+            <label className="text-sm font-medium">Default model provider</label>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Where new sessions send their model calls — keys are encrypted, billed to your own
+              accounts. KimiFlare always runs on your Cloudflare account regardless of this choice.
             </p>
             <div className="mt-1 grid grid-cols-2 gap-2">
-              {PROVIDERS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setProvider(p.id)}
-                  className={cn(
-                    'flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
-                    provider === p.id ? 'border-primary/60 bg-primary/10 text-foreground' : 'border-border bg-card hover:bg-muted',
-                  )}
-                >
-                  <span className="truncate">{p.label}</span>
-                  {provider === p.id && <Check className="size-3.5 shrink-0 text-primary" />}
-                </button>
-              ))}
+              {PROVIDERS.map((p) => {
+                const configured =
+                  p.id === 'cloudflare'
+                    ? cfConnected && !!gwId
+                    : !!ua.connections?.[p.field]
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setProvider(p.id)}
+                    className={cn(
+                      'flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                      provider === p.id ? 'border-primary/60 bg-primary/10 text-foreground' : 'border-border bg-card hover:bg-muted',
+                    )}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        aria-hidden
+                        title={configured ? 'Credentials saved' : 'No credentials yet'}
+                        className={cn('size-1.5 shrink-0 rounded-full', configured ? 'bg-success' : 'bg-muted-foreground/30')}
+                      />
+                      <span className="truncate">{p.label}</span>
+                    </span>
+                    {provider === p.id && <Check className="size-3.5 shrink-0 text-primary" />}
+                  </button>
+                )
+              })}
             </div>
           </section>
 
