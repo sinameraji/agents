@@ -185,6 +185,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   /** Apply one AgentEvent to the in-memory transcript, persist what changed, broadcast to clients. */
   private emit(ev: AgentEvent) {
+    // An agent-declared preview (the preview tool) counts as reported: the post-turn port scan
+    // must not chip the same port again.
+    if (ev.t === 'part.upsert' && ev.part.kind === 'preview') {
+      const reported = this.getKv<number[]>('reportedPorts', [])
+      if (!reported.includes(ev.part.port)) this.putKv('reportedPorts', [...reported, ev.part.port])
+    }
     this.transcript = applyEvent(this.transcript, ev)
     switch (ev.t) {
       case 'turn.start':
@@ -271,7 +277,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private async ensureAgentContext(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
     try {
       await sandbox.exec(
-        `sh -lc 'grep -qs "dreamweav:start" /workspace/AGENTS.md 2>/dev/null || printf "%s\n" "" "<!-- dreamweav:start -->" "## Environment" "You are running inside Dreamweav, a browser workspace (dreamweav.com). The user interacts through a web chat and can preview web servers you start." "- When you start a dev server, bind 0.0.0.0 and prefer port 3000. Dreamweav detects new listening ports and offers the user a one-click preview." "- Do not try to open a browser or take screenshots yourself." "<!-- dreamweav:end -->" >> /workspace/AGENTS.md'`,
+        `sh -lc 'grep -qs "dreamweav:start" /workspace/AGENTS.md 2>/dev/null || printf "%s\n" "" "<!-- dreamweav:start -->" "## Environment" "You are running inside Dreamweav, a browser workspace (dreamweav.com). The user interacts through a web chat and can preview web servers you start." "- When you start a dev server, bind 0.0.0.0 and use port 8080 (NEVER 3000, it is reserved by the sandbox). Dreamweav detects the server and opens a live preview for the user automatically, so never link to localhost." "- Do not try to open a browser or take screenshots yourself." "<!-- dreamweav:end -->" >> /workspace/AGENTS.md'`,
         { timeout: 15_000 },
       )
     } catch { /* best-effort */ }
@@ -719,7 +725,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   /** Ports our own infra listens on inside the sandbox, never previewable. */
-  private static readonly INFRA_PORTS = new Set([7700, 4096])
+  // 3000 is the Sandbox SDK's own control plane: exposePort(3000) is categorically rejected.
+  private static readonly INFRA_PORTS = new Set([3000, 7700, 4096])
   /** Databases/caches: listening, but not something an iframe can show. */
   private static readonly NON_WEB_PORTS = new Set([5432, 3306, 6379, 27017, 9200, 11211])
 
@@ -750,9 +757,28 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
             !reported.has(p),
         )
       if (!fresh.length) return
-      this.putKv('reportedPorts', [...reported, ...fresh])
+      // Verify each candidate actually answers HTTP: a crashed server's lingering socket must
+      // not earn a chip. Dead ports stay unreported so a healthy server there later still counts.
+      const checks = await Promise.all(
+        fresh.map(async (port) => {
+          const c = (await sandbox
+            .exec(
+              `sh -lc 'curl -s -o /dev/null -m 3 -w "%{http_code}:%{content_type}" http://127.0.0.1:${port}/ || echo 000:'`,
+              { timeout: 10_000 },
+            )
+            .catch(() => null)) as { stdout?: string } | null
+          const [code, ctype = ''] = (c?.stdout ?? '000:').trim().split(':')
+          return { port, alive: code !== '000', html: ctype.includes('html') }
+        }),
+      )
+      const alive = checks.filter((c) => c.alive)
+      if (!alive.length) return
+      this.putKv('reportedPorts', [...reported, ...alive.map((c) => c.port)])
       const lastAssistant = [...this.transcript.turns].reverse().find((t) => t.role === 'assistant')
-      for (const port of fresh) {
+      // Emit HTML-serving ports last: the client auto-opens the most recent chip, and between a
+      // JSON API and a page, the page is the preview.
+      alive.sort((a, b) => Number(a.html) - Number(b.html))
+      for (const { port } of alive) {
         if (lastAssistant) {
           this.emit({ t: 'part.upsert', turnId: lastAssistant.id, part: { kind: 'preview', id: `preview-${port}`, port } })
         }
@@ -1406,15 +1432,35 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   @callable()
-  async exposePort(port: number, hostname = 'dreamweav.com'): Promise<{ url: string | null }> {
-    // Preview URLs require a custom domain with wildcard DNS (*.dreamweav.com). Until that is
-    // wired the returned URL won't resolve, the client shows a "preview needs the domain" state.
+  async exposePort(
+    port: number,
+    hostname = 'dreamweav.com',
+  ): Promise<{ url: string | null; reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' }> {
+    if (port === 3000) return { url: null, reason: 'reserved-port' }
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    // Probe first so a dead server gets an honest "nothing is answering" instead of an
+    // infrastructure-sounding failure.
+    const probe = (await sandbox
+      .exec(`sh -lc 'curl -s -o /dev/null -m 3 -w "%{http_code}" http://127.0.0.1:${port}/ || echo 000'`, {
+        timeout: 10_000,
+      })
+      .catch(() => null)) as { stdout?: string } | null
+    if ((probe?.stdout ?? '000').trim() === '000') return { url: null, reason: 'nothing-listening' }
     try {
       const res = (await sandbox.exposePort(port, { hostname })) as { url?: string }
-      return { url: res.url ?? null }
-    } catch {
-      return { url: null }
+      if (res.url) return { url: res.url }
+    } catch (e) {
+      console.error(`[preview] exposePort(${port}) failed:`, (e as Error).message)
     }
+    // exposePort throws on an already-exposed port; reuse the existing mapping instead.
+    try {
+      const existing = (await sandbox.getExposedPorts(hostname)) as Array<{ url: string; port: number }>
+      const match = existing.find((e) => e.port === port)
+      if (match) return { url: match.url }
+      console.error(`[preview] port ${port} not among exposed:`, JSON.stringify(existing.map((e) => e.port)))
+    } catch (e) {
+      console.error(`[preview] getExposedPorts failed:`, (e as Error).message)
+    }
+    return { url: null, reason: 'expose-failed' }
   }
 }

@@ -63,7 +63,10 @@ export interface SessionApi {
   listFiles: (path?: string) => Promise<{ name: string; path: string; isDirectory: boolean; size: number }[]>
   readFile: (path: string) => Promise<string | null>
   writeFile: (path: string, content: string) => Promise<boolean>
-  exposePort: (port: number, hostname?: string) => Promise<string | null>
+  exposePort: (
+    port: number,
+    hostname?: string,
+  ) => Promise<{ url: string | null; reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' }>
 }
 
 /** Subscribe to a SessionAgent: synced meta/status/usage + the normalized AgentEvent transcript stream. */
@@ -191,8 +194,10 @@ export function useSession(sessionId: string): SessionApi {
     return r.ok
   }, [])
   const exposePort = useCallback(async (port: number, hostname?: string) => {
-    const r = (await agentRef.current.stub.exposePort(port, hostname)) as { url: string | null }
-    return r.url
+    return (await agentRef.current.stub.exposePort(port, hostname)) as {
+      url: string | null
+      reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port'
+    }
   }, [])
 
   return {

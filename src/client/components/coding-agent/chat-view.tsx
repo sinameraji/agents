@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useState } from 'react'
-import { Bot, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'lucide-react'
+import { Bot, Check, Copy, Download, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'lucide-react'
 
 import type { SessionApi } from '@/hooks/use-session'
+import { HARNESS_MARKS } from '../brand-marks'
 import { HARNESSES } from '~shared/protocol'
 import { useRouter } from '@/router'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,87 @@ function withPasted(text: string, pasted: PastedBlock[]): string {
   if (!pasted.length) return text
   const blocks = pasted.map((p) => '```' + (p.language ?? '') + '\n' + p.content + '\n```').join('\n\n')
   return text ? `${text}\n\n${blocks}` : blocks
+}
+
+/** The header "…" menu: stop the turn, copy the session link, download the workspace. */
+function SessionOptionsMenu({ session, busy }: { session: SessionApi; busy: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onMouseDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [open])
+
+  const item =
+    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted'
+
+  return (
+    <div ref={ref} className="relative">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Session options"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <MoreHorizontal className="size-4" />
+      </Button>
+      {open && (
+        <div role="menu" className="absolute right-0 z-40 mt-1 w-52 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+          {busy && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                void session.stop()
+              }}
+              className={item}
+            >
+              <Square className="size-3.5 text-muted-foreground" />
+              Stop turn
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              void navigator.clipboard.writeText(window.location.href).then(() => {
+                setCopied(true)
+                setTimeout(() => {
+                  setCopied(false)
+                  setOpen(false)
+                }, 900)
+              })
+            }}
+            className={item}
+          >
+            {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5 text-muted-foreground" />}
+            {copied ? 'Copied' : 'Copy session link'}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              if (session.meta?.id) window.open(`/api/sessions/${session.meta.id}/export`, '_blank')
+            }}
+            className={item}
+          >
+            <Download className="size-3.5 text-muted-foreground" />
+            Download workspace (.tgz)
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function ChatView({ session }: { session: SessionApi }) {
@@ -56,16 +138,24 @@ export function ChatView({ session }: { session: SessionApi }) {
       seenPreviewsSession.current = sid
       seenPreviews.current = null
     }
+    // Key by turn AND part: part ids are stable per port (preview-3000), so a port re-declared
+    // in a LATER turn ("show it to me again") must still fire.
     const parts = session.turns.flatMap((t) =>
-      t.parts.filter((p): p is Extract<(typeof t.parts)[number], { kind: 'preview' }> => p.kind === 'preview'),
+      t.parts
+        .filter((p): p is Extract<(typeof t.parts)[number], { kind: 'preview' }> => p.kind === 'preview')
+        .map((p) => ({ key: `${t.id}:${p.id}`, port: p.port })),
     )
+    // Seed on the FIRST non-empty turns update: that's the history hydration for existing
+    // sessions (no popping on reload). A brand-new session's first update is the user's own
+    // message, so seeding there is harmless and later detections still fire.
+    if (session.turns.length === 0) return
     if (seenPreviews.current === null) {
-      seenPreviews.current = new Set(parts.map((p) => p.id))
+      seenPreviews.current = new Set(parts.map((p) => p.key))
       return
     }
     for (const part of parts) {
-      if (seenPreviews.current.has(part.id)) continue
-      seenPreviews.current.add(part.id)
+      if (seenPreviews.current.has(part.key)) continue
+      seenPreviews.current.add(part.key)
       window.dispatchEvent(new CustomEvent('dw:preview', { detail: { port: part.port } }))
     }
   }, [session.turns, session.meta?.id])
@@ -159,7 +249,10 @@ export function ChatView({ session }: { session: SessionApi }) {
         <div className="ml-auto flex items-center gap-2">
           {harnessLabel && (
             <span className="hidden items-center gap-1.5 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs text-muted-foreground sm:flex">
-              <Bot className="size-3.5 text-primary" />
+              {(() => {
+                const Mark = meta?.harness ? HARNESS_MARKS[meta.harness] : null
+                return Mark ? <Mark className="size-3.5" /> : <Bot className="size-3.5 text-primary" />
+              })()}
               <span className="font-medium text-foreground/90">{harnessLabel}</span>
             </span>
           )}
@@ -185,9 +278,7 @@ export function ChatView({ session }: { session: SessionApi }) {
               />
             )}
           </Button>
-          <Button variant="ghost" size="icon-sm" aria-label="Session options">
-            <MoreHorizontal className="size-4" />
-          </Button>
+          <SessionOptionsMenu session={session} busy={busy} />
         </div>
       </header>
 

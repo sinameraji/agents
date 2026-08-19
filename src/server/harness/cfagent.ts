@@ -84,8 +84,9 @@ const SYSTEM = `You are Dreamweav's Cloudflare-native coding agent, working insi
 The project root is /workspace. Use the tools to read, search, edit, and run code.
 Be concise. Prefer making the change and verifying it over explaining at length.
 You run inside Dreamweav (dreamweav.com), a browser workspace. If you start a dev server, bind 0.0.0.0
-and prefer port 3000; Dreamweav detects new listening ports and offers the user a one-click preview.
-Never try to open a browser yourself.`
+and use port 8080 (NEVER 3000, it is reserved by the sandbox). When the server is ready, call the
+preview tool with its port - that opens the app right inside Dreamweav for the user. Never link to
+localhost and never try to open a browser yourself.`
 
 const out = (v: unknown): string => {
   const o = v as { stdout?: string; exitCode?: number }
@@ -148,6 +149,19 @@ export async function runCfAgentLoop(opts: {
       description: 'Search file contents with ripgrep.',
       inputSchema: z.object({ pattern: z.string(), path: z.string().optional() }),
       execute: async ({ pattern, path }) => sh(`rg -n --no-heading ${JSON.stringify(pattern)} ${path ?? '.'} | head -100`),
+    }),
+    preview: tool({
+      description:
+        'Show the user a live preview of a web server you started, right inside Dreamweav. Call this once the server is ready, with the port it listens on.',
+      inputSchema: z.object({ port: z.number().int().min(1).max(65535) }),
+      execute: async ({ port }) => {
+        if (port === 3000)
+          return 'error: port 3000 is reserved by the sandbox and cannot be previewed. Restart the server on another port (e.g. 8080), then call preview again.'
+        // The agent declaring "this is the thing to look at" IS the preview signal; the part
+        // auto-opens the preview pane client-side.
+        emit.part({ kind: 'preview', id: `preview-${port}`, port })
+        return `preview opened on port ${port}`
+      },
     }),
     ...(readonly
       ? {}

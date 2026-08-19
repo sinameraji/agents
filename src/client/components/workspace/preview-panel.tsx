@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ExternalLink, Globe, LoaderCircle, Maximize2, Minimize2, MonitorPlay, Play, RefreshCw } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -18,6 +18,19 @@ export function PreviewPanel({
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [failReason, setFailReason] = useState<'nothing-listening' | 'expose-failed' | 'reserved-port' | null>(null)
+
+  // Every port the session has ever surfaced (agent-declared or detected): one-click switches.
+  const knownPorts = useMemo(
+    () => [
+      ...new Set(
+        session.turns.flatMap((t) =>
+          t.parts.filter((p): p is Extract<(typeof t.parts)[number], { kind: 'preview' }> => p.kind === 'preview').map((p) => p.port),
+        ),
+      ),
+    ],
+    [session.turns],
+  )
   const [started, setStarted] = useState(false)
   const [frameKey, setFrameKey] = useState(0)
   const [full, setFull] = useState(false)
@@ -46,17 +59,20 @@ export function PreviewPanel({
     if (!Number.isFinite(p) || p < 1 || p > 65535) return
     setLoading(true)
     setFailed(false)
+    setFailReason(null)
     setStarted(true)
     setUrl(null)
     try {
       const result = await session.exposePort(p, window.location.host)
-      if (result) {
-        setUrl(result)
+      if (result.url) {
+        setUrl(result.url)
       } else {
         setFailed(true)
+        setFailReason(result.reason ?? 'expose-failed')
       }
     } catch {
       setFailed(true)
+      setFailReason('expose-failed')
     } finally {
       setLoading(false)
     }
@@ -91,6 +107,29 @@ export function PreviewPanel({
           {loading ? 'Starting…' : 'Start preview'}
         </Button>
       </form>
+
+      {knownPorts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Detected:</span>
+          {knownPorts.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => {
+                setPort(p)
+                void start(p)
+              }}
+              className={
+                p === port && url
+                  ? 'rounded-md border border-primary/50 bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary'
+                  : 'rounded-md border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+              }
+            >
+              :{p}
+            </button>
+          ))}
+        </div>
+      )}
 
       {url ? (
         <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -146,9 +185,19 @@ export function PreviewPanel({
             <p className="text-sm text-muted-foreground">Starting preview on port {port}…</p>
           ) : started && failed ? (
             <>
-              <p className="text-sm font-medium text-foreground">Preview needs the custom domain</p>
+              <p className="text-sm font-medium text-foreground">
+                {failReason === 'nothing-listening'
+                  ? `Nothing is answering on port ${port}`
+                  : failReason === 'reserved-port'
+                    ? 'Port 3000 is reserved by the sandbox'
+                    : 'Could not open a preview URL'}
+              </p>
               <p className="max-w-xs text-xs text-muted-foreground">
-                Sandbox preview URLs require *.dreamweav.com (wildcard DNS), which isn't wired yet.
+                {failReason === 'nothing-listening'
+                  ? 'The server may have stopped or crashed. Ask the agent to restart it, then try again.'
+                  : failReason === 'reserved-port'
+                    ? 'Ask the agent to run the server on another port, like 8080.'
+                    : 'Something went wrong exposing the port. Try again in a moment.'}
               </p>
             </>
           ) : (
