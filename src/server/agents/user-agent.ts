@@ -138,6 +138,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
    *  encrypted connections. The user sees the app exactly as a brand-new user would. */
   @callable()
   async resetAccount(): Promise<{ ok: true; sessions: number }> {
+    await this.revokeCfOauth() // sever the OAuth grant at Cloudflare, not just our copy
     const rows = this.sql<{ id: string }>`SELECT id FROM sessions`
     for (const r of rows) {
       await getAgentByName(this.env.SessionAgent, r.id)
@@ -289,6 +290,49 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     }
     await this.saveSettings({ connections: { cloudflareGatewayId: created.result.id } })
     return { ok: true, gatewayId: created.result.id }
+  }
+
+  /** Delete the attached (or 'dreamweav'-named) gateway from the USER'S Cloudflare account and
+   *  clear the attachment. Used by hard cleanup — normal Detach never touches their account. */
+  @callable()
+  async deleteAiGateway(): Promise<{ ok: boolean; deleted?: string; note?: string }> {
+    const conn = await this.getDecryptedConnections()
+    const api = await this.gatewayApi()
+    if (!api) return { ok: false, note: 'No Cloudflare credentials.' }
+    const target = conn.cloudflareGatewayId || 'dreamweav'
+    const res = (await fetch(`${api.base}/${target}`, { method: 'DELETE', headers: api.headers })
+      .then((r) => r.json())
+      .catch(() => ({}))) as { success?: boolean; errors?: Array<{ message?: string; code?: number }> }
+    if (!res.success) {
+      const msg = res.errors?.[0]?.message ?? 'Delete failed.'
+      // Not-found means it's already gone — that satisfies "zero leftovers".
+      if (!/not.?found|does not exist/i.test(msg)) return { ok: false, note: msg }
+    }
+    await this.saveSettings({ connections: { cloudflareGatewayId: '' } })
+    return { ok: true, deleted: target }
+  }
+
+  /** Revoke our OAuth grant at Cloudflare's authorization server (RFC 7009) so deleting the
+   *  account really severs the connection, not just our copy of the tokens. */
+  private async revokeCfOauth(): Promise<void> {
+    try {
+      const enc = this.getSetting<string | null>('cfOauth', null)
+      if (!enc) return
+      const bundle = JSON.parse(await decryptSecret(enc, this.env.ENCRYPTION_KEY)) as { access?: string; refresh?: string | null }
+      const envx = this.env as unknown as Record<string, string | undefined>
+      for (const tok of [bundle.refresh, bundle.access]) {
+        if (!tok) continue
+        await fetch('https://dash.cloudflare.com/oauth2/revoke', {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            token: tok,
+            client_id: envx.CF_OAUTH_CLIENT_ID ?? '',
+            client_secret: envx.CF_OAUTH_CLIENT_SECRET ?? '',
+          }),
+        }).catch(() => null)
+      }
+    } catch { /* best effort */ }
   }
 
   /** Connect-time convenience: adopt an existing gateway NAMED 'dreamweav' (unambiguously ours);

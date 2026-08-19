@@ -104,6 +104,13 @@ app.post('/api/connections', async (c) => {
   return c.json(res)
 })
 
+// Hard cleanup: delete the Dreamweav-attached AI Gateway from the user's own Cloudflare account.
+app.post('/api/gateway/delete', async (c) => {
+  const identity = c.get('identity')
+  const user = await getAgentByName(c.env.UserAgent, identity.id)
+  return c.json(await user.deleteAiGateway())
+})
+
 // Factory reset: wipe every session, sandbox, setting, and stored credential for this user.
 app.post('/api/reset', async (c) => {
   const identity = c.get('identity')
