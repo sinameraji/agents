@@ -47,6 +47,11 @@ export function OpenCodeMark({ className }: { className?: string }) {
   )
 }
 
+/** KimiFlare's own logo (from its repo). */
+export function KimiFlareMark({ className }: { className?: string }) {
+  return <img src="/kimiflare-logo.png" alt="" aria-hidden className={className} />
+}
+
 /** pi has no distributable mark; its identity is the letter itself. */
 export function PiMark({ className }: { className?: string }) {
   return (

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, ExternalLink, GitBranch, KeyRound, Loader2, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, ExternalLink, File, GitBranch, KeyRound, Loader2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useRouter } from '@/router'
@@ -10,7 +10,7 @@ import { HARNESSES, type Harness, type SessionSource } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { PROVIDERS } from './coding-agent/settings-dialog'
 import { CloudflareMark } from './login-screen'
-import { AnthropicMark, MoonshotMark, OpenAIMark, OpenCodeMark, OpenRouterMark, PiMark, VercelMark } from './brand-marks'
+import { AnthropicMark, KimiFlareMark, OpenAIMark, OpenCodeMark, OpenRouterMark, PiMark, VercelMark } from './brand-marks'
 
 const PROVIDER_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
   openrouter: OpenRouterMark,
@@ -23,7 +23,7 @@ const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNo
   aisdk: VercelMark,
   cfagent: CloudflareMark,
   pi: PiMark,
-  kimiflare: MoonshotMark,
+  kimiflare: KimiFlareMark,
 }
 import { GatewayPicker } from './gateway-picker'
 
@@ -445,7 +445,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
                 className={cn('flex flex-col gap-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors',
                   source === 'blank' ? 'border-primary/60 bg-primary/10' : 'border-border hover:bg-muted')}
               >
-                <span className="flex items-center gap-1.5 text-sm"><Sparkles className="size-3.5" /> Blank</span>
+                <span className="flex items-center gap-1.5 text-sm"><File className="size-3.5" /> Blank</span>
                 <span className="text-xs text-muted-foreground">Empty workspace, fastest start</span>
               </button>
               <button

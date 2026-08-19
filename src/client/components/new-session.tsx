@@ -1,19 +1,19 @@
 import { useState } from 'react'
-import { Check, CircleAlert, ExternalLink, GitBranch, Loader2, Sparkles } from 'lucide-react'
+import { Check, CircleAlert, ExternalLink, File, GitBranch, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRouter } from '@/router'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
 import { HARNESSES, type Harness, type MaskedConnections, type SessionSource } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { CloudflareMark } from './login-screen'
-import { MoonshotMark, OpenCodeMark, PiMark, VercelMark } from './brand-marks'
+import { KimiFlareMark, OpenCodeMark, PiMark, VercelMark } from './brand-marks'
 
 const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
   opencode: OpenCodeMark,
   aisdk: VercelMark,
   cfagent: CloudflareMark,
   pi: PiMark,
-  kimiflare: MoonshotMark,
+  kimiflare: KimiFlareMark,
 }
 
 interface Requirement {
@@ -139,7 +139,7 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
           <label className="text-sm font-medium">Source</label>
           <div className="grid grid-cols-2 gap-2">
             <SourceCard active={source === 'github'} onClick={() => setSource('github')} icon={<GitBranch className="size-4" />} label="Git repo" hint="GitHub, GitLab, any HTTPS remote" />
-            <SourceCard active={source === 'blank'} onClick={() => setSource('blank')} icon={<Sparkles className="size-4" />} label="Blank" hint="Empty workspace" />
+            <SourceCard active={source === 'blank'} onClick={() => setSource('blank')} icon={<File className="size-4" />} label="Blank" hint="Empty workspace" />
           </div>
         </section>
 

@@ -6,7 +6,7 @@ import { Check, ExternalLink, Eye, EyeOff, KeyRound, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CloudflareMark } from '../login-screen'
 import { GatewayPicker } from '../gateway-picker'
-import { AnthropicMark, MoonshotMark, OpenAIMark, OpenCodeMark, OpenRouterMark, PiMark, VercelMark } from '../brand-marks'
+import { AnthropicMark, KimiFlareMark, OpenAIMark, OpenCodeMark, OpenRouterMark, PiMark, VercelMark } from '../brand-marks'
 
 const PROVIDER_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
   openrouter: OpenRouterMark,
@@ -19,7 +19,7 @@ const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNo
   aisdk: VercelMark,
   cfagent: CloudflareMark,
   pi: PiMark,
-  kimiflare: MoonshotMark,
+  kimiflare: KimiFlareMark,
 }
 import type { UserAgentApi } from '@/hooks/use-user-agent'
 import { HARNESSES, type Connections, type Provider } from '~shared/protocol'
@@ -27,10 +27,10 @@ import { harnessRequirements } from '../new-session'
 import { Button } from '@/components/ui/button'
 
 export const PROVIDERS: { id: Provider; label: string; field: keyof Connections; placeholder: string; keyUrl: string }[] = [
-  { id: 'openrouter', label: 'OpenRouter', field: 'openrouterKey', placeholder: 'sk-or-v1-…', keyUrl: 'https://openrouter.ai/settings/keys' },
-  { id: 'cloudflare', label: 'Cloudflare AI Gateway', field: 'cloudflareApiToken', placeholder: 'CF API token', keyUrl: 'https://dash.cloudflare.com/profile/api-tokens' },
   { id: 'anthropic', label: 'Anthropic', field: 'anthropicKey', placeholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/keys' },
+  { id: 'cloudflare', label: 'Cloudflare AI Gateway', field: 'cloudflareApiToken', placeholder: 'CF API token', keyUrl: 'https://dash.cloudflare.com/profile/api-tokens' },
   { id: 'openai', label: 'OpenAI', field: 'openaiKey', placeholder: 'sk-…', keyUrl: 'https://platform.openai.com/api-keys' },
+  { id: 'openrouter', label: 'OpenRouter', field: 'openrouterKey', placeholder: 'sk-or-v1-…', keyUrl: 'https://openrouter.ai/settings/keys' },
 ]
 
 function HelpLink({ href, children }: { href: string; children: React.ReactNode }) {
