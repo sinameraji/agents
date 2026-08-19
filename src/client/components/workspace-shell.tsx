@@ -23,7 +23,7 @@ export function WorkspaceShell() {
 
 /** The app IS the homepage: guests browse the real UI; consequential actions raise the login dialog. */
 function GuestShell() {
-  const { path, navigate } = useRouter()
+  const { navigate } = useRouter()
   const [loginOpen, setLoginOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -88,7 +88,7 @@ function GuestShell() {
         </div>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
-        {path === '/new' || path === '/' ? <Onboarding ua={ua} /> : <Onboarding ua={ua} />}
+        <Onboarding ua={ua} guest />
       </div>
       {settingsOpen && <SettingsDialog ua={ua} onClose={() => setSettingsOpen(false)} />}
       {loginOpen && <LoginDialog onClose={() => setLoginOpen(false)} />}

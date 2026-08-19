@@ -88,8 +88,9 @@ const STEPS: { n: Step; title: string; hint: string }[] = [
   { n: 3, title: 'Starting workspace', hint: 'for your first session' },
 ]
 
-/** First-run wizard: provider key → harness → workspace → session. Shown until a model key exists. */
-export function Onboarding({ ua }: { ua: UserAgentApi }) {
+/** First-run wizard: provider key → harness → workspace → session. Guests browse every step
+ *  freely — nothing is marked complete until a signed-in user actually commits something. */
+export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean }) {
   const { navigate } = useRouter()
   const [step, setStep] = useState<Step>(1)
   const [done, setDone] = useState<Set<Step>>(new Set())
@@ -144,7 +145,7 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
       }
       await ua.saveSettings({ settings: { defaultProvider: provider }, connections })
       setKey('')
-      setDone((d) => new Set(d).add(1))
+      if (!guest) setDone((d) => new Set(d).add(1))
       setStep(2)
     } catch (e) {
       setErr((e as Error).message)
@@ -164,7 +165,7 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
         if (kfGateway) connections.cloudflareGatewayId = kfGateway
         await ua.saveSettings({ connections })
       }
-      setDone((d) => new Set(d).add(2))
+      if (!guest) setDone((d) => new Set(d).add(2))
       setStep(3)
     } catch (e) {
       setErr((e as Error).message)
@@ -208,14 +209,15 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
         {/* Stepper */}
         <ol className="flex items-start gap-2" aria-label="Setup progress">
           {STEPS.map((s, i) => {
-            const isDone = done.has(s.n)
+            const isDone = !guest && done.has(s.n)
             const isActive = step === s.n
+            const clickable = guest || isDone || isActive
             return (
               <li key={s.n} className="flex flex-1 items-start gap-2">
                 <button
                   type="button"
-                  disabled={!isDone && !isActive}
-                  onClick={() => (isDone || isActive) && setStep(s.n)}
+                  disabled={!clickable}
+                  onClick={() => clickable && setStep(s.n)}
                   className={cn('flex flex-1 flex-col gap-1 rounded-lg border px-3 py-2 text-left transition-colors',
                     isActive ? 'border-primary/60 bg-primary/10' : isDone ? 'border-border bg-card hover:bg-muted' : 'border-border/60 opacity-60')}
                 >
@@ -260,7 +262,7 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
             </p>
             <Button
               onClick={() => {
-                setDone((d) => new Set(d).add(1))
+                if (!guest) setDone((d) => new Set(d).add(1))
                 setStep(2)
               }}
               className="self-start"
