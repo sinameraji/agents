@@ -63,7 +63,10 @@ export function TurnView({ turn }: { turn: NormTurn }) {
             {turn.usage && (turn.parts.length > 0 || (turn.usage.input ?? 0) + (turn.usage.output ?? 0) > 0) && (
               <UsageStrip usage={turn.usage} />
             )}
-            {turn.error && <ErrorBlock name={turn.error.name} message={turn.error.message} />}
+            {turn.error &&
+              !turn.parts.some((p) => p.kind === 'error' && p.message === turn.error?.message) && (
+                <ErrorBlock name={turn.error.name} message={turn.error.message} />
+              )}
           </>
         )}
       </div>
