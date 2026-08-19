@@ -10,6 +10,7 @@ import { HARNESSES, type Harness, type SessionSource } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { PROVIDERS } from './coding-agent/settings-dialog'
 import { CloudflareMark } from './login-screen'
+import { GatewayPicker } from './gateway-picker'
 
 /** Themed dropdown (the native <select> looks like the OS, not like Dreamweav). */
 function Dropdown<T extends string>({
@@ -112,8 +113,6 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [gwBusy, setGwBusy] = useState(false)
-  const [gwNote, setGwNote] = useState<string | null>(null)
   const [manualCf, setManualCf] = useState(false)
 
   const gwStored = !!ua.connections?.cloudflareGatewayId
@@ -123,16 +122,6 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
     : 'https://dash.cloudflare.com/?to=/:account/ai/ai-gateway'
   const cfBtnCls =
     'flex h-10 items-center justify-center gap-2.5 rounded-lg border border-black/10 bg-white text-sm font-medium text-[#222] shadow-sm transition-colors hover:bg-[#faf7f2] dark:border-white/10'
-  const setupGateway = async () => {
-    setGwBusy(true)
-    setGwNote(null)
-    try {
-      const r = await ua.ensureAiGateway()
-      setGwNote(r.ok ? `Gateway “${r.gatewayId}” is ready.` : (r.note ?? 'Could not set up a gateway.'))
-    } finally {
-      setGwBusy(false)
-    }
-  }
 
   const meta = PROVIDERS.find((p) => p.id === provider)!
   const keyStored = !!ua.connections?.[meta.field]
@@ -265,18 +254,7 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                 )}
               </div>
             </div>
-            {!gwStored && (
-              <div className="flex flex-col gap-1.5 rounded-lg border border-warning/40 bg-warning/10 p-3">
-                <p className="text-xs text-foreground/90">
-                  We couldn&apos;t auto-create an AI Gateway during connect — retry:
-                </p>
-                <Button type="button" variant="outline" size="sm" onClick={() => void setupGateway()} disabled={gwBusy} className="gap-2 self-start">
-                  {gwBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-                  Set up AI Gateway
-                </Button>
-                {gwNote && <p className="text-xs text-muted-foreground">{gwNote}</p>}
-              </div>
-            )}
+            {!gwStored && <GatewayPicker ua={ua} compact />}
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-semibold">
                 Want more models? <span className="font-normal text-muted-foreground">· optional</span>
@@ -367,12 +345,8 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                       </a>
                     </div>
                   ) : (
-                    <Button type="button" variant="outline" onClick={() => void setupGateway()} disabled={gwBusy} className="justify-center gap-2">
-                      {gwBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                      Set up AI Gateway automatically
-                    </Button>
+                    <GatewayPicker ua={ua} compact />
                   ))}
-                {gwNote && <p className="text-xs text-muted-foreground">{gwNote}</p>}
                 {!cfStored && (
                   <button type="button" onClick={() => setManualCf((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
                     {manualCf ? 'Hide manual setup' : 'Enter credentials manually instead'}

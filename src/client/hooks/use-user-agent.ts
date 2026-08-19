@@ -31,6 +31,8 @@ export interface UserAgentApi {
     connections?: Partial<Record<keyof MaskedConnections, string>>
   }) => Promise<void>
   ensureAiGateway: () => Promise<{ ok: boolean; gatewayId?: string; note?: string }>
+  listAiGateways: () => Promise<{ ok: boolean; gateways: string[]; note?: string }>
+  createAiGateway: (name: string) => Promise<{ ok: boolean; gatewayId?: string; note?: string }>
 }
 
 /** Connect to the per-user UserAgent DO for the sessions index + settings. */
@@ -92,6 +94,15 @@ export function useUserAgent(userId: string): UserAgentApi {
     return r
   }, [refresh])
 
+  const listAiGateways = useCallback(async () => {
+    return (await agentRef.current.stub.listAiGateways()) as { ok: boolean; gateways: string[]; note?: string }
+  }, [])
+  const createAiGateway = useCallback(async (name: string) => {
+    const r = (await agentRef.current.stub.createAiGateway(name)) as { ok: boolean; gatewayId?: string; note?: string }
+    await refresh()
+    return r
+  }, [refresh])
+
   const createSession: UserAgentApi['createSession'] = useCallback(async (input) => {
     const { id } = (await agentRef.current.stub.createSession(input)) as { id: string }
     await refresh()
@@ -137,5 +148,7 @@ export function useUserAgent(userId: string): UserAgentApi {
     markRead,
     saveSettings,
     ensureAiGateway,
+    listAiGateways,
+    createAiGateway,
   }
 }

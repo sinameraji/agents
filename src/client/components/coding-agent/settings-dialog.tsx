@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, ExternalLink, Eye, EyeOff, KeyRound, Loader2, X } from 'lucide-react'
+import { Check, ExternalLink, Eye, EyeOff, KeyRound, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { CloudflareMark } from '../login-screen'
+import { GatewayPicker } from '../gateway-picker'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
 import type { Connections, Provider } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
@@ -35,8 +36,6 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [manualCf, setManualCf] = useState(false)
-  const [gwBusy, setGwBusy] = useState(false)
-  const [gwNote, setGwNote] = useState<string | null>(null)
 
   const cfConnected = !!ua.connections?.cloudflareAccountId && !!ua.connections?.cloudflareApiToken
   const gwId = ua.connections?.cloudflareGatewayId ?? null
@@ -177,31 +176,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={gwBusy}
-                    onClick={() => {
-                      void (async () => {
-                        setGwBusy(true)
-                        setGwNote(null)
-                        try {
-                          const r = await ua.ensureAiGateway()
-                          setGwNote(r.ok ? `Gateway “${r.gatewayId}” is ready.` : (r.note ?? 'Could not set up a gateway.'))
-                        } finally {
-                          setGwBusy(false)
-                        }
-                      })()
-                    }}
-                    className="gap-2 self-start"
-                  >
-                    {gwBusy && <Loader2 className="size-3.5 animate-spin" />}
-                    Set up AI Gateway automatically
-                  </Button>
-                  {gwNote && <p className="text-xs text-muted-foreground">{gwNote}</p>}
-                </div>
+                <GatewayPicker ua={ua} compact />
               ))}
             {!cfConnected && (
               <button type="button" onClick={() => setManualCf((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">

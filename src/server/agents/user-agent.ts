@@ -237,49 +237,71 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     return this.getSettings()
   }
 
-  /** One-click AI Gateway: reuse the stored gateway, else find or create one on the user's
-   *  account via the API (needs AI Gateway:Read/Edit — granted by "Log in with Cloudflare"). */
+  private async gatewayApi(): Promise<{ base: string; headers: Record<string, string> } | null> {
+    const conn = await this.getDecryptedConnections()
+    if (!conn.cloudflareAccountId || !conn.cloudflareApiToken) return null
+    return {
+      base: `https://api.cloudflare.com/client/v4/accounts/${conn.cloudflareAccountId}/ai-gateway/gateways`,
+      headers: { authorization: `Bearer ${conn.cloudflareApiToken}`, 'content-type': 'application/json' },
+    }
+  }
+
+  /** List the account's AI Gateways so the user can pick one — it's their account. */
+  @callable()
+  async listAiGateways(): Promise<{ ok: boolean; gateways: string[]; note?: string }> {
+    const api = await this.gatewayApi()
+    if (!api) return { ok: false, gateways: [], note: 'Connect Cloudflare first.' }
+    const res = (await fetch(`${api.base}?per_page=50`, { headers: api.headers }).then((r) => r.json()).catch(() => ({}))) as {
+      success?: boolean
+      result?: Array<{ id?: string }>
+      errors?: Array<{ message?: string }>
+    }
+    if (!res.success) return { ok: false, gateways: [], note: res.errors?.[0]?.message ?? 'Could not list gateways.' }
+    return { ok: true, gateways: (res.result ?? []).map((g) => String(g.id ?? '')).filter(Boolean) }
+  }
+
+  /** Create a gateway with the user's chosen name and attach it. */
+  @callable()
+  async createAiGateway(name: string): Promise<{ ok: boolean; gatewayId?: string; note?: string }> {
+    const api = await this.gatewayApi()
+    if (!api) return { ok: false, note: 'Connect Cloudflare first.' }
+    const id = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '').slice(0, 64)
+    if (!id) return { ok: false, note: 'Enter a gateway name (letters, numbers, dashes).' }
+    const created = (await fetch(api.base, {
+      method: 'POST',
+      headers: api.headers,
+      body: JSON.stringify({
+        id,
+        cache_invalidate_on_update: false,
+        cache_ttl: 0,
+        collect_logs: true,
+        rate_limiting_interval: 0,
+        rate_limiting_limit: 0,
+        rate_limiting_technique: 'fixed',
+      }),
+    })
+      .then((r) => r.json())
+      .catch(() => ({}))) as { success?: boolean; result?: { id?: string }; errors?: Array<{ message?: string }> }
+    if (!created.success || !created.result?.id) {
+      return { ok: false, note: created.errors?.[0]?.message ?? 'Could not create the gateway.' }
+    }
+    await this.saveSettings({ connections: { cloudflareGatewayId: created.result.id } })
+    return { ok: true, gatewayId: created.result.id }
+  }
+
+  /** Connect-time convenience: adopt an existing gateway NAMED 'dreamweav' (unambiguously ours);
+   *  otherwise leave unset — the UI offers the pick-or-create flow, it's the user's account. */
   @callable()
   async ensureAiGateway(): Promise<{ ok: boolean; gatewayId?: string; note?: string }> {
     const conn = await this.getDecryptedConnections()
-    if (!conn.cloudflareAccountId || !conn.cloudflareApiToken) {
-      return { ok: false, note: 'Connect Cloudflare first.' }
-    }
     if (conn.cloudflareGatewayId) return { ok: true, gatewayId: conn.cloudflareGatewayId }
-    const base = `https://api.cloudflare.com/client/v4/accounts/${conn.cloudflareAccountId}/ai-gateway/gateways`
-    const headers = { authorization: `Bearer ${conn.cloudflareApiToken}`, 'content-type': 'application/json' }
-    const pick = async (): Promise<string | null> => {
-      const res = (await fetch(`${base}?per_page=20`, { headers }).then((r) => r.json()).catch(() => ({}))) as {
-        success?: boolean
-        result?: Array<{ id?: string }>
-      }
-      const list = Array.isArray(res.result) ? res.result : []
-      // Only ever adopt OUR gateway — silently reusing an unrelated one would mix the user's
-      // other projects' logs and costs into Dreamweav.
-      return list.find((g) => g.id === 'dreamweav')?.id ?? null
+    const listed = await this.listAiGateways()
+    if (!listed.ok) return { ok: false, note: listed.note }
+    if (listed.gateways.includes('dreamweav')) {
+      await this.saveSettings({ connections: { cloudflareGatewayId: 'dreamweav' } })
+      return { ok: true, gatewayId: 'dreamweav' }
     }
-    let id = await pick()
-    if (!id) {
-      const created = (await fetch(base, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          id: 'dreamweav',
-          cache_invalidate_on_update: false,
-          cache_ttl: 0,
-          collect_logs: true,
-          rate_limiting_interval: 0,
-          rate_limiting_limit: 0,
-          rate_limiting_technique: 'fixed',
-        }),
-      })
-        .then((r) => r.json())
-        .catch(() => ({}))) as { success?: boolean; result?: { id?: string }; errors?: Array<{ message?: string }> }
-      id = created.result?.id ?? (created.success === false ? null : await pick())
-      if (!id) return { ok: false, note: created.errors?.[0]?.message ?? 'Could not create a gateway.' }
-    }
-    await this.saveSettings({ connections: { cloudflareGatewayId: id } })
-    return { ok: true, gatewayId: id }
+    return { ok: false, note: 'Pick an existing gateway or create one.' }
   }
 
   /** Magic-link login: remember a pending single-use nonce (15-minute TTL). */
