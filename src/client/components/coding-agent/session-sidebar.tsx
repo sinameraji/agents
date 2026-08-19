@@ -142,9 +142,20 @@ export function SessionSidebar({
 
       <footer className="flex items-center gap-1 border-t border-sidebar-border px-3 py-2.5">
         {guest ? (
-          <Button size="sm" className="mr-1" onClick={onSignIn}>
-            Sign in
-          </Button>
+          <div className="flex min-w-0 items-center gap-2">
+            <Button size="sm" onClick={onSignIn}>
+              Sign in
+            </Button>
+            <a
+              href="https://github.com/sinameraji/dreamweav#deploy-your-own"
+              target="_blank"
+              rel="noreferrer"
+              className="truncate text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              title="Dreamweav is self-hosted: run it on your own Cloudflare account"
+            >
+              Deploy your own
+            </a>
+          </div>
         ) : (
           <>
             <div className="grid size-7 place-items-center rounded-full bg-secondary text-xs font-medium text-secondary-foreground">

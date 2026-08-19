@@ -41,7 +41,7 @@ function HelpLink({ href, children }: { href: string; children: React.ReactNode 
   )
 }
 
-export type SettingsTab = 'providers' | 'harness' | 'git'
+export type SettingsTab = 'providers' | 'harness' | 'git' | 'domain'
 
 export function SettingsDialog({
   ua,
@@ -199,6 +199,7 @@ export function SettingsDialog({
                   ['providers', 'Providers'],
                   ['harness', 'Harness'],
                   ['git', 'Git'],
+                  ['domain', 'Domain'],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -396,6 +397,8 @@ export function SettingsDialog({
             </div>
           </section>
           )}
+
+          {tab === 'domain' && <DomainSection ua={ua} />}
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
@@ -406,5 +409,65 @@ export function SettingsDialog({
         </footer>
       </div>
     </div>
+  )
+}
+
+/** Self-host: wire a custom domain (app + wildcard previews) via a one-time API token. */
+function DomainSection({ ua }: { ua: UserAgentApi }) {
+  const [domain, setDomain] = useState('')
+  const [token, setToken] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; note: string } | null>(null)
+
+  const wire = async () => {
+    setBusy(true)
+    setResult(null)
+    try {
+      setResult(await ua.setupCustomDomain(domain, token))
+    } catch (e) {
+      setResult({ ok: false, note: (e as Error).message })
+    } finally {
+      setBusy(false)
+      setToken('')
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <p className="text-xs text-muted-foreground">
+        For self-hosted instances. Wires your domain to this app and adds the wildcard DNS that live
+        previews need. The domain must already be a zone on your Cloudflare account. Without a
+        domain, previews fall back to temporary trycloudflare.com URLs.
+      </p>
+      <label htmlFor="dw-domain" className="text-sm font-medium">Domain</label>
+      <input
+        id="dw-domain"
+        value={domain}
+        onChange={(e) => setDomain(e.target.value)}
+        placeholder="example.com"
+        className="h-10 rounded-lg border border-border bg-background px-3 font-mono text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+      />
+      <label htmlFor="dw-domain-token" className="text-sm font-medium">API token</label>
+      <p className="text-xs text-muted-foreground">
+        Zone DNS Edit + Workers Routes Edit for that zone. Used once, never stored.
+      </p>
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
+        <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+        <input
+          id="dw-domain-token"
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="Cloudflare API token"
+          className="h-10 w-full bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/60"
+        />
+      </div>
+      <Button size="sm" className="self-start" disabled={busy || !domain.trim() || !token.trim()} onClick={() => void wire()}>
+        {busy ? 'Wiring…' : 'Wire domain'}
+      </Button>
+      {result && (
+        <p className={cn('text-xs', result.ok ? 'text-success' : 'text-destructive')}>{result.note}</p>
+      )}
+    </section>
   )
 }

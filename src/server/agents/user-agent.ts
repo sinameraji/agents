@@ -300,6 +300,60 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     return { ok: true, gatewayId: created.result.id }
   }
 
+  /** Wire a custom domain for a self-hosted instance: proxied DNS for the apex and wildcard
+   *  (previews need *.domain) plus worker routes. The token is used once and never stored. */
+  @callable()
+  async setupCustomDomain(domain: string, apiToken: string): Promise<{ ok: boolean; note: string }> {
+    const clean = domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+    if (!/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(clean)) return { ok: false, note: 'Enter a domain like example.com.' }
+    if (!apiToken.trim()) return { ok: false, note: 'Paste an API token with Zone DNS Edit + Workers Routes Edit.' }
+    const api = (path: string, init?: RequestInit) =>
+      fetch(`https://api.cloudflare.com/client/v4${path}`, {
+        ...init,
+        headers: { authorization: `Bearer ${apiToken.trim()}`, 'content-type': 'application/json' },
+      }).then((r) => r.json().catch(() => ({}))) as Promise<{ success?: boolean; result?: unknown; errors?: Array<{ message?: string }> }>
+
+    // The entered name may be a subdomain; walk up the labels to find its zone.
+    const labels = clean.split('.')
+    let zone: { id: string; name: string } | null = null
+    for (let i = 0; i < labels.length - 1 && !zone; i++) {
+      const name = labels.slice(i).join('.')
+      const r = await api(`/zones?name=${encodeURIComponent(name)}`)
+      const z = (Array.isArray(r.result) ? r.result : [])[0] as { id?: string; name?: string } | undefined
+      if (z?.id) zone = { id: z.id, name: z.name ?? name }
+    }
+    if (!zone) return { ok: false, note: `No zone for ${clean} on this token's account. Add the domain to Cloudflare first.` }
+
+    const ensureRecord = async (name: string) => {
+      const list = await api(`/zones/${zone!.id}/dns_records?name=${encodeURIComponent(name)}`)
+      if (Array.isArray(list.result) && list.result.length) return true
+      const r = await api(`/zones/${zone!.id}/dns_records`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'A', name, content: '192.0.2.1', proxied: true, ttl: 1, comment: 'dreamweav' }),
+      })
+      return r.success === true
+    }
+    const ensureRoute = async (pattern: string) => {
+      const list = await api(`/zones/${zone!.id}/workers/routes`)
+      const routes = (Array.isArray(list.result) ? list.result : []) as Array<{ pattern?: string }>
+      if (routes.some((rt) => rt.pattern === pattern)) return true
+      const r = await api(`/zones/${zone!.id}/workers/routes`, {
+        method: 'POST',
+        body: JSON.stringify({ pattern, script: 'dreamweav' }),
+      })
+      return r.success === true
+    }
+
+    const results = [
+      await ensureRecord(clean),
+      await ensureRecord(`*.${clean}`),
+      await ensureRoute(`${clean}/*`),
+      await ensureRoute(`*.${clean}/*`),
+    ]
+    if (results.every(Boolean)) return { ok: true, note: `https://${clean} is wired: app + wildcard previews.` }
+    return { ok: false, note: 'Some records or routes failed. Check the token has Zone DNS Edit and Workers Routes Edit for this zone.' }
+  }
+
   /** Delete the attached (or 'dreamweav'-named) gateway from the USER'S Cloudflare account and
    *  clear the attachment. Used by hard cleanup, normal Detach never touches their account. */
   @callable()

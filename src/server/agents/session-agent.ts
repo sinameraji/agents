@@ -1466,20 +1466,32 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       })
       .catch(() => null)) as { stdout?: string } | null
     if ((probe?.stdout ?? '000').trim() === '000') return { url: null, reason: 'nothing-listening' }
-    try {
-      const res = (await sandbox.exposePort(port, { hostname })) as { url?: string }
-      if (res.url) return { url: res.url }
-    } catch (e) {
-      console.error(`[preview] exposePort(${port}) failed:`, (e as Error).message)
+    // On workers.dev there is no wildcard DNS: exposePort "succeeds" with a URL that can never
+    // resolve. Quick tunnels (trycloudflare) are the real path there; elsewhere they are the
+    // fallback so self-hosters without a custom domain still get previews.
+    const isWorkersDev = /(^|\.)workers\.dev$/.test(hostname.split(':')[0])
+    if (!isWorkersDev) {
+      try {
+        const res = (await sandbox.exposePort(port, { hostname })) as { url?: string }
+        if (res.url) return { url: res.url }
+      } catch (e) {
+        console.error(`[preview] exposePort(${port}) failed:`, (e as Error).message)
+      }
+      // exposePort throws on an already-exposed port; reuse the existing mapping instead.
+      try {
+        const existing = (await sandbox.getExposedPorts(hostname)) as Array<{ url: string; port: number }>
+        const match = existing.find((e) => e.port === port)
+        if (match) return { url: match.url }
+      } catch (e) {
+        console.error(`[preview] getExposedPorts failed:`, (e as Error).message)
+      }
     }
-    // exposePort throws on an already-exposed port; reuse the existing mapping instead.
     try {
-      const existing = (await sandbox.getExposedPorts(hostname)) as Array<{ url: string; port: number }>
-      const match = existing.find((e) => e.port === port)
-      if (match) return { url: match.url }
-      console.error(`[preview] port ${port} not among exposed:`, JSON.stringify(existing.map((e) => e.port)))
+      const tunnels = (sandbox as unknown as { tunnels: { get(p: number): Promise<{ url?: string }> } }).tunnels
+      const t = await tunnels.get(port)
+      if (t?.url) return { url: t.url }
     } catch (e) {
-      console.error(`[preview] getExposedPorts failed:`, (e as Error).message)
+      console.error(`[preview] quick tunnel for ${port} failed:`, (e as Error).message)
     }
     return { url: null, reason: 'expose-failed' }
   }

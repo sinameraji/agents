@@ -33,6 +33,7 @@ export interface UserAgentApi {
   ensureAiGateway: () => Promise<{ ok: boolean; gatewayId?: string; note?: string }>
   listAiGateways: () => Promise<{ ok: boolean; gateways: string[]; note?: string }>
   createAiGateway: (name: string) => Promise<{ ok: boolean; gatewayId?: string; note?: string }>
+  setupCustomDomain: (domain: string, apiToken: string) => Promise<{ ok: boolean; note: string }>
 }
 
 /** Connect to the per-user UserAgent DO for the sessions index + settings. */
@@ -97,6 +98,9 @@ export function useUserAgent(userId: string): UserAgentApi {
   const listAiGateways = useCallback(async () => {
     return (await agentRef.current.stub.listAiGateways()) as { ok: boolean; gateways: string[]; note?: string }
   }, [])
+  const setupCustomDomain = useCallback(async (domain: string, apiToken: string) => {
+    return (await agentRef.current.stub.setupCustomDomain(domain, apiToken)) as { ok: boolean; note: string }
+  }, [])
   const createAiGateway = useCallback(async (name: string) => {
     const r = (await agentRef.current.stub.createAiGateway(name)) as { ok: boolean; gatewayId?: string; note?: string }
     await refresh()
@@ -150,5 +154,6 @@ export function useUserAgent(userId: string): UserAgentApi {
     ensureAiGateway,
     listAiGateways,
     createAiGateway,
+    setupCustomDomain,
   }
 }
