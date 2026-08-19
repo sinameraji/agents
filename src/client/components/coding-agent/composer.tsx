@@ -356,7 +356,7 @@ export function Composer({
             className="scrollbar-thin max-h-48 min-h-11 w-full resize-none bg-transparent px-2 py-1 text-[0.95rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70"
           />
 
-          <div className="flex items-center gap-1 px-1">
+          <div className="flex flex-wrap items-center gap-1 px-1">
             <input
               ref={fileInputRef}
               type="file"

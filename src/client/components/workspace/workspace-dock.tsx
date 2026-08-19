@@ -17,10 +17,10 @@ export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClo
   const [tab, setTab] = useState<Tab>('files')
 
   return (
-    <aside className="flex h-full w-[420px] shrink-0 flex-col border-l border-border bg-background">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
-        <h2 className="text-sm font-semibold">Workspace</h2>
-        <div className="ml-1 flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+    <aside className="flex h-full w-full shrink-0 flex-col border-border bg-background lg:w-[420px] lg:border-l">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 sm:gap-3 sm:px-4">
+        <h2 className="hidden text-sm font-semibold min-[480px]:block">Workspace</h2>
+        <div className="scrollbar-thin flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-lg bg-muted p-0.5 sm:ml-1 sm:flex-none">
           <TabButton
             active={tab === 'preview'}
             onClick={() => setTab('preview')}
@@ -49,9 +49,10 @@ export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClo
         <Button
           variant="ghost"
           size="icon-sm"
-          className="ml-auto"
+          className="ml-auto shrink-0"
           onClick={onClose}
           aria-label="Close workspace"
+          title="Close workspace"
         >
           <X className="size-4" />
         </Button>

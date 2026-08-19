@@ -297,7 +297,7 @@ export function ChatView({ session }: { session: SessionApi }) {
       </div>
     </div>
     {dockOpen && (
-      <div className="hidden h-full shrink-0 lg:block">
+      <div className="fixed inset-0 z-40 lg:static lg:z-auto lg:h-full lg:shrink-0">
         <WorkspaceDock session={session} onClose={() => setDockOpen(false)} />
       </div>
     )}
