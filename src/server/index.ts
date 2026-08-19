@@ -80,13 +80,46 @@ app.get('/api/me', (c) => {
 
 app.get('/api/models', async (c) => {
   const provider = c.req.query('provider') ?? 'openrouter'
-  if (provider !== 'openrouter') return c.json({ models: [] })
-  try {
-    const models = await fetchOpenRouterModels()
-    return c.json({ models })
-  } catch (err) {
-    return c.json({ models: [], error: (err as Error).message }, 502)
+  if (provider === 'openrouter') {
+    try {
+      return c.json({ models: await fetchOpenRouterModels() })
+    } catch (err) {
+      return c.json({ models: [], error: (err as Error).message }, 502)
+    }
   }
+  if (provider === 'cloudflare') {
+    // Workers AI models from the user's own account (billed by Cloudflare), plus popular
+    // upstreams reachable through the gateway's unified billing.
+    const unified = [
+      { id: 'openai/gpt-5.6-luna', label: 'gpt-5.6-luna (unified billing)', provider: 'cloudflare', inputPerM: 0.2, outputPerM: 1.2 },
+      { id: 'openai/gpt-5.1', label: 'gpt-5.1 (unified billing)', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
+      { id: 'anthropic/claude-sonnet-4-5', label: 'claude-sonnet-4-5 (unified billing)', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
+    ]
+    try {
+      const identity = c.get('identity')
+      const user = await getAgentByName(c.env.UserAgent, identity.id)
+      const conn = (await user.getDecryptedConnections()) as { cloudflareAccountId?: string; cloudflareApiToken?: string }
+      if (conn.cloudflareAccountId && conn.cloudflareApiToken) {
+        const res = (await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${conn.cloudflareAccountId}/ai/models/search?task=Text%20Generation&per_page=100`,
+          { headers: { authorization: `Bearer ${conn.cloudflareApiToken}` } },
+        ).then((r) => r.json())) as { success?: boolean; result?: Array<{ name?: string }> }
+        const wai = (res.result ?? [])
+          .map((m) => String(m.name ?? ''))
+          .filter(Boolean)
+          .map((name) => ({ id: `workers-ai/${name}`, label: name.replace('@cf/', ''), provider: 'cloudflare', inputPerM: 0, outputPerM: 0 }))
+        return c.json({ models: [...wai, ...unified] })
+      }
+    } catch { /* fall through to the static list */ }
+    return c.json({
+      models: [
+        { id: 'workers-ai/@cf/openai/gpt-oss-120b', label: 'gpt-oss-120b (Workers AI)', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
+        { id: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'llama-3.3-70b (Workers AI)', provider: 'cloudflare', inputPerM: 0, outputPerM: 0 },
+        ...unified,
+      ],
+    })
+  }
+  return c.json({ models: [] })
 })
 
 app.post('/api/uploads', handleUpload)

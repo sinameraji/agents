@@ -2,7 +2,9 @@ import { Agent, callable, getAgentByName } from 'agents'
 import { getSandbox } from '@cloudflare/sandbox'
 import { decryptSecret, encryptSecret, maskSecret } from '../crypto'
 import {
+  DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SETTINGS,
+  modelFitsProvider,
   type Connections,
   type Harness,
   type MaskedConnections,
@@ -118,7 +120,10 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     const id = crypto.randomUUID()
     const harness = input.harness ?? settings.defaultHarness
     const provider = input.provider ?? settings.defaultProvider
-    const model = input.model ?? settings.defaultModel
+    let model = input.model ?? settings.defaultModel
+    // A model id that doesn't fit the provider guarantees a broken first turn (e.g. an
+    // OpenRouter-style id sent through the Cloudflare gateway routes to the wrong upstream).
+    if (!modelFitsProvider(provider, model)) model = DEFAULT_MODEL_BY_PROVIDER[provider]
     const repo =
       input.source.kind === 'github'
         ? input.source.url.replace(/^https?:\/\/(www\.)?github\.com\//, '').replace(/^https?:\/\//, '').replace(/\.git$/, '')

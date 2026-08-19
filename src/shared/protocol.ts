@@ -124,6 +124,24 @@ export interface UserSettings {
   approvalMode: 'auto' | 'ask'
 }
 
+/** A sane default model for each provider; used when a session's provider doesn't match the
+ *  stored default model's shape (e.g. an OpenRouter id on the Cloudflare gateway). */
+export const DEFAULT_MODEL_BY_PROVIDER: Record<Provider, string> = {
+  openrouter: 'openai/gpt-5.6-luna',
+  cloudflare: 'workers-ai/@cf/openai/gpt-oss-120b',
+  anthropic: 'claude-sonnet-4-5',
+  openai: 'gpt-5.1',
+}
+
+/** Does this model id make sense for this provider's API? */
+export function modelFitsProvider(provider: Provider, model: string): boolean {
+  // Gateway accepts workers-ai/<model> (billed as Workers AI) and vendor/<model> via unified billing.
+  if (provider === 'cloudflare') return model.includes('/')
+  if (provider === 'openrouter') return model.includes('/')
+  // Anthropic/OpenAI native APIs use bare model ids, no vendor prefix.
+  return !model.includes('/')
+}
+
 export const DEFAULT_SETTINGS: UserSettings = {
   defaultHarness: 'opencode',
   defaultProvider: 'openrouter',
