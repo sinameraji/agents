@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { LoginOptions } from './login-screen'
 
-/** Raised when a guest attempts something consequential — browsing stays free, doing requires an account. */
+/** Raised when a guest attempts something consequential, browsing stays free, doing requires an account. */
 export function LoginDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()

@@ -98,7 +98,7 @@ export function GatewayPicker({ ua, compact }: { ua: UserAgentApi; compact?: boo
             {gateways.length > 0 && <span className="text-[11px] text-muted-foreground">or create a new one</span>}
             {gateways.length === 0 && (
               <span className="text-[11px] text-muted-foreground">
-                {loadNote ?? 'No gateways in your account yet — create one:'}
+                {loadNote ?? 'No gateways in your account yet, create one:'}
               </span>
             )}
           </div>

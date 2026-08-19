@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 
-// Minimal shape we use — shiki itself is dynamically imported so it stays out of the main bundle.
+// Minimal shape we use, shiki itself is dynamically imported so it stays out of the main bundle.
 type Highlighter = { codeToHtml: (code: string, opts: { lang: string; theme: string }) => string }
 
 /**
  * Lazy singleton Shiki highlighter, built from `shiki/core` + fine-grained language
- * and theme entries so the bundle contains ONLY the grammars below — never the full
+ * and theme entries so the bundle contains ONLY the grammars below, never the full
  * `shiki` bundle (which would emit one lazy chunk per language/theme). Loaded once,
  * on first use, and shared by every code block / diff on the page.
  */

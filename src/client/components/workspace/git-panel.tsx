@@ -23,7 +23,7 @@ export function GitPanel({ session }: { session: SessionApi }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; note: string; branchUrl?: string; prUrl?: string } | null>(null)
 
-  // useSession returns a fresh object every render — key the fetch on the session ID, and read the
+  // useSession returns a fresh object every render, key the fetch on the session ID, and read the
   // latest API through a ref, or this panel refetches (sandbox exec!) on every parent render.
   const sessionRef = useRef(session)
   sessionRef.current = session
@@ -70,7 +70,7 @@ export function GitPanel({ session }: { session: SessionApi }) {
         ) : (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
             <dt className="text-muted-foreground">Repository</dt>
-            <dd>{info.repo ? 'initialized' : 'not initialized — the first push sets it up'}</dd>
+            <dd>{info.repo ? 'initialized' : 'not initialized, the first push sets it up'}</dd>
             <dt className="text-muted-foreground">Branch</dt>
             <dd className="flex items-center gap-1 font-mono">
               <GitBranch className="size-3" />
@@ -154,7 +154,7 @@ export function GitPanel({ session }: { session: SessionApi }) {
       )}
 
       <p className="mt-auto text-[11px] leading-relaxed text-muted-foreground">
-        Pushes use your GitHub token from Settings — a classic token with the{' '}
+        Pushes use your GitHub token from Settings, a classic token with the{' '}
         <span className="font-mono">repo</span> scope from{' '}
         <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="text-primary hover:underline">
           github.com/settings/tokens

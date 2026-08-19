@@ -5,6 +5,16 @@ import { useRouter } from '@/router'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
 import { HARNESSES, type Harness, type MaskedConnections, type SessionSource } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
+import { CloudflareMark } from './login-screen'
+import { MoonshotMark, OpenCodeMark, PiMark, VercelMark } from './brand-marks'
+
+const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
+  opencode: OpenCodeMark,
+  aisdk: VercelMark,
+  cfagent: CloudflareMark,
+  pi: PiMark,
+  kimiflare: MoonshotMark,
+}
 
 interface Requirement {
   label: string
@@ -14,7 +24,7 @@ interface Requirement {
   link?: { href: string; text: string }
 }
 
-/** What a harness needs before its first turn — written for someone who has never used it. */
+/** What a harness needs before its first turn, written for someone who has never used it. */
 export function harnessRequirements(h: Harness, conn: MaskedConnections | null): Requirement[] {
   const hasModelKey =
     !!conn?.openrouterKey || !!conn?.anthropicKey || !!conn?.openaiKey ||
@@ -44,7 +54,7 @@ export function harnessRequirements(h: Harness, conn: MaskedConnections | null):
         label: 'AI Gateway ID',
         ok: !!conn?.cloudflareGatewayId,
         optional: true,
-        hint: 'Name of a gateway in your account — with the Edit permission KimiFlare can create one for you.',
+        hint: 'Name of a gateway in your account, with the Edit permission KimiFlare can create one for you.',
       },
       ghToken,
     ]
@@ -139,7 +149,7 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://github.com/owner/repo — or any HTTPS git URL"
+              placeholder="https://github.com/owner/repo, or any HTTPS git URL"
               className="h-10 rounded-lg border border-border bg-background px-3 font-mono text-sm outline-none focus:border-primary/50"
             />
             <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3">
@@ -181,6 +191,10 @@ export function NewSession({ ua, onOpenSettings }: { ua: UserAgentApi; onOpenSet
                   harness === h.id ? 'border-primary/60 bg-primary/10' : 'border-border hover:bg-muted',
                 )}
               >
+                {(() => {
+                  const M = HARNESS_MARKS[h.id]
+                  return M ? <M className="size-4 shrink-0" /> : null
+                })()}
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="text-sm">{h.label}{!h.enabled && ' · soon'}</span>
                   <span className="text-xs text-muted-foreground">{h.blurb}</span>

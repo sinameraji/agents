@@ -11,7 +11,7 @@ function providerId(provider: Provider): string {
  * launch-safely:
  *  - set `model` AND `small_model` at the top level (small_model must be pinned or OpenCode's
  *    auxiliary calls can "half-fail invisibly"); we pin small_model to the same model for safety.
- *  - DO NOT include a `models` block — an incomplete one makes OpenCode hang forever with no output.
+ *  - DO NOT include a `models` block, an incomplete one makes OpenCode hang forever with no output.
  *  - model ref format is `<providerId>/<modelId>`.
  */
 export function buildOpencodeConfig(

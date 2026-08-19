@@ -6,6 +6,21 @@ import { Check, ExternalLink, Eye, EyeOff, KeyRound, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CloudflareMark } from '../login-screen'
 import { GatewayPicker } from '../gateway-picker'
+import { AnthropicMark, MoonshotMark, OpenAIMark, OpenCodeMark, OpenRouterMark, PiMark, VercelMark } from '../brand-marks'
+
+const PROVIDER_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
+  openrouter: OpenRouterMark,
+  cloudflare: CloudflareMark,
+  anthropic: AnthropicMark,
+  openai: OpenAIMark,
+}
+const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
+  opencode: OpenCodeMark,
+  aisdk: VercelMark,
+  cfagent: CloudflareMark,
+  pi: PiMark,
+  kimiflare: MoonshotMark,
+}
 import type { UserAgentApi } from '@/hooks/use-user-agent'
 import { HARNESSES, type Connections, type Provider } from '~shared/protocol'
 import { harnessRequirements } from '../new-session'
@@ -120,7 +135,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
           <section className="flex flex-col gap-2">
             <label className="text-sm font-medium">Default model provider</label>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Where new sessions send their model calls — keys are encrypted, billed to your own
+              Where new sessions send their model calls, keys are encrypted, billed to your own
               accounts. KimiFlare always runs on your Cloudflare account regardless of this choice.
             </p>
             <div className="mt-1 grid grid-cols-2 gap-2">
@@ -139,12 +154,16 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
                       provider === p.id ? 'border-primary/60 bg-primary/10 text-foreground' : 'border-border bg-card hover:bg-muted',
                     )}
                   >
-                    <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="flex min-w-0 items-center gap-2">
                       <span
                         aria-hidden
                         title={configured ? 'Credentials saved' : 'No credentials yet'}
                         className={cn('size-1.5 shrink-0 rounded-full', configured ? 'bg-success' : 'bg-muted-foreground/30')}
                       />
+                      {(() => {
+                        const M = PROVIDER_MARKS[p.id]
+                        return M ? <M className="size-4 shrink-0" /> : null
+                      })()}
                       <span className="truncate">{p.label}</span>
                     </span>
                     {provider === p.id && (
@@ -201,7 +220,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
                 className="flex h-10 items-center justify-center gap-2.5 rounded-lg border border-black/10 bg-white text-sm font-medium text-[#222] shadow-sm transition-colors hover:bg-[#faf7f2] dark:border-white/10"
               >
                 <CloudflareMark className="size-5" />
-                Connect Cloudflare — one click, no tokens
+                Connect Cloudflare, one click, no tokens
               </button>
             )}
             {cfConnected &&
@@ -233,7 +252,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
             )}
             {!cfConnected && manualCf && (
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Token scopes: <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span> —{' '}
+                Token scopes: <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span>,{' '}
                 <HelpLink href="https://dash.cloudflare.com/profile/api-tokens">create one</HelpLink>
               </p>
             )}
@@ -258,7 +277,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
               type="password"
               value={cfToken}
               onChange={(e) => setCfToken(e.target.value)}
-              placeholder={ua.connections?.cloudflareApiToken ? 'API token · saved — paste to replace' : 'API token'}
+              placeholder={ua.connections?.cloudflareApiToken ? 'API token · saved, paste to replace' : 'API token'}
               aria-label="Cloudflare API token"
               className={cn(
                 'h-9 rounded-lg border border-border bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50',
@@ -274,7 +293,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
             <section className="flex flex-col gap-2">
               <label className="text-sm font-medium">Default harness</label>
               <p className="text-xs text-muted-foreground">
-                Used for new sessions — you can still pick a different one per session.
+                Used for new sessions, you can still pick a different one per session.
               </p>
               <div className="flex flex-col gap-1.5">
                 {HARNESSES.filter((h) => h.enabled).map((h) => {
@@ -303,9 +322,13 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
                         <span className="flex items-center gap-1.5 text-sm">
                           <span
                             aria-hidden
-                            title={ready ? 'Ready with your current connections' : 'Needs setup — see the Providers tab'}
+                            title={ready ? 'Ready with your current connections' : 'Needs setup, see the Providers tab'}
                             className={cn('size-1.5 shrink-0 rounded-full', ready ? 'bg-success' : 'bg-warning')}
                           />
+                          {(() => {
+                            const M = HARNESS_MARKS[h.id]
+                            return M ? <M className="size-4 shrink-0" /> : null
+                          })()}
                           {h.label}
                           {isDefault && (
                             <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">default</span>
@@ -335,13 +358,13 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
           {tab === 'git' && (
           <section className="flex flex-col gap-2">
             <p className="text-xs text-muted-foreground">
-              Cloning works with any public HTTPS remote — GitHub, GitLab, self-hosted.
+              Cloning works with any public HTTPS remote, GitHub, GitLab, self-hosted.
             </p>
             <label htmlFor="gh-pat" className="text-sm font-medium">
               GitHub token {patStored && <span className="text-xs font-normal text-success">· saved ({patStored})</span>}
             </label>
             <p className="text-xs text-muted-foreground">
-              Private repos, pushes, PRs. <span className="font-mono">repo</span> scope —{' '}
+              Private repos, pushes, PRs. <span className="font-mono">repo</span> scope,{' '}
               <HelpLink href="https://github.com/settings/tokens">create one</HelpLink>
             </p>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">

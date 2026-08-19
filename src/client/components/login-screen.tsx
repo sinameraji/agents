@@ -55,13 +55,13 @@ export function LoginOptions() {
       })
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string }
-        setErr(j.error ?? 'Could not send the link — try again.')
+        setErr(j.error ?? 'Could not send the link, try again.')
         setEmailState('idle')
         return
       }
       setEmailState('sent')
     } catch {
-      setErr('Could not send the link — try again.')
+      setErr('Could not send the link, try again.')
       setEmailState('idle')
     }
   }
@@ -128,7 +128,7 @@ export function LoginOptions() {
             {providers.email &&
               (emailState === 'sent' ? (
                 <div className="rounded-lg border border-border bg-card px-3 py-2.5 text-center text-sm text-foreground/90">
-                  📬 Check your inbox — the link works once and expires in 15 minutes.
+                  📬 Check your inbox, the link works once and expires in 15 minutes.
                 </div>
               ) : (
                 <form onSubmit={sendMagicLink} className="flex w-full items-center gap-1.5">

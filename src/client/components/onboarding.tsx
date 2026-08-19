@@ -10,6 +10,21 @@ import { HARNESSES, type Harness, type SessionSource } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { PROVIDERS } from './coding-agent/settings-dialog'
 import { CloudflareMark } from './login-screen'
+import { AnthropicMark, MoonshotMark, OpenAIMark, OpenCodeMark, OpenRouterMark, PiMark, VercelMark } from './brand-marks'
+
+const PROVIDER_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
+  openrouter: OpenRouterMark,
+  cloudflare: CloudflareMark,
+  anthropic: AnthropicMark,
+  openai: OpenAIMark,
+}
+const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
+  opencode: OpenCodeMark,
+  aisdk: VercelMark,
+  cfagent: CloudflareMark,
+  pi: PiMark,
+  kimiflare: MoonshotMark,
+}
 import { GatewayPicker } from './gateway-picker'
 
 /** Themed dropdown (the native <select> looks like the OS, not like Dreamweav). */
@@ -20,7 +35,7 @@ function Dropdown<T extends string>({
   ariaLabel,
 }: {
   value: T
-  options: { id: T; label: string }[]
+  options: { id: T; label: string; icon?: React.ReactNode }[]
   onChange: (v: T) => void
   ariaLabel: string
 }) {
@@ -50,7 +65,10 @@ function Dropdown<T extends string>({
         onClick={() => setOpen((v) => !v)}
         className="flex h-10 w-full items-center justify-between rounded-lg border border-border bg-background px-3 text-sm transition-colors hover:bg-muted/40 focus:border-primary/50 focus:outline-none"
       >
-        <span className="truncate">{current?.label ?? value}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          {current?.icon}
+          <span className="truncate">{current?.label ?? value}</span>
+        </span>
         <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
@@ -70,7 +88,10 @@ function Dropdown<T extends string>({
                 o.id === value ? 'bg-muted text-foreground' : 'text-foreground/90 hover:bg-muted',
               )}
             >
-              <span className="truncate">{o.label}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                {o.icon}
+                <span className="truncate">{o.label}</span>
+              </span>
               {o.id === value && <Check className="size-3.5 shrink-0 text-primary" />}
             </button>
           ))}
@@ -89,7 +110,7 @@ const STEPS: { n: Step; title: string; hint: string }[] = [
 ]
 
 /** First-run wizard: provider key → harness → workspace → session. Guests browse every step
- *  freely — nothing is marked complete until a signed-in user actually commits something. */
+ *  freely, nothing is marked complete until a signed-in user actually commits something. */
 export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean }) {
   const { navigate } = useRouter()
   const [step, setStep] = useState<Step>(1)
@@ -127,7 +148,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
   const meta = PROVIDERS.find((p) => p.id === provider)!
   const keyStored = !!ua.connections?.[meta.field]
   const cfStored = !!ua.connections?.cloudflareAccountId && !!ua.connections?.cloudflareApiToken
-  /** "Log in with Cloudflare" already provisioned creds — step 1 becomes a confirmation + optional extras. */
+  /** "Log in with Cloudflare" already provisioned creds, step 1 becomes a confirmation + optional extras. */
   const cfFromLogin = cfStored
   const providerReady =
     provider === 'cloudflare' ? ((cfStored && gwStored) || (!!key && !!cfAccount)) : keyStored || !!key
@@ -203,7 +224,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-12">
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold">Welcome to Dreamweav</h1>
-          <p className="text-sm text-muted-foreground">One-time setup — you can change all of this later.</p>
+          <p className="text-sm text-muted-foreground">One-time setup, you can change all of this later.</p>
         </div>
 
         {/* Stepper */}
@@ -246,13 +267,13 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
                 {gwStored ? (
                   <p className="text-xs text-muted-foreground">
                     KimiFlare and AI Gateway <span className="font-mono text-foreground/80">“{gwId}”</span> are
-                    ready — no keys needed.{' '}
+                    ready, no keys needed.{' '}
                     <a href={gwDashUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
                       View in dashboard <ExternalLink className="size-3" />
                     </a>
                   </p>
                 ) : (
-                  <p className="text-xs text-muted-foreground">The KimiFlare harness is ready — no keys needed.</p>
+                  <p className="text-xs text-muted-foreground">The KimiFlare harness is ready, no keys needed.</p>
                 )}
               </div>
             </div>
@@ -276,14 +297,17 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-semibold">Where should your models run?</h2>
               <p className="text-xs text-muted-foreground">
-                Bring your own key — it&apos;s encrypted and only used to run your sessions.
+                Bring your own key, it&apos;s encrypted and only used to run your sessions.
               </p>
             </div>
             <Dropdown
               value={provider}
               onChange={setProvider}
               ariaLabel="Model provider"
-              options={PROVIDERS.map((p) => ({ id: p.id, label: p.label }))}
+              options={PROVIDERS.map((p) => {
+                const M = PROVIDER_MARKS[p.id]
+                return { id: p.id, label: p.label, icon: M ? <M className="size-4 shrink-0" /> : undefined }
+              })}
             />
 
             {provider === 'cloudflare' ? (
@@ -296,7 +320,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
                 ) : (
                   <button type="button" onClick={() => window.location.assign('/auth/cloudflare')} className={cfBtnCls}>
                     <CloudflareMark className="size-5" />
-                    Connect Cloudflare — one click, no tokens
+                    Connect Cloudflare, one click, no tokens
                   </button>
                 )}
                 {cfStored &&
@@ -334,7 +358,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && providerReady && void finishStep1()}
-                  placeholder={keyStored ? 'Key saved — paste to replace' : meta.placeholder}
+                  placeholder={keyStored ? 'Key saved, paste to replace' : meta.placeholder}
                   aria-label={`${meta.label} API key`}
                   className="h-10 w-full bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/60"
                 />
@@ -359,14 +383,17 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-semibold">Choose your harness <span className="font-normal text-muted-foreground">· optional</span></h2>
               <p className="text-xs text-muted-foreground">
-                The open-source agent that reads, edits, and runs your code. OpenCode is a great default — you can pick a different one per session anytime.
+                The open-source agent that reads, edits, and runs your code. OpenCode is a great default, you can pick a different one per session anytime.
               </p>
             </div>
             <Dropdown
               value={harness}
               onChange={setHarness}
               ariaLabel="Harness"
-              options={HARNESSES.filter((h) => h.enabled).map((h) => ({ id: h.id, label: h.label }))}
+              options={HARNESSES.filter((h) => h.enabled).map((h) => {
+                const M = HARNESS_MARKS[h.id]
+                return { id: h.id, label: h.label, icon: M ? <M className="size-4 shrink-0" /> : undefined }
+              })}
             />
             <p className="text-xs leading-relaxed text-muted-foreground">
               {selectedHarness.blurb} ·{' '}
@@ -379,7 +406,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
                 <p className="text-xs text-foreground/90">KimiFlare runs on your Cloudflare account.</p>
                 <button type="button" onClick={() => window.location.assign('/auth/cloudflare')} className={cn(cfBtnCls, 'h-9 self-start px-3 text-xs')}>
                   <CloudflareMark className="size-4" />
-                  Connect Cloudflare — one click, no tokens
+                  Connect Cloudflare, one click, no tokens
                 </button>
                 <p className="text-xs text-muted-foreground">
                   Or paste a token with <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span>{' '}
@@ -408,7 +435,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-semibold">Pick a starting workspace</h2>
               <p className="text-xs text-muted-foreground">
-                Just for your first session — every new session picks its own.
+                Just for your first session, every new session picks its own.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -419,7 +446,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
                   source === 'blank' ? 'border-primary/60 bg-primary/10' : 'border-border hover:bg-muted')}
               >
                 <span className="flex items-center gap-1.5 text-sm"><Sparkles className="size-3.5" /> Blank</span>
-                <span className="text-xs text-muted-foreground">Empty workspace — fastest start</span>
+                <span className="text-xs text-muted-foreground">Empty workspace, fastest start</span>
               </button>
               <button
                 type="button"
@@ -433,7 +460,7 @@ export function Onboarding({ ua, guest }: { ua: UserAgentApi; guest?: boolean })
             </div>
             {source === 'github' && (
               <div className="flex flex-col gap-2">
-                <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/repo — or any HTTPS git URL" aria-label="Repository URL" className={inputCls} />
+                <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/repo, or any HTTPS git URL" aria-label="Repository URL" className={inputCls} />
                 <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch (optional)" aria-label="Branch" className={inputCls} />
                 {!ua.connections?.githubPat && (
                   <p className="text-xs text-muted-foreground">Private repo? Add a GitHub token later in Settings.</p>

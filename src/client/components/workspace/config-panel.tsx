@@ -113,7 +113,7 @@ function AgentsMdSection({ session }: { session: SessionApi }) {
         hint="Freeform instructions the agent reads for every task in this workspace."
       />
       {loadError && (
-        <Note tone="error">Could not read the existing file — you can still write a new one.</Note>
+        <Note tone="error">Could not read the existing file, you can still write a new one.</Note>
       )}
       <textarea
         value={value}
@@ -274,7 +274,7 @@ function McpSection({ session }: { session: SessionApi }) {
       />
       {parseError && (
         <Note tone="error">
-          opencode.json was missing or invalid — starting from an empty config. Saving will
+          opencode.json was missing or invalid, starting from an empty config. Saving will
           overwrite it.
         </Note>
       )}

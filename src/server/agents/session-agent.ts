@@ -7,7 +7,7 @@ import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode
 import { runCfAgentLoop, summarizeMessages } from '../harness/cfagent'
 import type { ModelMessage } from 'ai'
 // The bridge (pi/KimiFlare/AI-SDK host) ships INSIDE the worker and is written into the container
-// at runtime, so its version always matches this deploy — no image rebuilds, no warm-pool staleness.
+// at runtime, so its version always matches this deploy, no image rebuilds, no warm-pool staleness.
 import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
 import { applyEvent, emptyTranscript } from '~shared/agent-reduce'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
@@ -73,7 +73,7 @@ interface QueuedMessage {
 /**
  * One instance per session (name = session id). Thin supervisor: owns the Sandbox + the OpenCode
  * server, PERSISTS the transcript as turns/parts, owns the authoritative status (driven by real
- * harness events — never the client), and relays a normalized AgentEvent stream to the browser.
+ * harness events, never the client), and relays a normalized AgentEvent stream to the browser.
  */
 export class SessionAgent extends Agent<Env, SessionAgentState> {
   initialState: SessionAgentState = {
@@ -138,7 +138,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       lastActivity: 'now',
     }
     this.setState({ ...this.state, meta, status: 'idle' })
-    // Sync the sessions index too — createSession inserts 'provisioning' and nothing else would
+    // Sync the sessions index too, createSession inserts 'provisioning' and nothing else would
     // clear it until the first turn, leaving never-prompted sessions stuck on that label.
     void getAgentByName(this.env.UserAgent, config.owner).then((u) =>
       u.upsertSessionSummary({ id: this.name, status: 'idle' }),
@@ -226,7 +226,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.hydrate()
     this.drainQueue() // stranded queue from a DO eviction drains when a client reconnects
     // Self-heal: a deploy can kill an isolate mid-turn, leaving status stuck on busy/booting.
-    // If nothing has progressed in 5 minutes, the run is dead — report idle (or error if the
+    // If nothing has progressed in 5 minutes, the run is dead, report idle (or error if the
     // last assistant turn errored) and sync the sidebar.
     if (this.state.status === 'busy' || this.state.status === 'booting') {
       const last = this.transcript.turns[this.transcript.turns.length - 1]
@@ -249,7 +249,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   /** Let the HARNESS itself push: seed git identity + a credential-store entry for github.com
    *  from the user's stored token. The credential lives only on the ephemeral container disk
    *  (outside /workspace, never in backups/exports). Note: any agent running in the sandbox can
-   *  read it — that is inherent to giving agents push capability. */
+   *  read it, that is inherent to giving agents push capability. */
   private async ensureGitCredentials(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
     try {
       const conn = await this.connections()
@@ -554,7 +554,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private async ensureOpencodeSession(): Promise<string> {
     const known = this.opencodeSessionId ?? this.getKv<string | null>('opencodeSessionId', null)
     if (known) {
-      // The container may have been recycled since this id was minted — verify it still exists
+      // The container may have been recycled since this id was minted, verify it still exists
       // on the live OpenCode server before reusing it (a stale id makes turns hang forever).
       const alive = await this.opencode!.session
         .get({ sessionID: known } as never)
@@ -564,7 +564,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         this.opencodeSessionId = known
         return known
       }
-      console.warn('[dreamweav] opencode session', known, 'no longer exists (container recycled) — creating a new one')
+      console.warn('[dreamweav] opencode session', known, 'no longer exists (container recycled), creating a new one')
       this.opencodeSessionId = undefined
     }
     const res = await this.opencode!.session.create({ title: this.state.meta?.name ?? 'session' }, { throwOnError: true } as never)
@@ -785,7 +785,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.putKv('queue', []) // stop means stop: drop queued follow-ups too
     for (const q of dropped) {
       if (q.messageId)
-        this.emit({ t: 'part.upsert', turnId: q.messageId, part: { kind: 'text', id: `${q.messageId}:cancelled`, text: '_(cancelled — this queued message was not delivered)_' } })
+        this.emit({ t: 'part.upsert', turnId: q.messageId, part: { kind: 'text', id: `${q.messageId}:cancelled`, text: '_(cancelled, this queued message was not delivered)_' } })
     }
     this.turnGen += 1 // in-flight poll loops see the stale generation and exit
     if (this.opencode && this.opencodeSessionId) {
@@ -847,7 +847,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   @callable()
   async compact(): Promise<{ ok: boolean; note: string }> {
     if (this.state.status === 'busy' || this.state.status === 'booting')
-      return this.noted({ ok: false, note: 'The agent is mid-turn — wait for it to finish before compacting.' })
+      return this.noted({ ok: false, note: 'The agent is mid-turn, wait for it to finish before compacting.' })
     const harness = this.config().harness
     if (harness === 'opencode') {
       await this.ocOp((sid) => this.opencode!.session.summarize({ sessionID: sid } as never))
@@ -859,7 +859,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       const cfg = this.config()
       const summary = await summarizeMessages({ provider: cfg.provider, model: cfg.model, creds: await this.connections(), messages: history })
       this.putKv('cfagent:messages', [{ role: 'user', content: `Context summary of the conversation so far:\n${summary}` }])
-      return this.noted({ ok: true, note: 'Context compacted — older turns condensed into a summary.' })
+      return this.noted({ ok: true, note: 'Context compacted, older turns condensed into a summary.' })
     }
     return this.bridgeCommand('compact')
   }
@@ -901,7 +901,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
     const res = await this.bridgeFetch(sandbox, 'POST', '/command', { name })
     if (!res || !res.ok) {
-      return this.noted({ ok: false, note: 'The harness is not running yet — send a message first.' })
+      return this.noted({ ok: false, note: 'The harness is not running yet, send a message first.' })
     }
     const out = res.json as { ok?: boolean; note?: string }
     return this.noted({ ok: !!out.ok, note: out.note ?? (out.ok ? 'Done.' : 'The harness rejected the command.') })
@@ -964,7 +964,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async gitStatus(): Promise<{ repo: boolean; branch: string; dirty: number; remote: string | null; lastCommit: string | null }> {
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
     await this.ensureWorkspace(sandbox).catch(() => null)
-    // NOTE: single line — the exec wrapper JSON-stringifies the script, so newlines don't survive.
+    // NOTE: single line, the exec wrapper JSON-stringifies the script, so newlines don't survive.
     const { stdout } = await this.sandboxSh(
       sandbox,
       `cd /workspace 2>/dev/null; git config --global --add safe.directory /workspace >/dev/null 2>&1; ` +
@@ -979,7 +979,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       repo: grab('REPO') === '1',
       branch: grab('BRANCH'),
       dirty: Number(grab('DIRTY')) || 0,
-      // Strip any userinfo (tokens) that may live in the remote URL — never send credentials to the client.
+      // Strip any userinfo (tokens) that may live in the remote URL, never send credentials to the client.
       remote: (grab('REMOTE') || null)?.replace(/\/\/[^@/]+@/, '//') ?? null,
       lastCommit: grab('LAST') || null,
     }
@@ -1009,7 +1009,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
     const me = await gh('/user')
     const login = String(me.json.login ?? '')
-    if (!login) return this.noted({ ok: false, note: 'The GitHub token was rejected — check it in Settings.' })
+    if (!login) return this.noted({ ok: false, note: 'The GitHub token was rejected, check it in Settings.' })
 
     // Where to push: the session's source repo, or a new private repo for blank sessions.
     let owner: string, repo: string, base: string | null = null
@@ -1030,7 +1030,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
 
     const branch = (input.branch ?? cfg.branch).replace(/[^\w/.-]/g, '-').replace(/^[-.]+/, '') || `dreamweav/${this.name.slice(0, 8)}`
-    // The message is interpolated into a double-quoted sh word — keep it single-line and quote-free.
+    // The message is interpolated into a double-quoted sh word, keep it single-line and quote-free.
     const message = (input.message?.trim() || `Dreamweav: ${this.state.meta?.name ?? 'session export'}`)
       .replace(/[\r\n]+/g, ' ')
       .replace(/["\\$`]/g, "'")
@@ -1077,16 +1077,16 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       })
       if (pr.status === 201) prUrl = String(pr.json.html_url ?? '')
       else if (pr.status === 422) {
-        // A PR for this branch may already exist — find it.
+        // A PR for this branch may already exist, find it.
         const list = await gh(`/repos/${owner}/${repo}/pulls?head=${owner}:${branch}&state=open`)
         prUrl = String((list.json as unknown as Array<{ html_url?: string }>)[0]?.html_url ?? '') || undefined
         if (!prUrl) prProblem = `PR could not be opened (${String(pr.json.message ?? 'no new commits vs base?')})`
       } else prProblem = `PR could not be opened (HTTP ${pr.status})`
     } else if (input.openPr && !base) {
-      prProblem = 'PR skipped — this repo was just created, there is no base branch to target.'
+      prProblem = 'PR skipped, this repo was just created, there is no base branch to target.'
     }
     const note = nothingNew
-      ? `Nothing new to commit — branch is up to date: ${branchUrl}`
+      ? `Nothing new to commit, branch is up to date: ${branchUrl}`
       : `Pushed ${branch} → ${owner}/${repo}${prUrl ? ` · PR: ${prUrl}` : ''}${prProblem ? ` · ${prProblem}` : ''}\n${branchUrl}`
     return this.noted({ ok: true, note, branchUrl, prUrl })
   }
@@ -1106,19 +1106,19 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       source: cfg.source, name, harness: cfg.harness, provider: cfg.provider, model: cfg.model,
     })
     const child = await getAgentByName(this.env.SessionAgent, id)
-    // createSession fires init at the child asynchronously — init here explicitly so the child is
+    // createSession fires init at the child asynchronously, init here explicitly so the child is
     // never adopted while unconfigured (it would sit in 'provisioning' forever).
     await child.init({
       owner: cfg.owner, source: cfg.source, harness: cfg.harness, provider: cfg.provider,
       model: cfg.model, name, repo: cfg.repo, branch: `dreamweav/${id.slice(0, 8)}`,
     })
     await child.adoptFork({ backup, turns: this.transcript.turns, todos: this.transcript.todos })
-    const snapshotNote = backup ? 'Workspace snapshot and transcript copied' : 'Transcript copied (workspace snapshot unavailable — the fork starts from the repo/blank state)'
+    const snapshotNote = backup ? 'Workspace snapshot and transcript copied' : 'Transcript copied (workspace snapshot unavailable, the fork starts from the repo/blank state)'
     return this.noted({ ok: true, note: `Forked → “${name}”. ${snapshotNote}; the harness starts fresh context there.`, id })
   }
 
   /** Erase this session completely: transcript, kv (config/creds refs/queue), synced state, and
-   *  its sandbox. Server-to-server only (no @callable) — used by UserAgent.resetAccount(). */
+   *  its sandbox. Server-to-server only (no @callable), used by UserAgent.resetAccount(). */
   async wipe(): Promise<{ ok: true }> {
     this.turnGen += 1 // kill any in-flight poll loops
     this.sql`DELETE FROM turns`
@@ -1213,7 +1213,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return { ok: true }
   }
 
-  // --- workspace (files, preview) — used by the workspace dock ------------------------------
+  // --- workspace (files, preview), used by the workspace dock ------------------------------
   @callable()
   async listFiles(path = '/workspace'): Promise<{ files: { name: string; path: string; isDirectory: boolean; size: number }[] }> {
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
@@ -1222,7 +1222,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         files?: { name: string; absolutePath: string; type: string; size: number }[]
       }
       if (path === '/workspace' && !(res.files ?? []).length) {
-        // Container disk does not survive sleep — restore the workspace (backup / clone) and retry.
+        // Container disk does not survive sleep, restore the workspace (backup / clone) and retry.
         await this.ensureWorkspace(sandbox).catch(() => null)
         res = (await sandbox.listFiles(path)) as typeof res
       }
@@ -1263,7 +1263,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   @callable()
   async exposePort(port: number, hostname = 'dreamweav.com'): Promise<{ url: string | null }> {
     // Preview URLs require a custom domain with wildcard DNS (*.dreamweav.com). Until that is
-    // wired the returned URL won't resolve — the client shows a "preview needs the domain" state.
+    // wired the returned URL won't resolve, the client shows a "preview needs the domain" state.
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
     try {
       const res = (await sandbox.exposePort(port, { hostname })) as { url?: string }

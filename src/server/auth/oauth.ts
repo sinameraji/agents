@@ -149,7 +149,7 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
   const state = url.searchParams.get('state')
   const flow = await readFlow(request, env.AUTH_SECRET)
   if (!code || !state || !flow || flow.p !== 'cloudflare' || flow.s !== state) {
-    return failPage('The login attempt expired or did not match — try again.')
+    return failPage('The login attempt expired or did not match, try again.')
   }
 
   const tokenRes = await fetch(CF_TOKEN_URL, {
@@ -203,7 +203,7 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
     // Connecting means CONNECTED: provision the AI Gateway now (best-effort) rather than making
     // the user click a second "set up" button for what the consent already authorized.
     await u.ensureAiGateway().catch(() => null)
-    // If Cloudflare is the user's only credentialed provider, make it the default — otherwise
+    // If Cloudflare is the user's only credentialed provider, make it the default, otherwise
     // new sessions would point at a provider they hold no key for.
     const u2 = user as { getDecryptedConnections: () => Promise<Record<string, string | undefined>>; saveSettings: (i: unknown) => Promise<unknown> }
     const conn = await u2.getDecryptedConnections().catch(() => ({}) as Record<string, string | undefined>)
@@ -232,7 +232,7 @@ interface LoginToken {
   exp: number
 }
 
-/** POST /api/login/email — send a 15-minute single-use magic link via Cloudflare Email Service. */
+/** POST /api/login/email, send a 15-minute single-use magic link via Cloudflare Email Service. */
 export async function startEmailLogin(request: Request, env: OauthEnv, email0: string, emailBinding: EmailBinding | undefined): Promise<Response> {
   if (!emailBinding || !env.AUTH_SECRET) return Response.json({ error: 'Email login is not configured yet.' }, { status: 503 })
   const email = email0.trim().toLowerCase()
@@ -260,7 +260,7 @@ export async function startEmailLogin(request: Request, env: OauthEnv, email0: s
   } catch (e) {
     console.error('[dreamweav] magic-link send failed', e)
     return Response.json(
-      { error: 'Sending failed — the dreamweav.com sending domain may not be onboarded in Email Service yet.' },
+      { error: 'Sending failed, the dreamweav.com sending domain may not be onboarded in Email Service yet.' },
       { status: 502 },
     )
   }
@@ -281,11 +281,11 @@ export async function finishEmailLogin(request: Request, env: OauthEnv): Promise
   } catch {
     return failPage('This login link is invalid.')
   }
-  if (!parsed.exp || parsed.exp < Date.now()) return failPage('This login link expired — request a fresh one.')
+  if (!parsed.exp || parsed.exp < Date.now()) return failPage('This login link expired, request a fresh one.')
   const id = await userIdFromEmail(parsed.e)
   const user = (await getAgentByName(env.UserAgent, id)) as unknown as { consumeLoginNonce: (n: string) => Promise<{ ok: boolean }> }
   const consumed = await user.consumeLoginNonce(parsed.n)
-  if (!consumed.ok) return failPage('This login link was already used — request a fresh one.')
+  if (!consumed.ok) return failPage('This login link was already used, request a fresh one.')
   return completeLogin(env, parsed.e, async () => {})
 }
 
@@ -311,7 +311,7 @@ export async function finishGithubLogin(request: Request, env: OauthEnv): Promis
   const state = url.searchParams.get('state')
   const flow = await readFlow(request, env.AUTH_SECRET)
   if (!code || !state || !flow || flow.p !== 'github' || flow.s !== state) {
-    return failPage('The login attempt expired or did not match — try again.')
+    return failPage('The login attempt expired or did not match, try again.')
   }
 
   const tokenRes = await fetch(GH_TOKEN_URL, {

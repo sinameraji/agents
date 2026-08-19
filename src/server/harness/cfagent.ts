@@ -1,7 +1,7 @@
 /**
  * The Cloudflare-native harness: a Vercel AI SDK agent loop that runs INSIDE the SessionAgent
  * Durable Object (which is itself a Cloudflare Agents SDK agent). Tools reach into the sandbox
- * over RPC (exec/readFile/writeFile), and — unlike the container harnesses — text streams to the
+ * over RPC (exec/readFile/writeFile), and, unlike the container harnesses, text streams to the
  * browser with true token granularity: the LLM fetch streams into the DO, and the DO broadcasts.
  */
 import { streamText, generateText, tool, stepCountIs, type ModelMessage } from 'ai'

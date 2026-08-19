@@ -1,4 +1,4 @@
-/** Result of a stored upload — mirrors what the server returns from POST /api/uploads. */
+/** Result of a stored upload, mirrors what the server returns from POST /api/uploads. */
 export interface UploadedAttachment {
   key: string
   name: string

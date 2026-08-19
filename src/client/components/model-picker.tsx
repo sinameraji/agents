@@ -138,7 +138,7 @@ export function ModelPicker({
             ))}
             {!loading && visible.length < filtered.length && (
               <div className="px-2 py-1.5 text-center text-[0.7rem] text-muted-foreground">
-                {filtered.length - visible.length} more — scroll to load
+                {filtered.length - visible.length} more, scroll to load
               </div>
             )}
           </div>

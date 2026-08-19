@@ -3,7 +3,7 @@
  *
  * Real coding agents (OpenCode, Claude Code, Codex, Cursor, Zed…) model a turn as an ORDERED
  * stream of typed "parts" — text, reasoning, tool calls (with live status + result), todos, diffs,
- * terminal output, errors, usage — each with a pending→streaming→complete lifecycle. We normalize
+ * terminal output, errors, usage, each with a pending→streaming→complete lifecycle. We normalize
  * every harness onto this one model so the UI is written once.
  *
  * Shapes are derived from the OpenCode SDK types (@opencode-ai/sdk/dist/v2/gen/types.gen.d.ts):
@@ -11,7 +11,7 @@
  * event union :4, EventMessagePartUpdated :5319, EventTodoUpdated :5869, permissions :5764/:5884.
  */
 
-/** Authoritative session status, driven by the harness — never inferred on the client. */
+/** Authoritative session status, driven by the harness, never inferred on the client. */
 export type SessionStatus = 'provisioning' | 'idle' | 'booting' | 'busy' | 'error'
 
 export type TurnRole = 'user' | 'assistant'

@@ -89,7 +89,7 @@ export function SessionSidebar({
         )}
         <div className="ml-auto flex items-center">
           <ThemeToggle />
-          <Button variant="ghost" size="icon-sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings — keys & connections">
+          <Button variant="ghost" size="icon-sm" onClick={onOpenSettings} aria-label="Open settings" title="Settings, keys & connections">
             <Settings className="size-4" />
           </Button>
           <Button

@@ -130,7 +130,7 @@ app.get('/api/sessions/:id/export', async (c) => {
   await getAgentByName(c.env.SessionAgent, id).then((sa) => sa.listFiles()).catch(() => null)
   const sandbox = getSandbox(c.env.Sandbox, `sess-${id}`)
   // .git is excluded entirely: backups strip its objects (repo would be corrupt) and its config
-  // can carry an authenticated clone URL — the export is a source snapshot, not a repository.
+  // can carry an authenticated clone URL, the export is a source snapshot, not a repository.
   const tar = (await sandbox
     .exec(
       `sh -lc ${JSON.stringify(
@@ -141,7 +141,7 @@ app.get('/api/sessions/:id/export', async (c) => {
     .catch(() => ({ exitCode: 2 }))) as { exitCode?: number }
   // GNU tar exit 1 = "file changed while reading" — the archive is still valid.
   if ((tar.exitCode ?? 0) > 1) return c.json({ error: 'could not archive the workspace' }, 500)
-  // readFileStream emits SSE-framed FileStreamEvents, not raw bytes — collectFile decodes them.
+  // readFileStream emits SSE-framed FileStreamEvents, not raw bytes, collectFile decodes them.
   const stream = await sandbox.readFileStream('/tmp/dw-export.tgz')
   const { content } = await collectFile(stream)
   const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content

@@ -18,7 +18,7 @@ import { WorkspaceDock } from '../workspace/workspace-dock'
 import type { PastedBlock } from '~shared/protocol'
 import { SubagentsPanel } from './subagents-panel'
 
-/** Collapsed paste-chips carry real content — fold it back into the outgoing prompt. */
+/** Collapsed paste-chips carry real content, fold it back into the outgoing prompt. */
 function withPasted(text: string, pasted: PastedBlock[]): string {
   if (!pasted.length) return text
   const blocks = pasted.map((p) => '```' + (p.language ?? '') + '\n' + p.content + '\n```').join('\n\n')

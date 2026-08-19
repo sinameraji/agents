@@ -145,7 +145,7 @@ function Shell({ userId, email }: { userId: string; email: string }) {
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground md:flex-row">
-      {/* Mobile top bar — the only chrome small screens get */}
+      {/* Mobile top bar, the only chrome small screens get */}
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
         <Button variant="ghost" size="icon-sm" aria-label="Open menu" title="Sessions & settings" onClick={() => setDrawerOpen(true)}>
           <Menu className="size-5" />

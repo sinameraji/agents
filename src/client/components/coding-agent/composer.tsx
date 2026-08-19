@@ -51,7 +51,7 @@ export function Composer({
   extras?: React.ReactNode
   commands?: SlashCommand[]
   listFiles?: () => Promise<string[]>
-  /** Called when the '/' menu opens — lets the host lazily fetch harness-specific commands. */
+  /** Called when the '/' menu opens, lets the host lazily fetch harness-specific commands. */
   onCommandMenuOpen?: () => void
   /** While the agent runs a turn: Enter queues, and the steer control interrupts-and-sends. */
   busy?: boolean
@@ -350,7 +350,7 @@ export function Composer({
             rows={2}
             placeholder={
               busy
-                ? 'Agent is working — Enter queues your message for when it finishes…'
+                ? 'Agent is working, Enter queues your message for when it finishes…'
                 : `Message the agent working on "${sessionName}"…`
             }
             className="scrollbar-thin max-h-48 min-h-11 w-full resize-none bg-transparent px-2 py-1 text-[0.95rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70"
@@ -420,7 +420,7 @@ export function Composer({
               disabled={!canSend}
               onClick={submit}
               aria-label={busy ? 'Queue message' : 'Send message'}
-              title={busy ? 'Queue — runs when the agent finishes (Enter)' : 'Send (Enter)'}
+              title={busy ? 'Queue, runs when the agent finishes (Enter)' : 'Send (Enter)'}
             >
               <ArrowUp className="size-4" />
             </Button>

@@ -34,7 +34,7 @@ export function Transcript({
 }) {
   const working = status === 'booting' || status === 'busy'
   const last = turns[turns.length - 1]
-  // Only show the indicator BEFORE the assistant produces anything — once content streams (or the
+  // Only show the indicator BEFORE the assistant produces anything, once content streams (or the
   // turn is done), the content itself is the signal. And never surface infra language ("booting"):
   // to the user it's all just the agent thinking.
   const showWorking =
@@ -42,7 +42,7 @@ export function Transcript({
   const workingLabel = 'Thinking…'
 
   // An assistant turn that hasn't produced anything yet is represented by the Thinking row, not an
-  // empty bubble. (Terminal empty turns DO render — TurnView gives them an explicit placeholder.)
+  // empty bubble. (Terminal empty turns DO render, TurnView gives them an explicit placeholder.)
   const visibleTurns = turns.filter(
     (t) =>
       !(

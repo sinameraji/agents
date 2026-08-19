@@ -207,7 +207,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       if (!enc) {
         masked[f] = null
       } else if (IDENTIFIERS.includes(f)) {
-        // Account/gateway ids are identifiers, not credentials — the UI needs the real values
+        // Account/gateway ids are identifiers, not credentials, the UI needs the real values
         // (show the gateway name, build dashboard links).
         masked[f] = await decryptSecret(enc, this.env.ENCRYPTION_KEY)
       } else {
@@ -249,7 +249,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     }
   }
 
-  /** List the account's AI Gateways so the user can pick one — it's their account. */
+  /** List the account's AI Gateways so the user can pick one, it's their account. */
   @callable()
   async listAiGateways(): Promise<{ ok: boolean; gateways: string[]; note?: string }> {
     const api = await this.gatewayApi()
@@ -293,7 +293,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   }
 
   /** Delete the attached (or 'dreamweav'-named) gateway from the USER'S Cloudflare account and
-   *  clear the attachment. Used by hard cleanup — normal Detach never touches their account. */
+   *  clear the attachment. Used by hard cleanup, normal Detach never touches their account. */
   @callable()
   async deleteAiGateway(): Promise<{ ok: boolean; deleted?: string; note?: string }> {
     const conn = await this.getDecryptedConnections()
@@ -305,7 +305,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       .catch(() => ({}))) as { success?: boolean; errors?: Array<{ message?: string; code?: number }> }
     if (!res.success) {
       const msg = res.errors?.[0]?.message ?? 'Delete failed.'
-      // Not-found means it's already gone — that satisfies "zero leftovers".
+      // Not-found means it's already gone, that satisfies "zero leftovers".
       if (!/not.?found|does not exist/i.test(msg)) return { ok: false, note: msg }
     }
     await this.saveSettings({ connections: { cloudflareGatewayId: '' } })
@@ -336,7 +336,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   }
 
   /** Connect-time convenience: adopt an existing gateway NAMED 'dreamweav' (unambiguously ours);
-   *  otherwise leave unset — the UI offers the pick-or-create flow, it's the user's account. */
+   *  otherwise leave unset, the UI offers the pick-or-create flow, it's the user's account. */
   @callable()
   async ensureAiGateway(): Promise<{ ok: boolean; gatewayId?: string; note?: string }> {
     const conn = await this.getDecryptedConnections()

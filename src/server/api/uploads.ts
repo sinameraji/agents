@@ -2,7 +2,7 @@ import type { Context } from 'hono'
 import type { Identity } from '../auth/access'
 
 /**
- * POST /api/uploads — store user attachments in R2 under uploads/<userId>/<uuid>/<name>.
+ * POST /api/uploads, store user attachments in R2 under uploads/<userId>/<uuid>/<name>.
  * Accepts either multipart/form-data (one or more files) or a raw body with the file name
  * in an `x-file-name` header (URI-encoded so non-ASCII names survive the header).
  */

@@ -78,7 +78,7 @@ function ToolBody({ part }: { part: ToolPartData }) {
   }
 
   if (!output) {
-    // The command/primary arg is already in the header — never dump raw input JSON as a body.
+    // The command/primary arg is already in the header, never dump raw input JSON as a body.
     return (
       <p className="px-1 text-xs text-muted-foreground">
         {state.status === 'running' || state.status === 'pending' ? 'Running…' : 'No output'}

@@ -4,7 +4,7 @@
  * OpenCode event shapes (from @opencode-ai/sdk/dist/v2/gen/types.gen.d.ts):
  *  - message.part.updated → properties.part (Part; :5319). part.type ∈ text|reasoning|tool|
  *    step-finish|patch|file|subtask|agent|… ; ToolState at part.state (:337-388).
- *  - message.updated → properties.info (Message; :5303) — assistant carries tokens/cost/error.
+ *  - message.updated → properties.info (Message; :5303), assistant carries tokens/cost/error.
  *  - todo.updated → properties.todos (:5869). session.idle/session.error → :5958/:5728.
  *  - permission.asked (:5884) / permission.v2.asked (:5764).
  * The mapper is stateful only to emit `turn.start` once per assistant message id.

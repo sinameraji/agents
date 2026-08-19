@@ -56,7 +56,7 @@ export function TurnView({ turn }: { turn: NormTurn }) {
                   : turn.status === 'error'
                     ? 'Failed before producing output.'
                     : turn.status === 'streaming'
-                      ? 'Interrupted — no output.'
+                      ? 'Interrupted, no output.'
                       : 'No output produced.'}
               </p>
             )}
