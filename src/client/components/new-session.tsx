@@ -15,7 +15,7 @@ interface Requirement {
 }
 
 /** What a harness needs before its first turn — written for someone who has never used it. */
-function harnessRequirements(h: Harness, conn: MaskedConnections | null): Requirement[] {
+export function harnessRequirements(h: Harness, conn: MaskedConnections | null): Requirement[] {
   const hasModelKey =
     !!conn?.openrouterKey || !!conn?.anthropicKey || !!conn?.openaiKey ||
     (!!conn?.cloudflareApiToken && !!conn?.cloudflareAccountId && !!conn?.cloudflareGatewayId)

@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils'
 import { CloudflareMark } from '../login-screen'
 import { GatewayPicker } from '../gateway-picker'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
-import type { Connections, Provider } from '~shared/protocol'
+import { HARNESSES, type Connections, type Provider } from '~shared/protocol'
+import { harnessRequirements } from '../new-session'
 import { Button } from '@/components/ui/button'
 
 export const PROVIDERS: { id: Provider; label: string; field: keyof Connections; placeholder: string; keyUrl: string }[] = [
@@ -36,6 +37,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [manualCf, setManualCf] = useState(false)
+  const [tab, setTab] = useState<'providers' | 'harness' | 'git'>('providers')
 
   const cfConnected = !!ua.connections?.cloudflareAccountId && !!ua.connections?.cloudflareApiToken
   const gwId = ua.connections?.cloudflareGatewayId ?? null
@@ -79,9 +81,33 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
       <button type="button" aria-label="Close settings" onClick={onClose} className="absolute inset-0 cursor-default bg-background/70 backdrop-blur-sm" />
       <div className="relative flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
         <header className="flex items-center justify-between border-b border-border px-5 py-4">
-          <div className="flex items-center gap-2">
-            <KeyRound className="size-4 text-primary" />
-            <h2 className="text-sm font-medium">Connections</h2>
+          <div className="flex min-w-0 items-center gap-3">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
+              <KeyRound className="size-4 text-primary" /> Settings
+            </h2>
+            <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5" role="tablist" aria-label="Settings sections">
+              {(
+                [
+                  ['providers', 'Providers'],
+                  ['harness', 'Harness'],
+                  ['git', 'Git'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                  className={cn(
+                    'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                    tab === id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close">
             <X className="size-4" />
@@ -89,6 +115,8 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
         </header>
 
         <div className="scrollbar-thin flex flex-col gap-6 overflow-y-auto px-5 py-5">
+          {tab === 'providers' && (
+          <>
           <section className="flex flex-col gap-2">
             <label className="text-sm font-medium">Default model provider</label>
             <p className="text-xs leading-relaxed text-muted-foreground">
@@ -233,6 +261,72 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
             />
           </section>
 
+          </>
+          )}
+
+          {tab === 'harness' && (
+            <section className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Default harness</label>
+              <p className="text-xs text-muted-foreground">
+                Used for new sessions — you can still pick a different one per session.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                {HARNESSES.filter((h) => h.enabled).map((h) => {
+                  const reqs = harnessRequirements(h.id, ua.connections)
+                  const ready = reqs.every((r) => r.ok || r.optional)
+                  const isDefault = ua.settings.defaultHarness === h.id
+                  return (
+                    <div
+                      key={h.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={isDefault}
+                      onClick={() => void ua.saveSettings({ settings: { defaultHarness: h.id } })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          void ua.saveSettings({ settings: { defaultHarness: h.id } })
+                        }
+                      }}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
+                        isDefault ? 'border-primary/60 bg-primary/10' : 'border-border hover:bg-muted',
+                      )}
+                    >
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span className="flex items-center gap-1.5 text-sm">
+                          <span
+                            aria-hidden
+                            title={ready ? 'Ready with your current connections' : 'Needs setup — see the Providers tab'}
+                            className={cn('size-1.5 shrink-0 rounded-full', ready ? 'bg-success' : 'bg-warning')}
+                          />
+                          {h.label}
+                          {isDefault && (
+                            <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">default</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{h.blurb}</span>
+                      </div>
+                      <a
+                        href={h.repoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`${h.label} source repository`}
+                        title={h.repoUrl.replace('https://', '')}
+                        className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </a>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Green dot = runs with your current connections.</p>
+            </section>
+          )}
+
+          {tab === 'git' && (
           <section className="flex flex-col gap-2">
             <label htmlFor="gh-pat" className="text-sm font-medium">
               GitHub token {patStored && <span className="text-xs font-normal text-success">· saved ({patStored})</span>}
@@ -254,6 +348,7 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
               />
             </div>
           </section>
+          )}
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
