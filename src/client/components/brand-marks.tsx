@@ -60,3 +60,13 @@ export function PiMark({ className }: { className?: string }) {
     </span>
   )
 }
+import { CloudflareMark } from './login-screen'
+
+/** One shared harness-id → logomark map (used by pickers and the session header). */
+export const HARNESS_MARKS: Record<string, (p: { className?: string }) => React.ReactNode> = {
+  opencode: OpenCodeMark,
+  aisdk: VercelMark,
+  cfagent: CloudflareMark,
+  pi: PiMark,
+  kimiflare: KimiFlareMark,
+}
