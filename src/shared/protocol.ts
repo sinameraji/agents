@@ -135,8 +135,10 @@ export const DEFAULT_MODEL_BY_PROVIDER: Record<Provider, string> = {
 
 /** Does this model id make sense for this provider's API? */
 export function modelFitsProvider(provider: Provider, model: string): boolean {
-  // Gateway accepts workers-ai/<model> (billed as Workers AI) and vendor/<model> via unified billing.
-  if (provider === 'cloudflare') return model.includes('/')
+  // Only workers-ai/<model> is guaranteed to work on the gateway without extra billing setup;
+  // vendor/<model> ids need unified billing, so they are allowed only as an EXPLICIT user pick,
+  // never as a default (this function gates defaults in createSession).
+  if (provider === 'cloudflare') return model.startsWith('workers-ai/')
   if (provider === 'openrouter') return model.includes('/')
   // Anthropic/OpenAI native APIs use bare model ids, no vendor prefix.
   return !model.includes('/')

@@ -11,12 +11,13 @@ import type { ModelMessage } from 'ai'
 import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
 import { applyEvent, emptyTranscript } from '~shared/agent-reduce'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
-import type {
-  Connections,
-  Harness,
-  Provider,
-  SessionMode,
-  SessionSource,
+import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  type Connections,
+  type Harness,
+  type Provider,
+  type SessionMode,
+  type SessionSource,
 } from '~shared/protocol'
 
 interface SessionConfig {
@@ -430,20 +431,48 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     })
     this.cfAbort = new AbortController()
 
-    try {
-      const { text: finalText, usage } = await runCfAgentLoop({
+    const runOnce = (model: string) =>
+      runCfAgentLoop({
         sandbox,
         provider: cfg.provider,
-        model: cfg.model,
+        model,
         creds: conn,
         mode: this.state.mode,
         messages: history,
-        signal: this.cfAbort.signal,
+        signal: this.cfAbort!.signal,
         emit: {
           part: (part) => this.emit({ t: 'part.upsert', turnId, part }),
           usage: (usage) => this.emit({ t: 'usage', usage }),
         },
       })
+
+    try {
+      let result: Awaited<ReturnType<typeof runCfAgentLoop>>
+      try {
+        result = await runOnce(cfg.model)
+      } catch (e) {
+        // Vendor models on the gateway (openai/…) need unified billing; without it the upstream
+        // rejects our token. Fall back to Workers AI so the turn WORKS, and keep the session there.
+        const msg = (e as Error).message
+        const upstreamAuth = /incorrect api key|invalid.*api key|unauthorized|401/i.test(msg)
+        const fallback = DEFAULT_MODEL_BY_PROVIDER.cloudflare
+        if (cfg.provider === 'cloudflare' && upstreamAuth && !cfg.model.startsWith('workers-ai/') && cfg.model !== fallback) {
+          this.emit({
+            t: 'part.upsert',
+            turnId,
+            part: {
+              kind: 'text',
+              id: `${turnId}:fallback`,
+              text: `_${cfg.model} routes upstream through your AI Gateway, which needs unified billing enabled (Cloudflare dash → AI Gateway → Billing). Switched this session to ${fallback}, which runs on Workers AI with no extra setup._`,
+            },
+          })
+          this.setModel(fallback)
+          result = await runOnce(fallback)
+        } else {
+          throw e
+        }
+      }
+      const { text: finalText, usage } = result
       history.push({ role: 'assistant', content: finalText })
       this.putKv('cfagent:messages', history.slice(-40))
       this.emit({ t: 'turn.update', id: turnId, patch: { status: 'complete', usage, completedAt: Date.now() } })
