@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, ExternalLink, GitBranch, KeyRound, Link2, Loader2, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, ExternalLink, GitBranch, KeyRound, Loader2, Sparkles } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useRouter } from '@/router'
@@ -9,6 +9,7 @@ import type { UserAgentApi } from '@/hooks/use-user-agent'
 import { HARNESSES, type Harness, type SessionSource } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { PROVIDERS } from './coding-agent/settings-dialog'
+import { CloudflareMark } from './login-screen'
 
 /** Themed dropdown (the native <select> looks like the OS, not like Dreamweav). */
 function Dropdown<T extends string>({
@@ -116,6 +117,12 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
   const [manualCf, setManualCf] = useState(false)
 
   const gwStored = !!ua.connections?.cloudflareGatewayId
+  const gwId = ua.connections?.cloudflareGatewayId ?? null
+  const gwDashUrl = ua.connections?.cloudflareAccountId
+    ? `https://dash.cloudflare.com/${ua.connections.cloudflareAccountId}/ai/ai-gateway`
+    : 'https://dash.cloudflare.com/?to=/:account/ai/ai-gateway'
+  const cfBtnCls =
+    'flex h-10 items-center justify-center gap-2.5 rounded-lg border border-black/10 bg-white text-sm font-medium text-[#222] shadow-sm transition-colors hover:bg-[#faf7f2] dark:border-white/10'
   const setupGateway = async () => {
     setGwBusy(true)
     setGwNote(null)
@@ -243,19 +250,40 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
           <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
             <div className="flex items-start gap-2.5 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5">
               <Check className="mt-0.5 size-4 shrink-0 text-success" />
-              <div className="text-sm">
+              <div className="min-w-0 text-sm">
                 <p className="font-medium">Cloudflare connected from your login</p>
-                <p className="text-xs text-muted-foreground">
-                  The KimiFlare harness is ready to use right now — no keys needed.
-                </p>
+                {gwStored ? (
+                  <p className="text-xs text-muted-foreground">
+                    KimiFlare and AI Gateway <span className="font-mono text-foreground/80">“{gwId}”</span> are
+                    ready — no keys needed.{' '}
+                    <a href={gwDashUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                      View in dashboard <ExternalLink className="size-3" />
+                    </a>
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">The KimiFlare harness is ready — no keys needed.</p>
+                )}
               </div>
             </div>
+            {!gwStored && (
+              <div className="flex flex-col gap-1.5 rounded-lg border border-warning/40 bg-warning/10 p-3">
+                <p className="text-xs text-foreground/90">
+                  We couldn&apos;t auto-create an AI Gateway during connect — retry:
+                </p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void setupGateway()} disabled={gwBusy} className="gap-2 self-start">
+                  {gwBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                  Set up AI Gateway
+                </Button>
+                {gwNote && <p className="text-xs text-muted-foreground">{gwNote}</p>}
+              </div>
+            )}
             <div className="flex flex-col gap-1">
               <h2 className="text-sm font-semibold">
-                Add an OpenRouter key <span className="font-normal text-muted-foreground">· optional</span>
+                Want more models? <span className="font-normal text-muted-foreground">· optional</span>
               </h2>
               <p className="text-xs text-muted-foreground">
-                Unlocks every model for the other harnesses (OpenCode, pi, Built-in, Agents SDK) — pay as you go.
+                An OpenRouter key unlocks every frontier model for the other harnesses (OpenCode, pi, Built-in,
+                Agents SDK) — pay as you go. Skip it and add it later anytime.
               </p>
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
@@ -275,20 +303,6 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                 openrouter.ai/settings/keys <ExternalLink className="size-3" />
               </a>
             </p>
-            {gwStored ? (
-              <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs">
-                <Check className="size-3.5 shrink-0 text-success" />
-                AI Gateway ready — the Cloudflare provider works for every harness too.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                <Button type="button" variant="outline" size="sm" onClick={() => void setupGateway()} disabled={gwBusy} className="justify-center gap-2 self-start">
-                  {gwBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-                  Set up AI Gateway automatically · optional
-                </Button>
-                {gwNote && <p className="text-xs text-muted-foreground">{gwNote}</p>}
-              </div>
-            )}
             <div className="flex items-center gap-2">
               <Button
                 onClick={() => {
@@ -336,16 +350,21 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                     Cloudflare connected from your login
                   </div>
                 ) : (
-                  <Button type="button" onClick={() => window.location.assign('/auth/cloudflare')} className="justify-center gap-2">
-                    <Link2 className="size-4" />
+                  <button type="button" onClick={() => window.location.assign('/auth/cloudflare')} className={cfBtnCls}>
+                    <CloudflareMark className="size-5" />
                     Connect Cloudflare — one click, no tokens
-                  </Button>
+                  </button>
                 )}
                 {cfStored &&
                   (gwStored ? (
                     <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm">
                       <Check className="size-4 shrink-0 text-success" />
-                      AI Gateway ready
+                      <span className="min-w-0 truncate">
+                        AI Gateway <span className="font-mono">“{gwId}”</span> ready
+                      </span>
+                      <a href={gwDashUrl} target="_blank" rel="noreferrer" aria-label="Open AI Gateway in the Cloudflare dashboard" className="ml-auto shrink-0 text-primary hover:underline">
+                        <ExternalLink className="size-3.5" />
+                      </a>
                     </div>
                   ) : (
                     <Button type="button" variant="outline" onClick={() => void setupGateway()} disabled={gwBusy} className="justify-center gap-2">
@@ -355,7 +374,7 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                   ))}
                 {gwNote && <p className="text-xs text-muted-foreground">{gwNote}</p>}
                 {!cfStored && (
-                  <button type="button" onClick={() => setManualCf((v) => !v)} className="self-start text-xs text-muted-foreground hover:text-foreground">
+                  <button type="button" onClick={() => setManualCf((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
                     {manualCf ? 'Hide manual setup' : 'Enter credentials manually instead'}
                   </button>
                 )}
@@ -418,10 +437,10 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
             {kimiNeedsCreds && (
               <div className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
                 <p className="text-xs text-foreground/90">KimiFlare runs on your Cloudflare account.</p>
-                <Button type="button" size="sm" onClick={() => window.location.assign('/auth/cloudflare')} className="justify-center gap-2 self-start">
-                  <Link2 className="size-3.5" />
+                <button type="button" onClick={() => window.location.assign('/auth/cloudflare')} className={cn(cfBtnCls, 'h-9 self-start px-3 text-xs')}>
+                  <CloudflareMark className="size-4" />
                   Connect Cloudflare — one click, no tokens
-                </Button>
+                </button>
                 <p className="text-xs text-muted-foreground">
                   Or paste a token with <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span>{' '}
                   from{' '}

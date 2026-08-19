@@ -192,6 +192,7 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
     const u = user as {
       saveSettings: (i: { connections?: Record<string, string> }) => Promise<unknown>
       storeCfOauth: (b: { access: string; refresh: string | null; expiresAt: number }) => Promise<unknown>
+      ensureAiGateway: () => Promise<unknown>
     }
     if (accountId) await u.saveSettings({ connections: { cloudflareAccountId: accountId } })
     await u.storeCfOauth({
@@ -199,6 +200,9 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
       refresh: token.refresh_token ?? null,
       expiresAt: Date.now() + (token.expires_in ?? 3600) * 1000,
     })
+    // Connecting means CONNECTED: provision the AI Gateway now (best-effort) rather than making
+    // the user click a second "set up" button for what the consent already authorized.
+    await u.ensureAiGateway().catch(() => null)
   }
 
   if (flow.link) {

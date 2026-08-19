@@ -114,7 +114,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     provider?: Provider
     model?: string
   }): Promise<{ id: string }> {
-    const settings = this.getSettings().settings
+    const settings = (await this.getSettings()).settings
     const id = crypto.randomUUID()
     const harness = input.harness ?? settings.defaultHarness
     const provider = input.provider ?? settings.defaultProvider
@@ -190,7 +190,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
 
   // --- settings + connections ---------------------------------------------------------------
   @callable()
-  getSettings(): { settings: UserSettings; connections: MaskedConnections } {
+  async getSettings(): Promise<{ settings: UserSettings; connections: MaskedConnections }> {
     const settings = this.getSetting<UserSettings>('settings', DEFAULT_SETTINGS)
     // Migration: the old default was an expensive model; upgrade stored settings to the cheap default.
     if (settings.defaultModel === 'anthropic/claude-sonnet-4.5') {
@@ -198,9 +198,18 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       this.putSetting('settings', settings)
     }
     const masked = {} as MaskedConnections
+    const IDENTIFIERS: (keyof Connections)[] = ['cloudflareAccountId', 'cloudflareGatewayId']
     for (const f of CONNECTION_FIELDS) {
       const enc = this.getSetting<string | null>(`conn:${f}`, null)
-      masked[f] = enc ? maskSecret('••••••••••••') : null // presence only; value hidden
+      if (!enc) {
+        masked[f] = null
+      } else if (IDENTIFIERS.includes(f)) {
+        // Account/gateway ids are identifiers, not credentials — the UI needs the real values
+        // (show the gateway name, build dashboard links).
+        masked[f] = await decryptSecret(enc, this.env.ENCRYPTION_KEY)
+      } else {
+        masked[f] = maskSecret('••••••••••••') // presence only; value hidden
+      }
     }
     return { settings: { ...DEFAULT_SETTINGS, ...settings }, connections: masked }
   }
