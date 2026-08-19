@@ -140,8 +140,11 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
               )}
             </label>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Powers the <span className="font-medium text-foreground/80">KimiFlare</span> harness and the AI Gateway
-              provider. Create a custom API token with{' '}
+              Used in two places: the <span className="font-medium text-foreground/80">KimiFlare</span> harness
+              (Kimi K2 on your Workers AI), and the{' '}
+              <span className="font-medium text-foreground/80">Cloudflare AI Gateway</span> model provider —
+              OpenCode, Built-in, and Agents SDK sessions can route their LLM calls through your own gateway
+              for caching, request logs, and cost tracking. Create a custom API token with{' '}
               <span className="font-mono">Workers AI:Read · AI Gateway:Read · AI Gateway:Edit</span> at{' '}
               <HelpLink href="https://dash.cloudflare.com/profile/api-tokens">dash.cloudflare.com/profile/api-tokens</HelpLink>.
               Your Account ID is on the right side of any zone page in the{' '}
