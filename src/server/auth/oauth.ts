@@ -200,6 +200,74 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
   })
 }
 
+// --- Email magic link ------------------------------------------------------------------------
+interface EmailBinding {
+  send(msg: { to: string; from: string; subject: string; html?: string; text?: string }): Promise<unknown>
+}
+
+interface LoginToken {
+  e: string // email
+  n: string // single-use nonce (consumed in the UserAgent)
+  exp: number
+}
+
+/** POST /api/login/email — send a 15-minute single-use magic link via Cloudflare Email Service. */
+export async function startEmailLogin(request: Request, env: OauthEnv, email0: string, emailBinding: EmailBinding | undefined): Promise<Response> {
+  if (!emailBinding || !env.AUTH_SECRET) return Response.json({ error: 'Email login is not configured yet.' }, { status: 503 })
+  const email = email0.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Response.json({ error: 'Enter a valid email address.' }, { status: 400 })
+  const origin = new URL(request.url).origin
+  const nonce = rand(18)
+  const payload = b64url(enc.encode(JSON.stringify({ e: email, n: nonce, exp: Date.now() + 15 * 60_000 } satisfies LoginToken)))
+  const token = `${payload}.${b64url(await hmac(env.AUTH_SECRET, payload))}`
+  const id = await userIdFromEmail(email)
+  const user = (await getAgentByName(env.UserAgent, id)) as unknown as { storePendingLogin: (n: string, exp: number) => Promise<unknown> }
+  await user.storePendingLogin(nonce, Date.now() + 15 * 60_000)
+  const link = `${origin}/auth/email/callback?token=${encodeURIComponent(token)}`
+  try {
+    await emailBinding.send({
+    to: email,
+    from: 'login@dreamweav.com',
+    subject: 'Your Dreamweav login link',
+    text: `Click to log in to Dreamweav (valid 15 minutes):\n\n${link}\n\nIf you didn't request this, ignore this email.`,
+    html: `<div style="font-family:system-ui;max-width:420px;margin:0 auto;padding:24px">
+      <h2 style="margin:0 0 8px">Log in to Dreamweav</h2>
+      <p style="color:#555">This link is valid for 15 minutes and works once.</p>
+      <p><a href="${link}" style="display:inline-block;background:#0f172a;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Log in</a></p>
+      <p style="color:#999;font-size:12px">If you didn't request this, ignore this email.</p></div>`,
+    })
+  } catch (e) {
+    console.error('[dreamweav] magic-link send failed', e)
+    return Response.json(
+      { error: 'Sending failed — the dreamweav.com sending domain may not be onboarded in Email Service yet.' },
+      { status: 502 },
+    )
+  }
+  return Response.json({ ok: true })
+}
+
+/** GET /auth/email/callback?token= — verify signature + expiry, consume the nonce, mint the session. */
+export async function finishEmailLogin(request: Request, env: OauthEnv): Promise<Response> {
+  if (!env.AUTH_SECRET) return failPage('Email login is not configured yet.')
+  const token = new URL(request.url).searchParams.get('token') ?? ''
+  const [payload, sig] = token.split('.')
+  if (!payload || !sig || sig !== b64url(await hmac(env.AUTH_SECRET, payload))) {
+    return failPage('This login link is invalid.')
+  }
+  let parsed: LoginToken
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(fromB64url(payload))) as LoginToken
+  } catch {
+    return failPage('This login link is invalid.')
+  }
+  if (!parsed.exp || parsed.exp < Date.now()) return failPage('This login link expired — request a fresh one.')
+  const id = await userIdFromEmail(parsed.e)
+  const user = (await getAgentByName(env.UserAgent, id)) as unknown as { consumeLoginNonce: (n: string) => Promise<{ ok: boolean }> }
+  const consumed = await user.consumeLoginNonce(parsed.n)
+  if (!consumed.ok) return failPage('This login link was already used — request a fresh one.')
+  return completeLogin(env, parsed.e, async () => {})
+}
+
 // --- GitHub ----------------------------------------------------------------------------------
 export async function startGithubLogin(request: Request, env: OauthEnv): Promise<Response> {
   if (!env.GITHUB_OAUTH_CLIENT_ID || !env.AUTH_SECRET) return failPage('GitHub login is not configured yet.')

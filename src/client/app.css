@@ -147,6 +147,13 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Tailwind v4 preflight drops the pointer cursor on buttons — clickable things must look clickable. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  select:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
 }
 
 /* Thin, unobtrusive scrollbars that match the graphite surfaces */

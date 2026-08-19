@@ -34,6 +34,7 @@
     { "binding": "STORE", "bucket_name": "dreamweav-store" },
     { "binding": "BACKUP_BUCKET", "bucket_name": "dreamweav-store" }
   ],
+  "send_email": [{ "name": "EMAIL", "remote": true }],
   "vars": {
     "APP_NAME": "Dreamweav",
     "OWNER_EMAIL": "sina.meraji@gmail.com",

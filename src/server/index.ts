@@ -3,7 +3,7 @@ import { routeAgentRequest } from 'agents'
 import { collectFile, getSandbox, proxyToSandbox } from '@cloudflare/sandbox'
 import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
-import { finishCfLogin, finishGithubLogin, startCfLogin, startGithubLogin } from './auth/oauth'
+import { finishCfLogin, finishEmailLogin, finishGithubLogin, startCfLogin, startEmailLogin, startGithubLogin } from './auth/oauth'
 import { fetchOpenRouterModels } from './api/models'
 import { handleUpload } from './api/uploads'
 import { getAgentByName } from 'agents'
@@ -39,9 +39,17 @@ app.get('/api/auth/providers', (c) => {
   return c.json({
     cloudflare: !!env.CF_OAUTH_CLIENT_ID && !!env.CF_OAUTH_CLIENT_SECRET,
     github: !!env.GITHUB_OAUTH_CLIENT_ID && !!env.GITHUB_OAUTH_CLIENT_SECRET,
+    email: !!(c.env as unknown as { EMAIL?: unknown }).EMAIL,
     password: !!env.APP_PASSWORD,
   })
 })
+
+// Magic-link login (unauthenticated by design)
+app.post('/api/login/email', async (c) => {
+  const { email } = (await c.req.json().catch(() => ({}))) as { email?: string }
+  return startEmailLogin(c.req.raw, c.env as never, email ?? '', (c.env as unknown as { EMAIL?: never }).EMAIL)
+})
+app.get('/auth/email/callback', (c) => finishEmailLogin(c.req.raw, c.env as never))
 
 // OAuth logins (unauthenticated by design)
 app.get('/auth/cloudflare', (c) => startCfLogin(c.req.raw, c.env as never))

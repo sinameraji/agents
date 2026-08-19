@@ -228,6 +228,20 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     return this.getSettings()
   }
 
+  /** Magic-link login: remember a pending single-use nonce (15-minute TTL). */
+  async storePendingLogin(nonce: string, exp: number): Promise<{ ok: true }> {
+    this.sql`DELETE FROM settings WHERE k LIKE 'login:%' AND CAST(v AS INTEGER) < ${Date.now()}`
+    this.putSetting(`login:${nonce}`, exp)
+    return { ok: true }
+  }
+
+  /** Consume a magic-link nonce exactly once. */
+  async consumeLoginNonce(nonce: string): Promise<{ ok: boolean }> {
+    const exp = this.getSetting<number | null>(`login:${nonce}`, null)
+    this.sql`DELETE FROM settings WHERE k = ${'login:' + nonce}`
+    return { ok: exp !== null && exp > Date.now() }
+  }
+
   /** Store the Cloudflare OAuth token bundle (from "Log in with Cloudflare"), encrypted. */
   async storeCfOauth(bundle: { access: string; refresh: string | null; expiresAt: number }): Promise<{ ok: true }> {
     this.putSetting('cfOauth', await encryptSecret(JSON.stringify(bundle), this.env.ENCRYPTION_KEY))

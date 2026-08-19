@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Cloud, Loader2, Lock, Mail, Terminal } from 'lucide-react'
+import { Loader2, Lock, Mail, Terminal } from 'lucide-react'
+
+/** Official Cloudflare logomark (Simple Icons, CC0) in brand orange. */
+function CloudflareMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="#F38020" aria-hidden className={className}>
+      <path d="M16.5088 16.8447c.1475-.5068.0908-.9707-.1553-1.3154-.2246-.3164-.6045-.499-1.0615-.5205l-8.6592-.1123a.1559.1559 0 0 1-.1333-.0713c-.0283-.042-.0351-.0986-.021-.1553.0278-.084.1123-.1484.2036-.1562l8.7359-.1123c1.0351-.0489 2.1601-.8868 2.5537-1.9136l.499-1.3013c.0215-.0561.0293-.1128.0147-.168-.5625-2.5463-2.835-4.4453-5.5499-4.4453-2.5039 0-4.6284 1.6177-5.3876 3.8614-.4927-.3658-1.1187-.5625-1.794-.499-1.2026.119-2.1665 1.083-2.2861 2.2856-.0283.31-.0069.6128.0635.894C1.5683 13.171 0 14.7754 0 16.752c0 .1748.0142.3515.0352.5273.0141.083.0844.1475.1689.1475h15.9814c.0909 0 .1758-.0645.2032-.1553l.12-.4268zm2.7568-5.5634c-.0771 0-.1611 0-.2383.0112-.0566 0-.1054.0415-.127.0976l-.3378 1.1744c-.1475.5068-.0918.9707.1543 1.3164.2256.3164.6055.498 1.0625.5195l1.8437.1133c.0557 0 .1055.0263.1329.0703.0283.043.0351.1074.0214.1562-.0283.084-.1132.1485-.204.1553l-1.921.1123c-1.041.0488-2.1582.8867-2.5527 1.914l-.1406.3585c-.0283.0713.0215.1416.0986.1416h6.5977c.0771 0 .1474-.0489.169-.126.1122-.4082.1757-.837.1757-1.2803 0-2.6025-2.125-4.727-4.7344-4.727" />
+    </svg>
+  )
+}
 
 function GithubMark({ className }: { className?: string }) {
   return (
@@ -13,12 +22,15 @@ import { Button } from '@/components/ui/button'
 interface Providers {
   cloudflare: boolean
   github: boolean
+  email: boolean
   password: boolean
 }
 
 export function LoginScreen() {
   const [providers, setProviders] = useState<Providers | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [email, setEmail] = useState('')
+  const [emailState, setEmailState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -27,8 +39,32 @@ export function LoginScreen() {
     void fetch('/api/auth/providers')
       .then((r) => r.json() as Promise<Providers>)
       .then(setProviders)
-      .catch(() => setProviders({ cloudflare: false, github: false, password: true }))
+      .catch(() => setProviders({ cloudflare: false, github: false, email: false, password: true }))
   }, [])
+
+  const sendMagicLink = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email.trim()) return
+    setEmailState('sending')
+    setErr(null)
+    try {
+      const res = await fetch('/api/login/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      })
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string }
+        setErr(j.error ?? 'Could not send the link — try again.')
+        setEmailState('idle')
+        return
+      }
+      setEmailState('sent')
+    } catch {
+      setErr('Could not send the link — try again.')
+      setEmailState('idle')
+    }
+  }
 
   const submitPassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -68,24 +104,58 @@ export function LoginScreen() {
         ) : (
           <div className="flex w-full flex-col gap-2">
             {providers.cloudflare && (
-              <Button className="w-full gap-2" onClick={() => window.location.assign('/auth/cloudflare')}>
-                <Cloud className="size-4" />
+              <button
+                type="button"
+                onClick={() => window.location.assign('/auth/cloudflare')}
+                className="flex h-10 w-full items-center justify-center gap-2.5 rounded-lg border border-black/10 bg-white text-sm font-medium text-[#222] shadow-sm transition-colors hover:bg-[#faf7f2] dark:border-white/10"
+              >
+                <CloudflareMark className="size-5" />
                 Log in with Cloudflare
-                <span className="ml-auto rounded-full bg-primary-foreground/15 px-1.5 py-0.5 text-[10px] font-medium">
+                <span className="rounded-full bg-[#F38020]/15 px-1.5 py-0.5 text-[10px] font-medium text-[#b35400]">
                   recommended
                 </span>
-              </Button>
+              </button>
             )}
             {providers.github && (
-              <Button variant="outline" className="w-full gap-2" onClick={() => window.location.assign('/auth/github')}>
-                <GithubMark className="size-4" />
+              <button
+                type="button"
+                onClick={() => window.location.assign('/auth/github')}
+                className="flex h-10 w-full items-center justify-center gap-2.5 rounded-lg bg-[#24292f] text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#31373e]"
+              >
+                <GithubMark className="size-4.5 text-white" />
                 Continue with GitHub
+              </button>
+            )}
+            {providers.email &&
+              (emailState === 'sent' ? (
+                <div className="rounded-lg border border-border bg-card px-3 py-2.5 text-center text-sm text-foreground/90">
+                  📬 Check your inbox — the link works once and expires in 15 minutes.
+                </div>
+              ) : (
+                <form onSubmit={sendMagicLink} className="flex w-full items-center gap-1.5">
+                  <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-card px-3 focus-within:border-primary/50">
+                    <Mail className="size-4 shrink-0 text-muted-foreground" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      aria-label="Email address"
+                      className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
+                    />
+                  </div>
+                  <Button type="submit" variant="outline" disabled={emailState === 'sending' || !email.trim()} className="h-10 shrink-0 gap-1.5">
+                    {emailState === 'sending' ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                    Send link
+                  </Button>
+                </form>
+              ))}
+            {!providers.email && (
+              <Button variant="outline" className="w-full gap-2 opacity-50" disabled title="Coming soon">
+                <Mail className="size-4" />
+                Email magic link · soon
               </Button>
             )}
-            <Button variant="outline" className="w-full gap-2 opacity-50" disabled title="Coming soon">
-              <Mail className="size-4" />
-              Email magic link · soon
-            </Button>
 
             {providers.password && !showPassword && (
               <button
