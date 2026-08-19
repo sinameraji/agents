@@ -96,7 +96,9 @@ export function LoginScreen() {
         </div>
         <div className="text-center">
           <h1 className="text-lg font-semibold tracking-tight">Dreamweav</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Coding agents in your browser.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your favorite coding model, harness, and provider — in your browser.
+          </p>
         </div>
 
         {providers === null ? (
@@ -189,10 +191,7 @@ export function LoginScreen() {
           </div>
         )}
 
-        <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
-          Logging in with Cloudflare auto-configures KimiFlare and AI Gateway routing from the
-          permissions you approve — no manual tokens.
-        </p>
+
       </div>
     </main>
   )
