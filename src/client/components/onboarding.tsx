@@ -234,7 +234,7 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                 {PROVIDERS.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.label}
-                    {p.id === 'openrouter' ? ' — recommended: one key, every model' : ''}
+                    {p.id === 'openrouter' ? ' — one key, every model' : ''}
                   </option>
                 ))}
               </select>
