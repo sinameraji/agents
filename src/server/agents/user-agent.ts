@@ -286,6 +286,9 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
         rate_limiting_interval: 0,
         rate_limiting_limit: 0,
         rate_limiting_technique: 'fixed',
+        // Authenticated gateway is a prerequisite for unified billing: without it the gateway
+        // ignores cf-aig-authorization and forwards vendor requests upstream with NO key.
+        authentication: true,
       }),
     })
       .then((r) => r.json())

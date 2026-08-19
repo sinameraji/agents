@@ -408,6 +408,42 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   /** The Cloudflare-native harness: the agent loop runs right here in the DO, streaming live. */
+  /** Unified billing requires an *authenticated* gateway; flip it on in the user's account.
+   *  Returns true only when it actually changed something, so callers retry at most once. */
+  private async enableGatewayAuthentication(conn: Connections): Promise<boolean> {
+    const { cloudflareAccountId: acct, cloudflareGatewayId: gw, cloudflareApiToken: token } = conn
+    if (!acct || !gw || !token) return false
+    const base = `https://api.cloudflare.com/client/v4/accounts/${acct}/ai-gateway/gateways/${gw}`
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+    try {
+      const cur = (await (await fetch(base, { headers })).json()) as {
+        success?: boolean
+        result?: Record<string, unknown> & { authentication?: boolean }
+      }
+      if (!cur.success || !cur.result || cur.result.authentication === true) return false
+      const g = cur.result
+      const put = (await (
+        await fetch(base, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            cache_invalidate_on_update: g.cache_invalidate_on_update ?? false,
+            cache_ttl: g.cache_ttl ?? 0,
+            collect_logs: g.collect_logs ?? true,
+            rate_limiting_interval: g.rate_limiting_interval ?? 0,
+            rate_limiting_limit: g.rate_limiting_limit ?? 0,
+            rate_limiting_technique: g.rate_limiting_technique ?? 'fixed',
+            authentication: true,
+          }),
+        })
+      ).json()) as { success?: boolean }
+      console.log(`[cfagent] enabled authenticated mode on gateway ${gw}: ${String(put.success)}`)
+      return put.success === true
+    } catch {
+      return false
+    }
+  }
+
   private async runCfAgentTurn(text: string): Promise<void> {
     const gen = this.turnGen
     const cfg = this.config()
@@ -450,26 +486,51 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       let result: Awaited<ReturnType<typeof runCfAgentLoop>>
       try {
         result = await runOnce(cfg.model)
-      } catch (e) {
-        // Vendor models on the gateway (openai/…) need unified billing; without it the upstream
-        // rejects our token. Fall back to Workers AI so the turn WORKS, and keep the session there.
-        const msg = (e as Error).message
-        const upstreamAuth = /incorrect api key|invalid.*api key|unauthorized|401/i.test(msg)
-        const fallback = DEFAULT_MODEL_BY_PROVIDER.cloudflare
-        if (cfg.provider === 'cloudflare' && upstreamAuth && !cfg.model.startsWith('workers-ai/') && cfg.model !== fallback) {
-          this.emit({
-            t: 'part.upsert',
-            turnId,
-            part: {
-              kind: 'text',
-              id: `${turnId}:fallback`,
-              text: `_${cfg.model} routes upstream through your AI Gateway, which needs unified billing enabled (Cloudflare dash → AI Gateway → Billing). Switched this session to ${fallback}, which runs on Workers AI with no extra setup._`,
-            },
-          })
-          this.setModel(fallback)
-          result = await runOnce(fallback)
+      } catch (err) {
+        let e = err
+        let msg = (e as Error).message
+        console.error(`[cfagent] model call failed (model=${cfg.model}):`, msg.slice(0, 1000))
+        // Vendor models (openai/…) reach the upstream with NO key when the gateway is not an
+        // *authenticated* gateway: unified billing only applies once cf-aig-authorization is
+        // verified. Self-heal: flip authentication on in their account and retry the same model.
+        const keyless = /gateway authentication is required|didn'?t provide an api key|you must provide an api key/i.test(msg)
+        let healed: Awaited<ReturnType<typeof runCfAgentLoop>> | null = null
+        if (cfg.provider === 'cloudflare' && keyless && !cfg.model.startsWith('workers-ai/')) {
+          if (await this.enableGatewayAuthentication(conn)) {
+            try {
+              // The setting takes a few seconds to reach the gateway data plane; retrying
+              // instantly hits the same 2021 (observed live). One wait, then one retry.
+              await new Promise((r) => setTimeout(r, 6000))
+              healed = await runOnce(cfg.model)
+            } catch (e2) {
+              e = e2
+              msg = (e2 as Error).message
+              console.error('[cfagent] retry after enabling gateway auth failed:', msg.slice(0, 1000))
+            }
+          }
+        }
+        if (healed) {
+          result = healed
         } else {
-          throw e
+          // Still failing: unified billing is unavailable (no credits, or the token was rejected).
+          // Fall back to Workers AI so the turn WORKS, and keep the session there.
+          const upstreamAuth = /incorrect api key|invalid.*api key|unauthorized|401|provide an api key|gateway authentication is required/i.test(msg)
+          const fallback = DEFAULT_MODEL_BY_PROVIDER.cloudflare
+          if (cfg.provider === 'cloudflare' && upstreamAuth && !cfg.model.startsWith('workers-ai/') && cfg.model !== fallback) {
+            this.emit({
+              t: 'part.upsert',
+              turnId,
+              part: {
+                kind: 'text',
+                id: `${turnId}:fallback`,
+                text: `_${cfg.model} routes upstream through your AI Gateway, which needs unified billing credits (Cloudflare dash → AI Gateway → Billing). Switched this session to ${fallback}, which runs on Workers AI with no extra setup._`,
+              },
+            })
+            this.setModel(fallback)
+            result = await runOnce(fallback)
+          } else {
+            throw e
+          }
         }
       }
       const { text: finalText, usage } = result
