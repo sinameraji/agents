@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { GitBranch, MoreHorizontal, Pencil, Plus, Settings, Terminal, Trash2 } from 'lucide-react'
+import { GitBranch, LogOut, MoreHorizontal, Pencil, Plus, Settings, Terminal, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { formatCost } from '~shared/format'
@@ -81,6 +81,17 @@ export function SessionSidebar({
           <ThemeToggle />
           <Button variant="ghost" size="icon-sm" onClick={onOpenSettings} aria-label="Open settings">
             <Settings className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Sign out"
+            title="Sign out"
+            onClick={() => {
+              void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.assign('/'))
+            }}
+          >
+            <LogOut className="size-4" />
           </Button>
         </div>
       </footer>
