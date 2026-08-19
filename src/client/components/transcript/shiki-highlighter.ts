@@ -58,7 +58,7 @@ function getHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
     highlighterPromise = import('shiki/core').then(({ createHighlighterCore, createOnigurumaEngine }) =>
       createHighlighterCore({
-        themes: [import('shiki/themes/github-dark.mjs'), import('shiki/themes/github-light.mjs')],
+        themes: [import('shiki/themes/vitesse-dark.mjs'), import('shiki/themes/vitesse-light.mjs')],
         langs: [
           import('shiki/langs/typescript.mjs'),
           import('shiki/langs/tsx.mjs'),
@@ -117,6 +117,6 @@ export async function highlight(code: string, lang: string | undefined, dark: bo
   const highlighter = await getHighlighter()
   return highlighter.codeToHtml(code, {
     lang: normalizeLang(lang),
-    theme: dark ? 'github-dark' : 'github-light',
+    theme: dark ? 'vitesse-dark' : 'vitesse-light',
   })
 }
