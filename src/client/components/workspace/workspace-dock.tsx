@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Eye, Files, GitBranch, SlidersHorizontal, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -13,8 +13,20 @@ import { GitPanel } from './git-panel'
 
 type Tab = 'preview' | 'files' | 'git' | 'config'
 
-export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClose: () => void }) {
+export function WorkspaceDock({
+  session,
+  onClose,
+  previewRequest,
+}: {
+  session: SessionApi
+  onClose: () => void
+  previewRequest?: { port: number; nonce: number } | null
+}) {
   const [tab, setTab] = useState<Tab>('files')
+
+  useEffect(() => {
+    if (previewRequest) setTab('preview')
+  }, [previewRequest])
 
   return (
     <aside className="flex h-full w-full shrink-0 flex-col border-border bg-background lg:w-[420px] lg:border-l">
@@ -59,7 +71,7 @@ export function WorkspaceDock({ session, onClose }: { session: SessionApi; onClo
       </header>
 
       <div className="min-h-0 flex-1">
-        {tab === 'preview' && <PreviewPanel session={session} />}
+        {tab === 'preview' && <PreviewPanel session={session} requested={previewRequest} />}
         {tab === 'files' && <FilesPanel session={session} />}
         {tab === 'git' && <GitPanel session={session} />}
         {tab === 'config' && <ConfigPanel session={session} />}

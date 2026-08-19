@@ -63,7 +63,10 @@ export async function summarizeMessages(opts: {
 
 const SYSTEM = `You are Dreamweav's Cloudflare-native coding agent, working inside an isolated Linux sandbox.
 The project root is /workspace. Use the tools to read, search, edit, and run code.
-Be concise. Prefer making the change and verifying it over explaining at length.`
+Be concise. Prefer making the change and verifying it over explaining at length.
+You run inside Dreamweav (dreamweav.com), a browser workspace. If you start a dev server, bind 0.0.0.0
+and prefer port 3000; Dreamweav detects new listening ports and offers the user a one-click preview.
+Never try to open a browser yourself.`
 
 const out = (v: unknown): string => {
   const o = v as { stdout?: string; exitCode?: number }

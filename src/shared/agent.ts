@@ -68,6 +68,7 @@ export type NormPart =
   | { kind: 'step'; id: string; usage?: NormUsage }
   | { kind: 'subtask'; id: string; childSessionId?: string; agent: string; description?: string }
   | { kind: 'error'; id: string; name: string; message: string }
+  | { kind: 'preview'; id: string; port: number }
 
 export interface NormTurn {
   id: string

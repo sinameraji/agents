@@ -266,8 +266,19 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
+  /** Tell the harness where it lives: an idempotent AGENTS.md block every harness reads. */
+  private async ensureAgentContext(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
+    try {
+      await sandbox.exec(
+        `sh -lc 'grep -qs "dreamweav:start" /workspace/AGENTS.md 2>/dev/null || printf "%s\n" "" "<!-- dreamweav:start -->" "## Environment" "You are running inside Dreamweav, a browser workspace (dreamweav.com). The user interacts through a web chat and can preview web servers you start." "- When you start a dev server, bind 0.0.0.0 and prefer port 3000. Dreamweav detects new listening ports and offers the user a one-click preview." "- Do not try to open a browser or take screenshots yourself." "<!-- dreamweav:end -->" >> /workspace/AGENTS.md'`,
+        { timeout: 15_000 },
+      )
+    } catch { /* best-effort */ }
+  }
+
   private async ensureWorkspace(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
     await this.ensureGitCredentials(sandbox)
+    await this.ensureAgentContext(sandbox)
     const empty = await sandbox
       .exec('sh -lc \'[ -z "$(ls -A /workspace 2>/dev/null)" ] && echo EMPTY || echo FULL\'')
       .then((r) => (r as { stdout?: string }).stdout?.includes('EMPTY'))
@@ -617,6 +628,40 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return { ok: true }
   }
 
+  /** Ports our own infra listens on inside the sandbox, never previewable. */
+  private static readonly INFRA_PORTS = new Set([7700, 4096])
+  /** Databases/caches: listening, but not something an iframe can show. */
+  private static readonly NON_WEB_PORTS = new Set([5432, 3306, 6379, 27017, 9200, 11211])
+
+  /** After a turn: if the agent started a web server, surface a one-click preview chip. */
+  private async detectDevServers(): Promise<void> {
+    try {
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+      const r = (await sandbox
+        .exec(`sh -lc '(ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -oE ":[0-9]+ " | tr -d ": " '`, { timeout: 15_000 })
+        .catch(() => null)) as { stdout?: string } | null
+      if (!r?.stdout) return
+      const reported = new Set(this.getKv<number[]>('reportedPorts', []))
+      const fresh = [...new Set(r.stdout.split('\n').map((l) => Number(l.trim())).filter(Boolean))]
+        .filter(
+          (p) =>
+            p >= 1024 &&
+            p <= 9999 &&
+            !SessionAgent.INFRA_PORTS.has(p) &&
+            !SessionAgent.NON_WEB_PORTS.has(p) &&
+            !reported.has(p),
+        )
+      if (!fresh.length) return
+      this.putKv('reportedPorts', [...reported, ...fresh])
+      const lastAssistant = [...this.transcript.turns].reverse().find((t) => t.role === 'assistant')
+      for (const port of fresh) {
+        if (lastAssistant) {
+          this.emit({ t: 'part.upsert', turnId: lastAssistant.id, part: { kind: 'preview', id: `preview-${port}`, port } })
+        }
+      }
+    } catch { /* detection is best-effort */ }
+  }
+
   /** Kick off the harness turn for an (already transcript-visible) user message. */
   private startTurn(input: QueuedMessage): void {
     this.turnGen += 1
@@ -644,7 +689,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         this.setStatus('error')
       })
       .finally(() => {
-        this.drainQueue()
+        void this.detectDevServers().finally(() => {
+          this.drainQueue()
+        })
       })
   }
 

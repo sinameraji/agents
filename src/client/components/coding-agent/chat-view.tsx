@@ -31,6 +31,19 @@ export function ChatView({ session }: { session: SessionApi }) {
   const [editingName, setEditingName] = useState<string | null>(null)
   const [dynamicCommands, setDynamicCommands] = useState<{ name: string; description?: string }[]>([])
   const [subagentsOpen, setSubagentsOpen] = useState(false)
+  const [previewReq, setPreviewReq] = useState<{ port: number; nonce: number } | null>(null)
+
+  useEffect(() => {
+    const onPreview = (e: Event) => {
+      const port = (e as CustomEvent<{ port: number }>).detail?.port
+      if (typeof port === 'number') {
+        setPreviewReq({ port, nonce: Date.now() })
+        setDockOpen(true)
+      }
+    }
+    window.addEventListener('dw:preview', onPreview)
+    return () => window.removeEventListener('dw:preview', onPreview)
+  }, [])
   const dynFetchedFor = useRef<string | null>(null)
   const { navigate } = useRouter()
   const meta = session.meta
@@ -298,7 +311,7 @@ export function ChatView({ session }: { session: SessionApi }) {
     </div>
     {dockOpen && (
       <div className="fixed inset-0 z-40 lg:static lg:z-auto lg:h-full lg:shrink-0">
-        <WorkspaceDock session={session} onClose={() => setDockOpen(false)} />
+        <WorkspaceDock session={session} onClose={() => setDockOpen(false)} previewRequest={previewReq} />
       </div>
     )}
     </div>

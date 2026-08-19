@@ -1,12 +1,18 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ExternalLink, Globe, LoaderCircle, MonitorPlay, Play, RefreshCw } from 'lucide-react'
 
 import type { SessionApi } from '@/hooks/use-session'
 import { Button } from '@/components/ui/button'
 
-export function PreviewPanel({ session }: { session: SessionApi }) {
+export function PreviewPanel({
+  session,
+  requested,
+}: {
+  session: SessionApi
+  requested?: { port: number; nonce: number } | null
+}) {
   const [port, setPort] = useState(3000)
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -14,15 +20,24 @@ export function PreviewPanel({ session }: { session: SessionApi }) {
   const [started, setStarted] = useState(false)
   const [frameKey, setFrameKey] = useState(0)
 
-  async function handleStart(e: FormEvent) {
-    e.preventDefault()
-    if (!Number.isFinite(port) || port < 1 || port > 65535) return
+  // A detected dev server chip was clicked: prefill the port and start immediately.
+  const handledNonce = useRef(0)
+  useEffect(() => {
+    if (!requested || requested.nonce === handledNonce.current) return
+    handledNonce.current = requested.nonce
+    setPort(requested.port)
+    void start(requested.port)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested])
+
+  async function start(p: number) {
+    if (!Number.isFinite(p) || p < 1 || p > 65535) return
     setLoading(true)
     setFailed(false)
     setStarted(true)
     setUrl(null)
     try {
-      const result = await session.exposePort(port, window.location.host)
+      const result = await session.exposePort(p, window.location.host)
       if (result) {
         setUrl(result)
       } else {
@@ -34,6 +49,12 @@ export function PreviewPanel({ session }: { session: SessionApi }) {
       setLoading(false)
     }
   }
+
+  async function handleStart(e: FormEvent) {
+    e.preventDefault()
+    return start(port)
+  }
+
 
   return (
     <div className="flex h-full flex-col gap-3 p-4">

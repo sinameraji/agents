@@ -1,4 +1,4 @@
-import { GitBranch } from 'lucide-react'
+import { GitBranch, MonitorPlay } from 'lucide-react'
 
 import type { NormPart } from '~shared/agent'
 import { TextPart } from './parts/text-part'
@@ -36,6 +36,22 @@ export function PartView({ part }: { part: NormPart }) {
           {part.description && (
             <span className="min-w-0 truncate text-muted-foreground">{part.description}</span>
           )}
+        </div>
+      )
+    case 'preview':
+      return (
+        <div className="flex items-center gap-2.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2.5">
+          <MonitorPlay className="size-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 text-sm">
+            Dev server detected on port <span className="font-mono">{part.port}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('dw:preview', { detail: { port: part.port } }))}
+            className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Open preview
+          </button>
         </div>
       )
     case 'error':
