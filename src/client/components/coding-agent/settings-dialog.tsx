@@ -147,11 +147,17 @@ export function SettingsDialog({ ua, onClose }: { ua: UserAgentApi; onClose: () 
                       />
                       <span className="truncate">{p.label}</span>
                     </span>
-                    {provider === p.id && <Check className="size-3.5 shrink-0 text-primary" />}
+                    {provider === p.id && (
+                      <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">default</span>
+                    )}
                   </button>
                 )
               })}
             </div>
+            <p className="text-[11px] text-muted-foreground">
+              <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-success align-middle" />
+              = credentials saved. “default” is where new sessions send model calls.
+            </p>
           </section>
 
           {provider !== 'cloudflare' ? (

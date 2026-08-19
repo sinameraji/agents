@@ -203,6 +203,13 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
     // Connecting means CONNECTED: provision the AI Gateway now (best-effort) rather than making
     // the user click a second "set up" button for what the consent already authorized.
     await u.ensureAiGateway().catch(() => null)
+    // If Cloudflare is the user's only credentialed provider, make it the default — otherwise
+    // new sessions would point at a provider they hold no key for.
+    const u2 = user as { getDecryptedConnections: () => Promise<Record<string, string | undefined>>; saveSettings: (i: unknown) => Promise<unknown> }
+    const conn = await u2.getDecryptedConnections().catch(() => ({}) as Record<string, string | undefined>)
+    if (!conn.openrouterKey && !conn.anthropicKey && !conn.openaiKey) {
+      await u2.saveSettings({ settings: { defaultProvider: 'cloudflare' } }).catch(() => null)
+    }
   }
 
   if (flow.link) {
