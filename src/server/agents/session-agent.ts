@@ -246,7 +246,29 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   // --- workspace hydration + persistence ----------------------------------------------------
   /** Restore a prior snapshot, or clone the source repo, if the container's /workspace is empty. */
+  /** Let the HARNESS itself push: seed git identity + a credential-store entry for github.com
+   *  from the user's stored token. The credential lives only on the ephemeral container disk
+   *  (outside /workspace, never in backups/exports). Note: any agent running in the sandbox can
+   *  read it — that is inherent to giving agents push capability. */
+  private async ensureGitCredentials(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
+    try {
+      const conn = await this.connections()
+      if (!conn.githubPat) return
+      const marker = `gitcred:${conn.githubPat.slice(-6)}`
+      if (this.getKv<string | null>('gitcredMarker', null) === marker) return
+      const login = 'x-access-token'
+      await sandbox.exec(
+        `sh -lc 'git config --global credential.helper store; git config --global user.name dreamweav; git config --global user.email agent@dreamweav.com; printf "https://${login}:%s@github.com\n" "${conn.githubPat}" > ~/.git-credentials; chmod 600 ~/.git-credentials'`,
+        { timeout: 20_000 },
+      )
+      this.putKv('gitcredMarker', marker)
+    } catch (e) {
+      console.error('[dreamweav] git credential setup failed', e)
+    }
+  }
+
   private async ensureWorkspace(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
+    await this.ensureGitCredentials(sandbox)
     const empty = await sandbox
       .exec('sh -lc \'[ -z "$(ls -A /workspace 2>/dev/null)" ] && echo EMPTY || echo FULL\'')
       .then((r) => (r as { stdout?: string }).stdout?.includes('EMPTY'))
