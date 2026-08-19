@@ -21,7 +21,6 @@ export function LoginDialog({ onClose }: { onClose: () => void }) {
         <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className="absolute top-3 right-3">
           <X className="size-4" />
         </Button>
-        <p className="text-center text-sm text-muted-foreground">Sign in to make that happen — it takes one click.</p>
         <LoginOptions />
       </div>
     </div>
