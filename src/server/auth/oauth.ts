@@ -59,6 +59,8 @@ interface FlowState {
   p: 'cloudflare' | 'github'
   s: string // state
   v?: string // PKCE verifier
+  /** When set, this is a "connect" flow: provision onto this existing user id, keep their session. */
+  link?: string
   exp: number
 }
 
@@ -121,7 +123,7 @@ async function completeLogin(
 }
 
 // --- Cloudflare ------------------------------------------------------------------------------
-export async function startCfLogin(request: Request, env: OauthEnv): Promise<Response> {
+export async function startCfLogin(request: Request, env: OauthEnv, linkUserId?: string): Promise<Response> {
   if (!env.CF_OAUTH_CLIENT_ID || !env.AUTH_SECRET) return failPage('Cloudflare login is not configured yet.')
   const origin = new URL(request.url).origin
   const state = rand(16)
@@ -135,7 +137,7 @@ export async function startCfLogin(request: Request, env: OauthEnv): Promise<Res
   url.searchParams.set('state', state)
   url.searchParams.set('code_challenge', challenge)
   url.searchParams.set('code_challenge_method', 'S256')
-  const cookie = flowCookie(await signFlow({ p: 'cloudflare', s: state, v: verifier, exp: Date.now() + 600_000 }, env.AUTH_SECRET))
+  const cookie = flowCookie(await signFlow({ p: 'cloudflare', s: state, v: verifier, link: linkUserId, exp: Date.now() + 600_000 }, env.AUTH_SECRET))
   return new Response(null, { status: 302, headers: { location: url.toString(), 'set-cookie': cookie } })
 }
 
@@ -186,8 +188,8 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
   const granted = (Array.isArray(accounts.result) ? accounts.result : []) as Array<{ id?: string; name?: string }>
   const accountId = granted[0]?.id
 
-  return completeLogin(env, email, async (user) => {
-    const u = user as unknown as {
+  const provision = async (user: unknown) => {
+    const u = user as {
       saveSettings: (i: { connections?: Record<string, string> }) => Promise<unknown>
       storeCfOauth: (b: { access: string; refresh: string | null; expiresAt: number }) => Promise<unknown>
     }
@@ -197,7 +199,15 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
       refresh: token.refresh_token ?? null,
       expiresAt: Date.now() + (token.expires_in ?? 3600) * 1000,
     })
-  })
+  }
+
+  if (flow.link) {
+    // Connect flow: provision onto the EXISTING logged-in account; identity/session unchanged.
+    const user = await getAgentByName(env.UserAgent, flow.link)
+    await provision(user)
+    return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': clearFlowCookie() } })
+  }
+  return completeLogin(env, email, provision)
 }
 
 // --- Email magic link ------------------------------------------------------------------------

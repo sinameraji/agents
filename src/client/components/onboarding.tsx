@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Check, ChevronDown, ExternalLink, GitBranch, KeyRound, Loader2, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, ExternalLink, GitBranch, KeyRound, Link2, Loader2, Sparkles } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useRouter } from '@/router'
@@ -9,6 +9,74 @@ import type { UserAgentApi } from '@/hooks/use-user-agent'
 import { HARNESSES, type Harness, type SessionSource } from '~shared/protocol'
 import { Button } from '@/components/ui/button'
 import { PROVIDERS } from './coding-agent/settings-dialog'
+
+/** Themed dropdown (the native <select> looks like the OS, not like Dreamweav). */
+function Dropdown<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: T
+  options: { id: T; label: string }[]
+  onChange: (v: T) => void
+  ariaLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  const current = options.find((o) => o.id === value)
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-10 w-full items-center justify-between rounded-lg border border-border bg-background px-3 text-sm transition-colors hover:bg-muted/40 focus:border-primary/50 focus:outline-none"
+      >
+        <span className="truncate">{current?.label ?? value}</span>
+        <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div role="listbox" aria-label={ariaLabel} className="absolute inset-x-0 top-[calc(100%+0.375rem)] z-30 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-xl">
+          {options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              role="option"
+              aria-selected={o.id === value}
+              onClick={() => {
+                onChange(o.id)
+                setOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors',
+                o.id === value ? 'bg-muted text-foreground' : 'text-foreground/90 hover:bg-muted',
+              )}
+            >
+              <span className="truncate">{o.label}</span>
+              {o.id === value && <Check className="size-3.5 shrink-0 text-primary" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 type Step = 1 | 2 | 3
 
@@ -43,6 +111,21 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [gwBusy, setGwBusy] = useState(false)
+  const [gwNote, setGwNote] = useState<string | null>(null)
+  const [manualCf, setManualCf] = useState(false)
+
+  const gwStored = !!ua.connections?.cloudflareGatewayId
+  const setupGateway = async () => {
+    setGwBusy(true)
+    setGwNote(null)
+    try {
+      const r = await ua.ensureAiGateway()
+      setGwNote(r.ok ? `Gateway “${r.gatewayId}” is ready.` : (r.note ?? 'Could not set up a gateway.'))
+    } finally {
+      setGwBusy(false)
+    }
+  }
 
   const meta = PROVIDERS.find((p) => p.id === provider)!
   const keyStored = !!ua.connections?.[meta.field]
@@ -50,7 +133,7 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
   /** "Log in with Cloudflare" already provisioned creds — step 1 becomes a confirmation + optional extras. */
   const cfFromLogin = cfStored
   const providerReady =
-    provider === 'cloudflare' ? (cfStored || (!!key && !!cfAccount)) : keyStored || !!key
+    provider === 'cloudflare' ? ((cfStored && gwStored) || (!!key && !!cfAccount)) : keyStored || !!key
   const kimiNeedsCreds = harness === 'kimiflare' && !cfStored && provider !== 'cloudflare'
 
   const finishStep1 = async () => {
@@ -192,6 +275,20 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                 openrouter.ai/settings/keys <ExternalLink className="size-3" />
               </a>
             </p>
+            {gwStored ? (
+              <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs">
+                <Check className="size-3.5 shrink-0 text-success" />
+                AI Gateway ready — the Cloudflare provider works for every harness too.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => void setupGateway()} disabled={gwBusy} className="justify-center gap-2 self-start">
+                  {gwBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                  Set up AI Gateway automatically · optional
+                </Button>
+                {gwNote && <p className="text-xs text-muted-foreground">{gwNote}</p>}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Button
                 onClick={() => {
@@ -224,28 +321,51 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                 Bring your own key — it&apos;s encrypted and only used to run your sessions.
               </p>
             </div>
-            <div className="relative">
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value as typeof provider)}
-                aria-label="Model provider"
-                className="h-10 w-full appearance-none rounded-lg border border-border bg-background px-3 pr-9 text-sm outline-none focus:border-primary/50"
-              >
-                {PROVIDERS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                    {p.id === 'openrouter' ? ' — one key, every model' : ''}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute top-3 right-3 size-4 text-muted-foreground" />
-            </div>
+            <Dropdown
+              value={provider}
+              onChange={setProvider}
+              ariaLabel="Model provider"
+              options={PROVIDERS.map((p) => ({ id: p.id, label: p.label }))}
+            />
 
             {provider === 'cloudflare' ? (
               <div className="flex flex-col gap-2">
-                <input value={cfAccount} onChange={(e) => setCfAccount(e.target.value)} placeholder={cfStored ? 'Account ID · saved' : 'Account ID'} aria-label="Cloudflare Account ID" className={inputCls} />
-                <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={cfStored ? 'API token · saved — paste to replace' : 'API token'} aria-label="Cloudflare API token" className={inputCls} />
-                <input value={cfGateway} onChange={(e) => setCfGateway(e.target.value)} placeholder="AI Gateway ID (optional)" aria-label="Cloudflare AI Gateway ID" className={inputCls} />
+                {cfStored ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm">
+                    <Check className="size-4 shrink-0 text-success" />
+                    Cloudflare connected from your login
+                  </div>
+                ) : (
+                  <Button type="button" onClick={() => window.location.assign('/auth/cloudflare')} className="justify-center gap-2">
+                    <Link2 className="size-4" />
+                    Connect Cloudflare — one click, no tokens
+                  </Button>
+                )}
+                {cfStored &&
+                  (gwStored ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm">
+                      <Check className="size-4 shrink-0 text-success" />
+                      AI Gateway ready
+                    </div>
+                  ) : (
+                    <Button type="button" variant="outline" onClick={() => void setupGateway()} disabled={gwBusy} className="justify-center gap-2">
+                      {gwBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                      Set up AI Gateway automatically
+                    </Button>
+                  ))}
+                {gwNote && <p className="text-xs text-muted-foreground">{gwNote}</p>}
+                {!cfStored && (
+                  <button type="button" onClick={() => setManualCf((v) => !v)} className="self-start text-xs text-muted-foreground hover:text-foreground">
+                    {manualCf ? 'Hide manual setup' : 'Enter credentials manually instead'}
+                  </button>
+                )}
+                {!cfStored && manualCf && (
+                  <>
+                    <input value={cfAccount} onChange={(e) => setCfAccount(e.target.value)} placeholder="Account ID" aria-label="Cloudflare Account ID" className={inputCls} />
+                    <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="API token" aria-label="Cloudflare API token" className={inputCls} />
+                    <input value={cfGateway} onChange={(e) => setCfGateway(e.target.value)} placeholder="AI Gateway ID (optional)" aria-label="Cloudflare AI Gateway ID" className={inputCls} />
+                  </>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
@@ -283,19 +403,12 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
                 The open-source agent that reads, edits, and runs your code. OpenCode is a great default — you can pick a different one per session anytime.
               </p>
             </div>
-            <div className="relative">
-              <select
-                value={harness}
-                onChange={(e) => setHarness(e.target.value as Harness)}
-                aria-label="Harness"
-                className="h-10 w-full appearance-none rounded-lg border border-border bg-background px-3 pr-9 text-sm outline-none focus:border-primary/50"
-              >
-                {HARNESSES.filter((h) => h.enabled).map((h) => (
-                  <option key={h.id} value={h.id}>{h.label}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute top-3 right-3 size-4 text-muted-foreground" />
-            </div>
+            <Dropdown
+              value={harness}
+              onChange={setHarness}
+              ariaLabel="Harness"
+              options={HARNESSES.filter((h) => h.enabled).map((h) => ({ id: h.id, label: h.label }))}
+            />
             <p className="text-xs leading-relaxed text-muted-foreground">
               {selectedHarness.blurb} ·{' '}
               <a href={selectedHarness.repoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
@@ -304,10 +417,15 @@ export function Onboarding({ ua }: { ua: UserAgentApi }) {
             </p>
             {kimiNeedsCreds && (
               <div className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
-                <p className="text-xs text-foreground/90">
-                  KimiFlare runs on your Cloudflare account. Token scopes:{' '}
-                  <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span> —{' '}
-                  <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer" className="text-primary hover:underline">create one</a>
+                <p className="text-xs text-foreground/90">KimiFlare runs on your Cloudflare account.</p>
+                <Button type="button" size="sm" onClick={() => window.location.assign('/auth/cloudflare')} className="justify-center gap-2 self-start">
+                  <Link2 className="size-3.5" />
+                  Connect Cloudflare — one click, no tokens
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Or paste a token with <span className="font-mono">Workers AI:Read · AI Gateway:Read/Edit</span>{' '}
+                  from{' '}
+                  <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer" className="text-primary hover:underline">dash.cloudflare.com</a>:
                 </p>
                 <input value={kfAccount} onChange={(e) => setKfAccount(e.target.value)} placeholder="Account ID" aria-label="Cloudflare Account ID" className={inputCls} />
                 <input type="password" value={kfToken} onChange={(e) => setKfToken(e.target.value)} placeholder="API token" aria-label="Cloudflare API token" className={inputCls} />

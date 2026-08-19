@@ -228,6 +228,49 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     return this.getSettings()
   }
 
+  /** One-click AI Gateway: reuse the stored gateway, else find or create one on the user's
+   *  account via the API (needs AI Gateway:Read/Edit — granted by "Log in with Cloudflare"). */
+  @callable()
+  async ensureAiGateway(): Promise<{ ok: boolean; gatewayId?: string; note?: string }> {
+    const conn = await this.getDecryptedConnections()
+    if (!conn.cloudflareAccountId || !conn.cloudflareApiToken) {
+      return { ok: false, note: 'Connect Cloudflare first.' }
+    }
+    if (conn.cloudflareGatewayId) return { ok: true, gatewayId: conn.cloudflareGatewayId }
+    const base = `https://api.cloudflare.com/client/v4/accounts/${conn.cloudflareAccountId}/ai-gateway/gateways`
+    const headers = { authorization: `Bearer ${conn.cloudflareApiToken}`, 'content-type': 'application/json' }
+    const pick = async (): Promise<string | null> => {
+      const res = (await fetch(`${base}?per_page=20`, { headers }).then((r) => r.json()).catch(() => ({}))) as {
+        success?: boolean
+        result?: Array<{ id?: string }>
+      }
+      const list = Array.isArray(res.result) ? res.result : []
+      return (list.find((g) => g.id === 'dreamweav') ?? list[0])?.id ?? null
+    }
+    let id = await pick()
+    if (!id) {
+      const created = (await fetch(base, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          id: 'dreamweav',
+          cache_invalidate_on_update: false,
+          cache_ttl: 0,
+          collect_logs: true,
+          rate_limiting_interval: 0,
+          rate_limiting_limit: 0,
+          rate_limiting_technique: 'fixed',
+        }),
+      })
+        .then((r) => r.json())
+        .catch(() => ({}))) as { success?: boolean; result?: { id?: string }; errors?: Array<{ message?: string }> }
+      id = created.result?.id ?? (created.success === false ? null : await pick())
+      if (!id) return { ok: false, note: created.errors?.[0]?.message ?? 'Could not create a gateway.' }
+    }
+    await this.saveSettings({ connections: { cloudflareGatewayId: id } })
+    return { ok: true, gatewayId: id }
+  }
+
   /** Magic-link login: remember a pending single-use nonce (15-minute TTL). */
   async storePendingLogin(nonce: string, exp: number): Promise<{ ok: true }> {
     this.sql`DELETE FROM settings WHERE k LIKE 'login:%' AND CAST(v AS INTEGER) < ${Date.now()}`

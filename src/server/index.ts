@@ -51,8 +51,12 @@ app.post('/api/login/email', async (c) => {
 })
 app.get('/auth/email/callback', (c) => finishEmailLogin(c.req.raw, c.env as never))
 
-// OAuth logins (unauthenticated by design)
-app.get('/auth/cloudflare', (c) => startCfLogin(c.req.raw, c.env as never))
+// OAuth logins (unauthenticated by design). A logged-in user hitting /auth/cloudflare is a
+// CONNECT flow: Cloudflare creds provision onto their existing account, no identity switch.
+app.get('/auth/cloudflare', async (c) => {
+  const identity = await resolveIdentity(c.req.raw, c.env)
+  return startCfLogin(c.req.raw, c.env as never, identity?.id)
+})
 app.get('/auth/cloudflare/callback', (c) => finishCfLogin(c.req.raw, c.env as never))
 app.get('/auth/github', (c) => startGithubLogin(c.req.raw, c.env as never))
 app.get('/auth/github/callback', (c) => finishGithubLogin(c.req.raw, c.env as never))
