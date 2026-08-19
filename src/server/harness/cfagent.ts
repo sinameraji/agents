@@ -23,14 +23,17 @@ export interface CfAgentEmit {
   usage(usage: NormUsage): void
 }
 
-function providerBase(provider: Provider, conn: Connections): { url: string; key: string } {
+function providerBase(provider: Provider, conn: Connections): { url: string; key: string; headers?: Record<string, string> } {
   switch (provider) {
     case 'openrouter':
       return { url: 'https://openrouter.ai/api/v1', key: conn.openrouterKey ?? '' }
     case 'cloudflare':
+      // The gateway authenticates via cf-aig-authorization; a plain Authorization header would be
+      // forwarded upstream as the provider key (which is how CF tokens ended up at OpenAI).
       return {
         url: `https://gateway.ai.cloudflare.com/v1/${conn.cloudflareAccountId}/${conn.cloudflareGatewayId}/compat`,
         key: conn.cloudflareApiToken ?? '',
+        headers: { 'cf-aig-authorization': `Bearer ${conn.cloudflareApiToken ?? ''}` },
       }
     case 'anthropic':
       return { url: 'https://api.anthropic.com/v1', key: conn.anthropicKey ?? '' }
@@ -46,8 +49,8 @@ export async function summarizeMessages(opts: {
   creds: Connections
   messages: ModelMessage[]
 }): Promise<string> {
-  const { url, key } = providerBase(opts.provider, opts.creds)
-  const provider = createOpenAICompatible({ name: opts.provider, baseURL: url, apiKey: key })
+  const { url, key, headers } = providerBase(opts.provider, opts.creds)
+  const provider = createOpenAICompatible({ name: opts.provider, baseURL: url, apiKey: key, headers })
   const plain = opts.messages
     .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content).slice(0, 2000)}`)
     .join('\n')
@@ -84,8 +87,8 @@ export async function runCfAgentLoop(opts: {
   emit: CfAgentEmit
 }): Promise<{ text: string; usage: NormUsage }> {
   const { sandbox, mode, emit, signal } = opts
-  const { url, key } = providerBase(opts.provider, opts.creds)
-  const provider = createOpenAICompatible({ name: opts.provider, baseURL: url, apiKey: key })
+  const { url, key, headers } = providerBase(opts.provider, opts.creds)
+  const provider = createOpenAICompatible({ name: opts.provider, baseURL: url, apiKey: key, headers })
   const readonly = mode === 'plan'
   const CWD = '/workspace'
 

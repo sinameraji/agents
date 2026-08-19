@@ -12,7 +12,7 @@ import { z } from 'zod'
 import type { AdapterSink, HarnessAdapter, StartConfig } from './types'
 import type { NormToolState } from '../normalize'
 
-function baseURL(cfg: StartConfig): { url: string; key: string; model: string } {
+function baseURL(cfg: StartConfig): { url: string; key: string; model: string; headers?: Record<string, string> } {
   switch (cfg.provider) {
     case 'openrouter':
       return { url: 'https://openrouter.ai/api/v1', key: cfg.creds.openrouterKey ?? '', model: cfg.model }
@@ -21,6 +21,7 @@ function baseURL(cfg: StartConfig): { url: string; key: string; model: string } 
         url: `https://gateway.ai.cloudflare.com/v1/${cfg.creds.cloudflareAccountId}/${cfg.creds.cloudflareGatewayId}/compat`,
         key: cfg.creds.cloudflareApiToken ?? '',
         model: cfg.model,
+        headers: { 'cf-aig-authorization': `Bearer ${cfg.creds.cloudflareApiToken ?? ''}` },
       }
     case 'anthropic':
       return { url: 'https://api.anthropic.com/v1', key: cfg.creds.anthropicKey ?? '', model: cfg.model }
@@ -59,8 +60,8 @@ export function createAiSdkAdapter(): HarnessAdapter {
       messages = []
     },
     async prompt(text, sink: AdapterSink) {
-      const { url, key, model } = baseURL(cfg)
-      const provider = createOpenAICompatible({ name: cfg.provider, baseURL: url, apiKey: key })
+      const { url, key, model, headers } = baseURL(cfg)
+      const provider = createOpenAICompatible({ name: cfg.provider, baseURL: url, apiKey: key, headers })
       messages.push({ role: 'user', content: text })
       controller = new AbortController()
 
@@ -180,8 +181,8 @@ export function createAiSdkAdapter(): HarnessAdapter {
       if (name !== 'compact') return { ok: false, note: 'Not supported.' }
       if (messages.length === 0) return { ok: true, note: 'Nothing to compact.' }
       try {
-        const { url, key, model } = baseURL(cfg)
-        const provider = createOpenAICompatible({ name: cfg.provider, baseURL: url, apiKey: key })
+        const { url, key, model, headers } = baseURL(cfg)
+        const provider = createOpenAICompatible({ name: cfg.provider, baseURL: url, apiKey: key, headers })
         const { text } = await generateText({
           model: provider.chatModel(model),
           system:
