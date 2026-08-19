@@ -29,7 +29,7 @@ loop behind the `bridge` HTTP server on :7700).
   never bake bridge code into the image (warm-pool containers run stale images).
 - Durability = git (user's GitHub) + R2 tar snapshots of `/workspace`. Never assume container disk survives sleep.
 - BYO credentials only (OpenRouter / Cloudflare AI Gateway / Anthropic / OpenAI keys). Never Claude Pro/Max OAuth.
-- Use `npm` (no pnpm). Commit granularly (one logical change per commit); push to `sinameraji/opennotopen`.
+- Use `npm` (no pnpm). Commit granularly (one logical change per commit); push to `sinameraji/dreamweav`.
 
 **Commands:** `npm run dev` · `npm run build` · `npm run typecheck` · `npm test` · deploy =
 `npm run build && npx wrangler deploy` (Workers Paid; secrets: ENCRYPTION_KEY, APP_PASSWORD, AUTH_SECRET).

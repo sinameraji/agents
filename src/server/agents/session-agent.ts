@@ -305,7 +305,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         dir: '/workspace',
         excludes: ['node_modules', '*.log', '.cache', 'dist', '.next'],
         localBucket: true,
-        ttl: 7 * 24 * 60 * 60,
+        ttl: 30 * 24 * 60 * 60, // walk-away-for-weeks usage: workspace snapshots live 30 days
       } as never)
       this.putKv('backup', backup)
     } catch (e) {
@@ -464,7 +464,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
 
-    const deadline = Date.now() + 8 * 60 * 1000
+    const deadline = Date.now() + 30 * 60 * 1000 // long agent turns are legit; this only guards runaway polls
     let stable = 0
     let lastSnapshot = ''
     try {
@@ -668,7 +668,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
 
-    const deadline = Date.now() + 8 * 60 * 1000
+    const deadline = Date.now() + 30 * 60 * 1000 // long agent turns are legit; this only guards runaway polls
     let stable = 0
     let lastSnapshot = ''
     let sawComplete = false
