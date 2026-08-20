@@ -94,7 +94,7 @@ export type Harness = 'pi' | 'opencode' | 'kimiflare' | 'aisdk' | 'cfagent'
 export const HARNESSES: { id: Harness; label: string; blurb: string; repoUrl: string; enabled: boolean }[] = [
   { id: 'cfagent', label: 'Agents SDK', blurb: 'Cloudflare-native: loop runs in the Durable Object, true streaming, tools via sandbox RPC', repoUrl: 'https://github.com/cloudflare/agents', enabled: true },
   { id: 'aisdk', label: 'AI SDK', blurb: 'Vercel AI SDK loop, any OpenAI-compatible model', repoUrl: 'https://github.com/vercel/ai', enabled: true },
-  { id: 'kimiflare', label: 'KimiFlare', blurb: 'Kimi Moonshot models on your Cloudflare, open source, by Sina Meraji (creator of Dreamweav)', repoUrl: 'https://github.com/sinameraji/kimiflare', enabled: true },
+  { id: 'kimiflare', label: 'KimiFlare', blurb: 'Kimi Moonshot models on your Cloudflare, open source, by Sina Meraji (creator of Agents)', repoUrl: 'https://github.com/sinameraji/kimiflare', enabled: true },
   { id: 'opencode', label: 'OpenCode', blurb: 'Sub-agents, permissions, LSP (by Anomaly)', repoUrl: 'https://github.com/sst/opencode', enabled: true },
   { id: 'pi', label: 'pi', blurb: 'Minimal, fast agent by Mario Zechner', repoUrl: 'https://github.com/earendil-works/pi', enabled: true },
 ]
