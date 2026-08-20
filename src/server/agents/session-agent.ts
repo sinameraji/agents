@@ -409,7 +409,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     if (!healthy) {
       this.bridgeStarted = false
       // Kill any stale bridge, write THIS deploy's bridge into the container, and launch it.
-      await sandbox.exec("sh -lc 'pkill -f dw-bridge.mjs || true'").catch(() => null)
+      // Bracketed so the pattern can't match this exec's own wrapper shell (a plain
+      // `pkill -f dw-bridge.mjs` SIGTERMs its own `sh -lc`, which also names the file).
+      await sandbox.exec('sh -lc \'pkill -f "dw-bridge[.]mjs" || true\'').catch(() => null)
       await sandbox.writeFile(BRIDGE_PATH, bridgeSource)
       const startRes = await sandbox
         .exec(`sh -lc 'BRIDGE_REV=${BRIDGE_HASH} nohup node ${BRIDGE_PATH} > /tmp/bridge.log 2>&1 & echo started'`)
@@ -703,12 +705,17 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // Model changed since the server booted: kill it so createOpencode starts fresh with the
     // rebuilt config (the custom provider's model map + per-model options only apply at start).
     // Session history persists on the container disk, so the same sessionID resumes seamlessly.
+    // The bracketed pattern can never match this exec's own wrapper (a bare `pkill -f opencode`
+    // SIGTERMs its own `sh -lc`, whose cmdline contains "opencode"), and the pgrep loop replaces
+    // a blind 500ms sleep: createOpencode reuses any process the registry still reports as
+    // running, so racing a dying server would silently keep the OLD config.
     if (this.getKv<boolean>('ocModelDirty', false)) {
       this.putKv('ocModelDirty', false)
       this.ocRestarted = true
       this.opencode = undefined
-      await sandbox.exec("sh -lc 'pkill -f opencode || true'").catch(() => null)
-      await new Promise((r) => setTimeout(r, 500))
+      await sandbox
+        .exec('sh -lc \'pkill -f "[o]pencode serve" || true; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do pgrep -f "[o]pencode serve" >/dev/null || break; sleep 0.25; done\'')
+        .catch(() => null)
     }
     const booted = createOpencode(sandbox, { directory: '/workspace', config })
     const timeout = new Promise<never>((_, reject) =>
