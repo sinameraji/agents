@@ -85,3 +85,18 @@ describe('normalizeUnifiedId', () => {
     expect(normalizeUnifiedId('moonshotai/kimi-k3')).toBe('moonshotai/kimi-k3')
   })
 })
+
+describe('locationHintForCountry', () => {
+  it('keeps East Asian sessions off the Hong Kong edge that OpenAI refuses', async () => {
+    const { locationHintForCountry } = await import('../src/shared/protocol')
+    expect(locationHintForCountry('JP')).toBe('apac-ne')
+    expect(locationHintForCountry('hk')).toBe('apac-ne')
+    expect(locationHintForCountry('KR')).toBe('apac-ne')
+  })
+  it('leaves placement to Cloudflare everywhere we have no evidence', async () => {
+    const { locationHintForCountry } = await import('../src/shared/protocol')
+    expect(locationHintForCountry('US')).toBeUndefined()
+    expect(locationHintForCountry('DE')).toBeUndefined()
+    expect(locationHintForCountry(undefined)).toBeUndefined()
+  })
+})

@@ -140,10 +140,12 @@ app.all('/aig/:sid/*', async (c) => {
   if (ct) headers['content-type'] = ct
   const accept = c.req.header('accept')
   if (accept) headers.accept = accept
+  // Buffered (not streamed) so a geo-blocked request can be replayed on the fallback path below.
+  const reqBody = c.req.method === 'POST' ? await c.req.raw.arrayBuffer() : undefined
   const upstream = await fetch(`https://gateway.ai.cloudflare.com/v1/${auth.accountId}/${auth.gatewayId}/${rest}`, {
     method: c.req.method,
     headers,
-    body: c.req.raw.body,
+    body: reqBody,
   })
   // Unified billing egresses from whichever Cloudflare colo serves the request, and some vendors
   // geo-block their own supported-country list (OpenAI 403s from HKG, for example). The raw
@@ -152,8 +154,24 @@ app.all('/aig/:sid/*', async (c) => {
   if (upstream.status === 403) {
     const text = await upstream.text()
     if (/country,?\s*region,?\s*or territory/i.test(text)) {
+      // The refusal follows the Cloudflare colo this request happened to egress from, not the
+      // user: the same session on the same model succeeds via NRT and fails via HKG minutes apart.
+      // Cloudflare's REST inference endpoint is not served from the edge colo (its gateway logs
+      // carry no colo at all), so replaying there routes around a blocked edge instead of handing
+      // the user a dead turn. Same account, same credits, same unified billing.
+      if (reqBody && rest.startsWith('compat/')) {
+        const alt = await fetch(`https://api.cloudflare.com/client/v4/accounts/${auth.accountId}/ai/v1/${rest.slice('compat/'.length)}`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${auth.token}`, 'cf-aig-gateway-id': auth.gatewayId, 'content-type': 'application/json' },
+          body: reqBody,
+        })
+        if (alt.ok) {
+          console.log('[aig] geo-blocked at the edge, served via the REST endpoint instead')
+          return alt
+        }
+      }
       const colo = (upstream.headers.get('cf-ray') ?? '').split('-')[1] || 'this'
-      const message = `This model's provider refused the request from Cloudflare's ${colo} edge because it does not serve that region. Your credits and key are fine. Pick a model from another provider (Workers AI and Anthropic are unaffected) or retry from a different network.`
+      const message = `This model's provider refused the request from Cloudflare's ${colo} edge because it does not serve that region, and the fallback route failed too. Your credits and key are fine. Retry (the edge rotates, so the next attempt often succeeds) or pick a Workers AI or Anthropic model, which are unaffected.`
       return c.json({ error: { message, type: 'region_not_supported', code: 'unsupported_country_region_territory', upstream: text.slice(0, 300) } }, 403)
     }
     return c.newResponse(text, 403, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' })

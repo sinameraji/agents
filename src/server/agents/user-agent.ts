@@ -3,6 +3,7 @@ import { getSandbox } from '@cloudflare/sandbox'
 import { decryptSecret, encryptSecret, maskSecret } from '../crypto'
 import { monthKeyOf, rollSpendCheckpoint, type SpendCheckpoint } from '../spend'
 import { deriveZone, describeCfError, isCfAuthError, normalizeHostname, type DomainWizardState } from '~shared/domain'
+import { locationHintForCountry } from '~shared/protocol'
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SETTINGS,
@@ -117,6 +118,10 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     try {
       const host = new URL(ctx.request.url).host
       if (host && this.getSetting<string>('servingHost', '') !== host) this.putSetting('servingHost', host)
+      // Country of the connecting client, used to place new session containers in a region whose
+      // Cloudflare colos the model vendors actually serve (see locationHintForCountry).
+      const country = (ctx.request as { cf?: { country?: string } }).cf?.country
+      if (country && this.getSetting<string>('country', '') !== country) this.putSetting('country', country)
     } catch { /* never block a connect on bookkeeping */ }
   }
 
@@ -145,7 +150,9 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     this.sql`INSERT INTO sessions (id, name, repo, branch, harness, status, model, provider, source_json, created_at)
              VALUES (${id}, ${name}, ${repo}, ${branch}, ${harness}, 'provisioning', ${model}, ${provider},
                      ${JSON.stringify(input.source)}, ${new Date().toISOString()})`
-    void getAgentByName(this.env.SessionAgent, id).then((sa) =>
+    // locationHint only binds on the FIRST get for this id, which is exactly here.
+    const locationHint = locationHintForCountry(this.getSetting<string>('country', ''))
+    void getAgentByName(this.env.SessionAgent, id, locationHint ? { locationHint } : undefined).then((sa) =>
       sa.init({ owner: this.name, source: input.source, harness, provider, model, name, repo, branch, host: this.getSetting<string>('servingHost', '') || undefined }),
     )
     return { id }

@@ -4,6 +4,29 @@ export type SessionMode = 'plan' | 'build' | 'auto'
 
 export type SandboxRegion = 'iad1' | 'sfo1' | 'fra1' | 'hnd1'
 
+/** Durable Object placement hints (Cloudflare's documented set). */
+export type LocationHint = 'wnam' | 'enam' | 'sam' | 'weur' | 'eeur' | 'apac' | 'apac-ne' | 'apac-se' | 'oc' | 'afr' | 'me'
+
+/**
+ * Where to place a new session's Durable Object, and therefore its sandbox container.
+ *
+ * This is not just a latency knob. Model traffic leaves the container, re-enters Cloudflare at
+ * the colo nearest that container, and egresses to the vendor from there — so container placement
+ * decides which country the vendor thinks the request came from. OpenAI refuses Hong Kong
+ * (403 "Country, region, or territory not supported"), which is how a session created from Japan
+ * died while the same model answered fine minutes earlier: one request happened to route via HKG,
+ * the others via NRT. Observed on this account: NRT and ICN serve OpenAI, HKG does not.
+ *
+ * So East Asia is pinned to apac-ne (Tokyo/Seoul) rather than the generic apac, which is free to
+ * land in Hong Kong. Everywhere else keeps Cloudflare's own choice (undefined) until we have
+ * evidence to override it, because a wrong hint only adds latency.
+ */
+export function locationHintForCountry(country: string | undefined): LocationHint | undefined {
+  const c = (country ?? '').toUpperCase()
+  if (['JP', 'KR', 'TW', 'HK', 'MO', 'CN', 'MN'].includes(c)) return 'apac-ne'
+  return undefined
+}
+
 export interface Session {
   id: string
   name: string
