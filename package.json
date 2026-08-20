@@ -81,6 +81,12 @@
       },
       "BACKUP_BUCKET": {
         "description": "R2 bucket for workspace snapshots, so session workspaces survive container sleep."
+      },
+      "APP_NAME": {
+        "description": "Display name shown in the app UI. Leave as Agents unless you want your own branding."
+      },
+      "WORKER_NAME": {
+        "description": "Name of the Worker on your account. Leave as is unless you run more than one instance."
       }
     }
   }
