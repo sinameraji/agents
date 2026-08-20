@@ -63,6 +63,11 @@ const BRIDGE_HASH = (() => {
 })()
 const BRIDGE_PATH = '/tmp/dw-bridge.mjs'
 
+/** OpenCode's XDG data home, pinned INSIDE /workspace: its SQLite session store then survives
+ *  container recycles via the R2 checkpoint/restore cycle instead of dying with ~/.local/share.
+ *  (Ignored from the user's repo via .git/info/exclude, never .gitignore.) */
+const OC_DATA_HOME = '/workspace/.opencode-data'
+
 interface TurnRow {
   id: string
   seq: number
@@ -704,7 +709,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     await this.ensureWorkspace(sandbox)
     // Model changed since the server booted: kill it so createOpencode starts fresh with the
     // rebuilt config (the custom provider's model map + per-model options only apply at start).
-    // Session history persists on the container disk, so the same sessionID resumes seamlessly.
+    // Session history lives in OpenCode's SQLite db (pinned below), so the same sessionID
+    // resumes with full context after the restart — verified against the real 0.12.7-opencode
+    // image (opencode 1.18.18).
     // The bracketed pattern can never match this exec's own wrapper (a bare `pkill -f opencode`
     // SIGTERMs its own `sh -lc`, whose cmdline contains "opencode"), and the pgrep loop replaces
     // a blind 500ms sleep: createOpencode reuses any process the registry still reports as
@@ -717,7 +724,19 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         .exec('sh -lc \'pkill -f "[o]pencode serve" || true; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do pgrep -f "[o]pencode serve" >/dev/null || break; sleep 0.25; done\'')
         .catch(() => null)
     }
-    const booted = createOpencode(sandbox, { directory: '/workspace', config })
+    // OpenCode persists sessions/messages in a SQLite db under XDG_DATA_HOME (default
+    // ~/.local/share — EPHEMERAL container disk, gone on the 10-minute sleep). Pin it inside
+    // /workspace so history rides the R2 checkpoints + restoreBackup and resume stays real
+    // across container recycles, not just process restarts. Legacy dbs written by pre-pinning
+    // deploys are migrated once, only while no server is running (a live server still appends to
+    // the legacy db, so copying it hot would freeze a stale snapshot). XDG state (lock files)
+    // deliberately stays ephemeral: restoring locks from a backup would wedge a fresh boot.
+    await sandbox
+      .exec(
+        `sh -lc 'mkdir -p ${OC_DATA_HOME}/opencode; pgrep -f "[o]pencode serve" >/dev/null || [ -f ${OC_DATA_HOME}/opencode/opencode.db ] || cp /root/.local/share/opencode/opencode.db* ${OC_DATA_HOME}/opencode/ 2>/dev/null; if [ -d /workspace/.git ]; then mkdir -p /workspace/.git/info; grep -qs "^[.]opencode-data/" /workspace/.git/info/exclude 2>/dev/null || echo ".opencode-data/" >> /workspace/.git/info/exclude; fi; true'`,
+      )
+      .catch(() => null)
+    const booted = createOpencode(sandbox, { directory: '/workspace', config, env: { XDG_DATA_HOME: OC_DATA_HOME } })
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('OpenCode did not start in the sandbox within 120s.')), 120_000),
     )
