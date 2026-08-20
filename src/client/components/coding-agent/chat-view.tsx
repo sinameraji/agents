@@ -343,7 +343,7 @@ export function ChatView({ session }: { session: SessionApi }) {
         <Composer
           listFiles={listWorkspaceFiles}
           onCommandMenuOpen={fetchHarnessCommands}
-          allowAttachments={caps.promptCapabilities.image}
+          allowAttachments={caps.promptCapabilities.fileAttach}
           commands={(() => {
             // Mode commands only exist where the harness has more than one real mode.
             const modeCommands =

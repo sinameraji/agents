@@ -23,6 +23,9 @@ export interface HarnessCaps {
   promptCapabilities: {
     /** Image input reaches the model. No harness supports this through our pipe yet. */
     image: boolean
+    /** Generic file attachments (uploaded to R2, copied into /workspace/uploads by the DO) —
+     *  harness-agnostic, so true everywhere; image is the model-input axis and stays per-harness. */
+    fileAttach: boolean
   }
   /** Emits reasoning/thinking parts into the transcript. */
   reasoning: boolean
@@ -40,7 +43,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     permissions: true,
     // The only harness that emits subtask/agent parts (opencode-map.ts).
     subagents: true,
-    promptCapabilities: { image: false },
+    promptCapabilities: { image: false, fileAttach: true },
     reasoning: true,
   },
   pi: {
@@ -54,7 +57,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // No tool-permission asks (--no-approve); only rare extension UI dialogs surface as cards.
     permissions: false,
     subagents: false,
-    promptCapabilities: { image: false },
+    promptCapabilities: { image: false, fileAttach: true },
     // The adapter maps text deltas only; thinking output is not surfaced.
     reasoning: false,
   },
@@ -68,7 +71,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // permission.request events, resolved via resolve_permission.
     permissions: true,
     subagents: false,
-    promptCapabilities: { image: false },
+    promptCapabilities: { image: false, fileAttach: true },
     // message.reasoning deltas stream as reasoning parts.
     reasoning: true,
   },
@@ -82,7 +85,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // No interactive approvals; plan mode blocks writes instead of asking.
     permissions: false,
     subagents: false,
-    promptCapabilities: { image: false },
+    promptCapabilities: { image: false, fileAttach: true },
     reasoning: false,
   },
   cfagent: {
@@ -94,7 +97,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     commands: ['compact'],
     permissions: false,
     subagents: false,
-    promptCapabilities: { image: false },
+    promptCapabilities: { image: false, fileAttach: true },
     reasoning: false,
   },
 }
@@ -107,7 +110,7 @@ const NO_CAPS: HarnessCaps = {
   commands: [],
   permissions: false,
   subagents: false,
-  promptCapabilities: { image: false },
+  promptCapabilities: { image: false, fileAttach: true },
   reasoning: false,
 }
 
