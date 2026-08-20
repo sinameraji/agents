@@ -63,6 +63,16 @@ deploy once via `npm run deploy:self`, live-verify in browser (Build-mode permis
 cap block message, mode tooltips). Branch 1 also touches harness-caps.ts/chat-view/composer which
 changed today — expect small conflicts.
 
+## GATEWAY REALITY (probed 2026-08-20, encoded in src/server/api/models.ts)
+Unified billing (keyless cf-aig-authorization) answers ONLY for: openai, anthropic, workers-ai,
+moonshot. google-ai-studio / deepseek / mistral / grok / xai / groq / cerebras / openrouter all
+return 401/400 (BYOK required) - they are no longer listed as unified billing.
+Call-shape quirks: openai gpt-5.x REJECTS max_tokens (needs max_completion_tokens) and REQUIRES
+reasoning_effort:none with tools; gpt-4.1-x REJECTS reasoning_effort. Anthropic catalog ids are
+published dotted (claude-sonnet-4.6) but only DASHED ids work (claude-sonnet-4-6) -> normalizeUnifiedId.
+Wholesale rate limits surface as 402/429; provider geo-blocks as 403 (depends on the CF colo the
+request egresses from: HKG is blocked by OpenAI, ICN/ORD/KUL worked). Both now explained by /aig.
+
 ## LEFT AFTER THAT (roadmap tail)
 - MID-SESSION MODEL SWITCH SHIPPED for bridges (restart-with-resume; model rides every /prompt;
   manifest modelSwitch=restart for pi/kimiflare/aisdk). Live-verified on kimiflare (switch to K3
@@ -77,7 +87,6 @@ changed today — expect small conflicts.
   per-session token instead of CF token (see session-agent proxyToken/ensureOpencode for the pattern).
 - /aig broker OWNER_HOST dependency: generic deploys skip the cloudflare provider path (derive host
   at session boot instead) — noted by deploy-readiness agent.
-- #8 leftovers: cost estimation before send, ACP shim pilot, mid-session model switch for bridges.
 - Sina will test the Deploy button with a second CF account (free-plan failure UX unverified).
 - Old stash entry on main holds a stale README draft (has a factually wrong external-CNAME claim) —
   safe to drop.
