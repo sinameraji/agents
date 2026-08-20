@@ -1,5 +1,5 @@
 /**
- * Pure mapping: OpenCode SSE events → Dreamweav AgentEvents.
+ * Pure mapping: OpenCode SSE events → Agents AgentEvents.
  *
  * OpenCode event shapes (from @opencode-ai/sdk/dist/v2/gen/types.gen.d.ts):
  *  - message.part.updated → properties.part (Part; :5319). part.type ∈ text|reasoning|tool|

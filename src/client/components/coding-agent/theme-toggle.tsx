@@ -13,7 +13,7 @@ export function ThemeToggle() {
   useEffect(() => {
     document.documentElement.classList.toggle('light', light)
     try {
-      localStorage.setItem('dreamweav-theme', light ? 'light' : 'dark')
+      localStorage.setItem('agents-theme', light ? 'light' : 'dark')
     } catch {
       /* no-op */
     }

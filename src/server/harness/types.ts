@@ -1,7 +1,7 @@
 import type { AgentEvent, PermissionReply } from '~shared/agent'
 
 /**
- * A coding harness running inside the sandbox, normalized to Dreamweav's AgentEvent stream.
+ * A coding harness running inside the sandbox, normalized to Agents's AgentEvent stream.
  * OpenCode is the first implementation; pi / KimiFlare / the built-in AI-SDK loop implement the
  * same interface later (the stdio ones via the `bridge/` process).
  */

@@ -69,7 +69,7 @@ export async function mintSessionCookieFor(email: string, env: Pick<SessionEnv, 
 /** Mint the owner session for the password gate. Returns null if the allowlist excludes the
  *  owner identity — the password path must not bypass ALLOWED_USERS. */
 export async function mintSessionCookie(env: SessionEnv): Promise<string | null> {
-  const owner = env.OWNER_EMAIL ?? 'owner@dreamweav.local'
+  const owner = env.OWNER_EMAIL ?? 'owner@agents.local'
   if (!isAllowedUser(env.ALLOWED_USERS, owner)) return null
   return mintSessionCookieFor(owner, env)
 }

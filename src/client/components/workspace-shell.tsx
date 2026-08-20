@@ -21,7 +21,7 @@ export function WorkspaceShell() {
   const { me, loading } = useMe()
   if (!config || loading) return <FullScreen>Connecting…</FullScreen>
   // The public host shows the real product, fully browsable — the only difference is that the
-  // sign-in call to action becomes "Deploy to Cloudflare", since Dreamweav is self-hosted.
+  // sign-in call to action becomes "Deploy to Cloudflare", since Agents is self-hosted.
   if (config.mode === 'landing') return <GuestShell deploy />
   if (!me) return <GuestShell />
   return <Shell userId={me.id} email={me.email} />
@@ -88,7 +88,7 @@ function GuestShell({ deploy }: { deploy?: boolean }) {
         <Button variant="ghost" size="icon-sm" aria-label="Open menu" title="Sessions & settings" onClick={() => setDrawerOpen(true)}>
           <Menu className="size-5" />
         </Button>
-        <span className="text-sm font-semibold">Dreamweav</span>
+        <span className="text-sm font-semibold">Agents.</span>
       </div>
       <div className="hidden w-72 shrink-0 border-r border-border md:block">{sidebar}</div>
       {drawerOpen && (
@@ -184,7 +184,7 @@ function Shell({ userId, email }: { userId: string; email: string }) {
         <Button variant="ghost" size="icon-sm" aria-label="Open menu" title="Sessions & settings" onClick={() => setDrawerOpen(true)}>
           <Menu className="size-5" />
         </Button>
-        <span className="text-sm font-semibold">Dreamweav</span>
+        <span className="text-sm font-semibold">Agents.</span>
       </div>
 
       <div className={cn('hidden shrink-0 border-r border-border md:block', sidebarCollapsed ? 'w-12' : 'w-72')}>

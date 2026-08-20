@@ -129,7 +129,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
         ? input.source.url.replace(/^https?:\/\/(www\.)?github\.com\//, '').replace(/^https?:\/\//, '').replace(/\.git$/, '')
         : ''
     const name = input.name ?? (repo || 'Untitled session')
-    const branch = `dreamweav/${id.slice(0, 8)}`
+    const branch = `agents/${id.slice(0, 8)}`
     this.sql`INSERT INTO sessions (id, name, repo, branch, harness, status, model, provider, source_json, created_at)
              VALUES (${id}, ${name}, ${repo}, ${branch}, ${harness}, 'provisioning', ${model}, ${provider},
                      ${JSON.stringify(input.source)}, ${new Date().toISOString()})`
@@ -382,13 +382,13 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       if (conflict?.id) {
         const upd = await api(`/zones/${zone!.id}/dns_records/${conflict.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ type: 'A', name, content: '192.0.2.1', proxied: true, ttl: 1, comment: 'dreamweav' }),
+          body: JSON.stringify({ type: 'A', name, content: '192.0.2.1', proxied: true, ttl: 1, comment: 'agents' }),
         })
         return upd.success === true
       }
       const r = await api(`/zones/${zone!.id}/dns_records`, {
         method: 'POST',
-        body: JSON.stringify({ type: 'A', name, content: '192.0.2.1', proxied: true, ttl: 1, comment: 'dreamweav' }),
+        body: JSON.stringify({ type: 'A', name, content: '192.0.2.1', proxied: true, ttl: 1, comment: 'agents' }),
       })
       return r.success === true
     }
@@ -428,14 +428,14 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     }
   }
 
-  /** Delete the attached (or 'dreamweav'-named) gateway from the USER'S Cloudflare account and
+  /** Delete the attached (or 'agents'-named) gateway from the USER'S Cloudflare account and
    *  clear the attachment. Used by hard cleanup, normal Detach never touches their account. */
   @callable()
   async deleteAiGateway(): Promise<{ ok: boolean; deleted?: string; note?: string }> {
     const conn = await this.getDecryptedConnections()
     const api = await this.gatewayApi()
     if (!api) return { ok: false, note: 'No Cloudflare credentials.' }
-    const target = conn.cloudflareGatewayId || 'dreamweav'
+    const target = conn.cloudflareGatewayId || 'agents'
     const res = (await fetch(`${api.base}/${target}`, { method: 'DELETE', headers: api.headers })
       .then((r) => r.json())
       .catch(() => ({}))) as { success?: boolean; errors?: Array<{ message?: string; code?: number }> }
@@ -471,7 +471,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     } catch { /* best effort */ }
   }
 
-  /** Connect-time convenience: adopt an existing gateway NAMED 'dreamweav' (unambiguously ours);
+  /** Connect-time convenience: adopt an existing gateway NAMED 'agents' (unambiguously ours);
    *  otherwise leave unset, the UI offers the pick-or-create flow, it's the user's account. */
   @callable()
   async ensureAiGateway(): Promise<{ ok: boolean; gatewayId?: string; note?: string }> {
@@ -479,9 +479,9 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     if (conn.cloudflareGatewayId) return { ok: true, gatewayId: conn.cloudflareGatewayId }
     const listed = await this.listAiGateways()
     if (!listed.ok) return { ok: false, note: listed.note }
-    if (listed.gateways.includes('dreamweav')) {
-      await this.saveSettings({ connections: { cloudflareGatewayId: 'dreamweav' } })
-      return { ok: true, gatewayId: 'dreamweav' }
+    if (listed.gateways.includes('agents')) {
+      await this.saveSettings({ connections: { cloudflareGatewayId: 'agents' } })
+      return { ok: true, gatewayId: 'agents' }
     }
     return { ok: false, note: 'Pick an existing gateway or create one.' }
   }

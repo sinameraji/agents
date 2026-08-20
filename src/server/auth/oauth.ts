@@ -3,7 +3,7 @@
  *
  * - "Log in with Cloudflare": Cloudflare's self-managed OAuth clients (GA 2026-06). Authorization
  *   Code + PKCE against dash.cloudflare.com/oauth2, client_secret_post. The consent screen shows
- *   our scopes and lets the user pick an account; afterwards we auto-provision their Dreamweav
+ *   our scopes and lets the user pick an account; afterwards we auto-provision their Agents
  *   connections (account id + a scoped token) so KimiFlare / AI Gateway routing work immediately.
  * - "Log in with GitHub": classic OAuth app flow; the token (repo scope) auto-provisions private
  *   clones and the Git tab.
@@ -127,7 +127,7 @@ function failPage(message: string): Response {
   return new Response(
     `<!doctype html><meta charset="utf-8"><title>Login failed</title>
      <body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0">
-     <div style="text-align:center"><h2>Login failed</h2><p>${safe}</p><p><a href="/">Back to Dreamweav</a></p></div>`,
+     <div style="text-align:center"><h2>Login failed</h2><p>${safe}</p><p><a href="/">Back to Agents</a></p></div>`,
     { status: 400, headers: { 'content-type': 'text/html', 'set-cookie': clearFlowCookie() } },
   )
 }
@@ -140,7 +140,7 @@ async function completeLogin(
 ): Promise<Response> {
   if (!isAllowedUser(env.ALLOWED_USERS, email)) {
     return failPage(
-      'This Dreamweav instance is private. Dreamweav is self-hosted software: deploy your own at github.com/sinameraji/dreamweav.',
+      'This Agents instance is private. Agents is self-hosted software: deploy your own at github.com/sinameraji/agents.',
     )
   }
   const id = await userIdFromEmail(email)
@@ -283,18 +283,18 @@ export async function startEmailLogin(request: Request, env: OauthEnv, email0: s
     await emailBinding.send({
     to: email,
     from: 'login@dreamweav.com',
-    subject: 'Your Dreamweav login link',
-    text: `Click to log in to Dreamweav (valid 15 minutes):\n\n${link}\n\nIf you didn't request this, ignore this email.`,
+    subject: 'Your Agents login link',
+    text: `Click to log in to Agents (valid 15 minutes):\n\n${link}\n\nIf you didn't request this, ignore this email.`,
     html: `<div style="font-family:system-ui;max-width:420px;margin:0 auto;padding:24px">
-      <h2 style="margin:0 0 8px">Log in to Dreamweav</h2>
+      <h2 style="margin:0 0 8px">Log in to Agents</h2>
       <p style="color:#555">This link is valid for 15 minutes and works once.</p>
       <p><a href="${link}" style="display:inline-block;background:#0f172a;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Log in</a></p>
       <p style="color:#999;font-size:12px">If you didn't request this, ignore this email.</p></div>`,
     })
   } catch (e) {
-    console.error('[dreamweav] magic-link send failed', e)
+    console.error('[agents] magic-link send failed', e)
     return Response.json(
-      { error: 'Sending failed, the dreamweav.com sending domain may not be onboarded in Email Service yet.' },
+      { error: 'Sending failed, the sending domain may not be onboarded in Email Service yet.' },
       { status: 502 },
     )
   }
@@ -361,7 +361,7 @@ export async function finishGithubLogin(request: Request, env: OauthEnv): Promis
       headers: {
         authorization: `Bearer ${token.access_token}`,
         accept: 'application/vnd.github+json',
-        'user-agent': 'dreamweav',
+        'user-agent': 'agents',
       },
     }).then((r) => r.json().catch(() => ({})))
 

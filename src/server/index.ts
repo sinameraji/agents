@@ -220,7 +220,7 @@ app.post('/api/connections', async (c) => {
   return c.json(res)
 })
 
-// Hard cleanup: delete the Dreamweav-attached AI Gateway from the user's own Cloudflare account.
+// Hard cleanup: delete the Agents-attached AI Gateway from the user's own Cloudflare account.
 app.post('/api/gateway/delete', async (c) => {
   const identity = c.get('identity')
   const user = await getAgentByName(c.env.UserAgent, identity.id)
@@ -264,7 +264,7 @@ app.get('/api/sessions/:id/export', async (c) => {
   return new Response(bytes, {
     headers: {
       'content-type': 'application/gzip',
-      'content-disposition': `attachment; filename="dreamweav-${id.slice(0, 8)}.tgz"`,
+      'content-disposition': `attachment; filename="agents-${id.slice(0, 8)}.tgz"`,
     },
   })
 })
@@ -289,7 +289,7 @@ app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw))
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Preview URLs for services running in a sandbox (e.g. a dev server) arrive on *.dreamweav.com
+    // Preview URLs for services running in a sandbox (e.g. a dev server) arrive on *.insertcompanywebsite.com
     // and must be routed to the container before anything else.
     const proxied = await proxyToSandbox(request, env)
     if (proxied) return proxied

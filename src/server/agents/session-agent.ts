@@ -270,11 +270,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       // credentials it refers to. One fast exec per turn is the price of correctness.
       const login = 'x-access-token'
       await sandbox.exec(
-        `sh -lc 'git config --global credential.helper store; git config --global user.name dreamweav; git config --global user.email agent@dreamweav.com; printf "https://${login}:%s@github.com\n" "${conn.githubPat}" > ~/.git-credentials; chmod 600 ~/.git-credentials'`,
+        `sh -lc 'git config --global credential.helper store; git config --global user.name Agents; git config --global user.email agent@agents.insertcompanywebsite.com; printf "https://${login}:%s@github.com\n" "${conn.githubPat}" > ~/.git-credentials; chmod 600 ~/.git-credentials'`,
         { timeout: 20_000 },
       )
     } catch (e) {
-      console.error('[dreamweav] git credential setup failed', e)
+      console.error('[agents] git credential setup failed', e)
     }
   }
 
@@ -282,7 +282,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private async ensureAgentContext(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
     try {
       await sandbox.exec(
-        `sh -lc 'grep -qs "dreamweav:start" /workspace/AGENTS.md 2>/dev/null || printf "%s\n" "" "<!-- dreamweav:start -->" "## Environment" "You are running inside Dreamweav, a browser workspace (dreamweav.com). The user interacts through a web chat and can preview web servers you start." "- When you start a dev server, bind 0.0.0.0 and use port 8080 (NEVER 3000, it is reserved by the sandbox). Dreamweav detects the server and opens a live preview for the user automatically, so never link to localhost." "- Do not try to open a browser or take screenshots yourself." "<!-- dreamweav:end -->" >> /workspace/AGENTS.md'`,
+        `sh -lc 'grep -qsE "dreamweav:start|agents:start" /workspace/AGENTS.md 2>/dev/null || printf "%s\n" "" "<!-- agents:start -->" "## Environment" "You are running inside Agents, a browser workspace (agents.insertcompanywebsite.com). The user interacts through a web chat and can preview web servers you start." "- When you start a dev server, bind 0.0.0.0 and use port 8080 (NEVER 3000, it is reserved by the sandbox). Agents detects the server and opens a live preview for the user automatically, so never link to localhost." "- Do not try to open a browser or take screenshots yourself." "<!-- agents:end -->" >> /workspace/AGENTS.md'`,
         { timeout: 15_000 },
       )
     } catch { /* best-effort */ }
@@ -310,7 +310,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         await this.ensureAgentContext(sandbox)
         return
       } catch (e) {
-        console.error('[dreamweav] restore failed', e)
+        console.error('[agents] restore failed', e)
       }
     }
 
@@ -325,11 +325,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       await sandbox
         .exec(`sh -lc 'cd /workspace && git clone --depth 50 ${branch} ${auth}.git . >/tmp/dw-clone.log 2>&1; git remote set-url origin ${url}.git 2>/dev/null; tail -2 /tmp/dw-clone.log'`)
         .catch((e) => {
-          console.error('[dreamweav] clone failed', String((e as Error).message ?? e).replaceAll(conn.githubPat ?? '\u0000', '***'))
+          console.error('[agents] clone failed', String((e as Error).message ?? e).replaceAll(conn.githubPat ?? '\u0000', '***'))
         })
     }
 
-    // Repo cloned (or intentionally blank) — now inject the Dreamweav context block. Idempotent.
+    // Repo cloned (or intentionally blank) — now inject the Agents context block. Idempotent.
     await this.ensureAgentContext(sandbox)
   }
 
@@ -343,11 +343,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         if (!obj) continue
         const bytes = new Uint8Array(await obj.arrayBuffer())
         await sandbox.writeFile(`/workspace/uploads/${att.name}`, bytes as never).catch((e) => {
-          console.error('[dreamweav] attachment copy failed', att.name, e)
+          console.error('[agents] attachment copy failed', att.name, e)
         })
       }
     } catch (e) {
-      console.error('[dreamweav] copyAttachments failed', e)
+      console.error('[agents] copyAttachments failed', e)
     }
   }
 
@@ -363,7 +363,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       } as never)
       this.putKv('backup', backup)
     } catch (e) {
-      console.error('[dreamweav] checkpoint failed', e)
+      console.error('[agents] checkpoint failed', e)
     }
   }
 
@@ -686,7 +686,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         this.opencodeSessionId = known
         return known
       }
-      console.warn('[dreamweav] opencode session', known, 'no longer exists (container recycled), creating a new one')
+      console.warn('[agents] opencode session', known, 'no longer exists (container recycled), creating a new one')
       this.opencodeSessionId = undefined
     }
     const res = await this.opencode!.session.create({ title: this.state.meta?.name ?? 'session' }, { throwOnError: true } as never)
@@ -819,7 +819,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     void run
       .catch((err) => {
         const message = (err as Error).message
-        console.error('[dreamweav] turn failed:', (err as Error).stack ?? err)
+        console.error('[agents] turn failed:', (err as Error).stack ?? err)
         const errId = `err-${Date.now()}`
         this.emit({
           t: 'turn.start',
@@ -871,7 +871,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
     // The SDK's event.subscribe() SSE does not stream over the Sandbox transport, so we POLL
     // session.messages (+ todos) and diff against what we've already emitted. All of OpenCode's
-    // assistant messages for this prompt are grouped into ONE Dreamweav turn.
+    // assistant messages for this prompt are grouped into ONE Agents turn.
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
 
@@ -889,7 +889,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
           .catch((e: unknown) => {
             if (!loggedPollError) {
               loggedPollError = true
-              console.error('[dreamweav] oc messages poll failed', e)
+              console.error('[agents] oc messages poll failed', e)
             }
             return { data: [] as unknown[] }
           })
@@ -999,7 +999,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         await this.bridgeFetch(sandbox, 'POST', '/permission', { id, reply, note })
       }
     } catch (e) {
-      console.error('[dreamweav] permission reply failed', e)
+      console.error('[agents] permission reply failed', e)
     }
     return { ok: true }
   }
@@ -1240,7 +1240,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         headers: {
           authorization: `Bearer ${pat}`,
           accept: 'application/vnd.github+json',
-          'user-agent': 'dreamweav',
+          'user-agent': 'agents',
           ...(init?.body ? { 'content-type': 'application/json' } : {}),
         },
       })
@@ -1262,16 +1262,16 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       base = String(info.json.default_branch ?? 'main')
     } else {
       owner = login
-      repo = `dreamweav-${this.name.slice(0, 8)}`
-      const created = await gh('/user/repos', { method: 'POST', body: JSON.stringify({ name: repo, private: true, description: `Dreamweav session: ${this.state.meta?.name ?? this.name}` }) })
+      repo = `agents-${this.name.slice(0, 8)}`
+      const created = await gh('/user/repos', { method: 'POST', body: JSON.stringify({ name: repo, private: true, description: `Agents session: ${this.state.meta?.name ?? this.name}` }) })
       if (created.status !== 201 && created.status !== 422) {
         return this.noted({ ok: false, note: `Could not create repo ${repo} (HTTP ${created.status}).` })
       }
     }
 
-    const branch = (input.branch ?? cfg.branch).replace(/[^\w/.-]/g, '-').replace(/^[-.]+/, '') || `dreamweav/${this.name.slice(0, 8)}`
+    const branch = (input.branch ?? cfg.branch).replace(/[^\w/.-]/g, '-').replace(/^[-.]+/, '') || `agents/${this.name.slice(0, 8)}`
     // The message is interpolated into a double-quoted sh word, keep it single-line and quote-free.
-    const message = (input.message?.trim() || `Dreamweav: ${this.state.meta?.name ?? 'session export'}`)
+    const message = (input.message?.trim() || `Agents: ${this.state.meta?.name ?? 'session export'}`)
       .replace(/[\r\n]+/g, ' ')
       .replace(/["\\$`]/g, "'")
       .slice(0, 200)
@@ -1313,7 +1313,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     if (input.openPr && base && branch !== base) {
       const pr = await gh(`/repos/${owner}/${repo}/pulls`, {
         method: 'POST',
-        body: JSON.stringify({ title: message, head: branch, base, body: 'Opened from Dreamweav.' }),
+        body: JSON.stringify({ title: message, head: branch, base, body: 'Opened from Agents.' }),
       })
       if (pr.status === 201) prUrl = String(pr.json.html_url ?? '')
       else if (pr.status === 422) {
@@ -1350,7 +1350,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // never adopted while unconfigured (it would sit in 'provisioning' forever).
     await child.init({
       owner: cfg.owner, source: cfg.source, harness: cfg.harness, provider: cfg.provider,
-      model: cfg.model, name, repo: cfg.repo, branch: `dreamweav/${id.slice(0, 8)}`,
+      model: cfg.model, name, repo: cfg.repo, branch: `agents/${id.slice(0, 8)}`,
     })
     await child.adoptFork({ backup, turns: this.transcript.turns, todos: this.transcript.todos })
     const snapshotNote = backup ? 'Workspace snapshot and transcript copied' : 'Transcript copied (workspace snapshot unavailable, the fork starts from the repo/blank state)'
@@ -1525,7 +1525,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   @callable()
   async exposePort(
     port: number,
-    hostname = 'dreamweav.com',
+    hostname = 'insertcompanywebsite.com',
   ): Promise<{ url: string | null; reason?: 'nothing-listening' | 'expose-failed' | 'reserved-port' | 'needs-domain' }> {
     if (!Number.isInteger(port) || port < 1 || port > 65535) return { url: null, reason: 'expose-failed' }
     if (port === 3000) return { url: null, reason: 'reserved-port' }

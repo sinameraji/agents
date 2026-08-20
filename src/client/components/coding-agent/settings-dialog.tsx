@@ -102,7 +102,7 @@ export function SettingsDialog({
                       void ua.saveSettings({ connections: { cloudflareGatewayId: '' } })
                     }}
                     className="ml-auto shrink-0 text-muted-foreground underline underline-offset-2 hover:text-destructive"
-                    title="Stop using this gateway in Dreamweav (it stays in your Cloudflare account)"
+                    title="Stop using this gateway in Agents (it stays in your Cloudflare account)"
                   >
                     Detach
                   </button>

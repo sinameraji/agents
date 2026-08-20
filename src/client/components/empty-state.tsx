@@ -9,7 +9,7 @@ export function EmptyState({ onNew, hasSessions }: { onNew: () => void; hasSessi
           <Terminal className="size-6" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Dreamweav</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Agents.</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {hasSessions
               ? 'Pick a session on the left, or start a new one.'

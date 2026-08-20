@@ -103,7 +103,7 @@ export function GitPanel({ session }: { session: SessionApi }) {
         <input
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder={`Dreamweav: ${session.meta?.name ?? 'session export'}`}
+          placeholder={`Agents: ${session.meta?.name ?? 'session export'}`}
           className="rounded-md border border-border bg-card px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary/60"
         />
       </label>
@@ -168,7 +168,7 @@ export function GitPanel({ session }: { session: SessionApi }) {
         <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="text-primary hover:underline">
           github.com/settings/tokens
         </a>
-        . Blank sessions get a new private repo (dreamweav-…) under your account; GitHub-sourced
+        . Blank sessions get a new private repo (agents-…) under your account; GitHub-sourced
         sessions push a branch to the source repo.
       </p>
     </div>

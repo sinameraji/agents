@@ -1,0 +1,52 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Agents">
+  <defs>
+    <linearGradient id="panel" x1="256" y1="48" x2="256" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0C2E16"/>
+      <stop offset="1" stop-color="#04140A"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="72" y1="72" x2="440" y2="452" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A6FF6E"/>
+      <stop offset="0.5" stop-color="#5FD23A"/>
+      <stop offset="1" stop-color="#2C9A28"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="256" y1="140" x2="256" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C6FF8E"/>
+      <stop offset="0.55" stop-color="#8BF14C"/>
+      <stop offset="1" stop-color="#57C82F"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- squircle panel + glowing edge -->
+  <g filter="url(#glow)">
+    <rect x="48" y="48" width="416" height="416" rx="116" fill="url(#panel)" stroke="url(#edge)" stroke-width="11"/>
+  </g>
+  <rect x="72" y="72" width="368" height="368" rx="94" fill="none" stroke="#5FD23A" stroke-opacity="0.28" stroke-width="2"/>
+
+  <!-- terminal chrome: traffic-light dots -->
+  <circle cx="120" cy="128" r="9" fill="#A6FF6E"/>
+  <circle cx="150" cy="128" r="9" fill="#4F9A35"/>
+  <circle cx="180" cy="128" r="9" fill="#356B26"/>
+
+  <!-- faint "code" bars top-left -->
+  <rect x="111" y="168" width="86" height="11" rx="5.5" fill="#5FD23A" fill-opacity="0.30"/>
+  <rect x="111" y="190" width="120" height="11" rx="5.5" fill="#5FD23A" fill-opacity="0.22"/>
+  <rect x="111" y="212" width="70" height="11" rx="5.5" fill="#A6FF6E" fill-opacity="0.85"/>
+
+  <!-- faint "code" bars bottom -->
+  <rect x="200" y="392" width="120" height="11" rx="5.5" fill="#5FD23A" fill-opacity="0.24"/>
+  <rect x="332" y="392" width="70" height="11" rx="5.5" fill="#A6FF6E" fill-opacity="0.85"/>
+
+  <!-- the A: two bold legs + a swoosh crossbar -->
+  <g filter="url(#glow)" stroke="url(#glyph)" stroke-linecap="round" fill="none">
+    <path d="M256 152 L182 360" stroke-width="46"/>
+    <path d="M256 152 L330 360" stroke-width="46"/>
+    <path d="M202 300 Q256 340 310 300" stroke-width="30"/>
+  </g>
+</svg>

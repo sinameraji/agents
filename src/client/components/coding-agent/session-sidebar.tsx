@@ -82,7 +82,7 @@ export function SessionSidebar({
       <header className="flex items-center gap-2 px-3 pt-3 pb-2">
         <img src="/icon-192.png" alt="" aria-hidden className="size-8 shrink-0" />
         <div className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold tracking-tight">Dreamweav</span>
+          <span className="text-sm font-semibold tracking-tight">Agents.</span>
           <span className="text-[0.7rem] text-muted-foreground">coding agents in your browser</span>
         </div>
         {onToggleCollapse && (
@@ -160,11 +160,11 @@ export function SessionSidebar({
                 Sign in
               </Button>
               <a
-                href="https://github.com/sinameraji/dreamweav#deploy-your-own"
+                href="https://github.com/sinameraji/agents#deploy-your-own"
                 target="_blank"
                 rel="noreferrer"
                 className="truncate text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                title="Dreamweav is self-hosted: run it on your own Cloudflare account"
+                title="Agents is self-hosted: run it on your own Cloudflare account"
               >
                 Deploy your own
               </a>
@@ -188,8 +188,8 @@ export function SessionSidebar({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="About Dreamweav"
-            title="About Dreamweav"
+            aria-label="About Agents"
+            title="About Agents"
             onClick={() => setAboutOpen(true)}
           >
             <Info className="size-4" />
@@ -211,13 +211,13 @@ export function SessionSidebar({
       </footer>
 
       {aboutOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="About Dreamweav">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="About Agents">
           <button type="button" aria-label="Close" onClick={() => setAboutOpen(false)} className="absolute inset-0 cursor-default bg-background/70 backdrop-blur-sm" />
           <div className="relative flex w-full max-w-sm flex-col gap-3 rounded-xl border border-border bg-card p-5 shadow-2xl">
             <div className="flex items-center gap-2.5">
               <img src="/icon-192.png" alt="" aria-hidden className="size-9" />
               <div>
-                <h2 className="text-sm font-semibold">Dreamweav</h2>
+                <h2 className="text-sm font-semibold">Agents.</h2>
                 <p className="text-xs text-muted-foreground">Coding agents in your browser.</p>
               </div>
             </div>
@@ -229,12 +229,12 @@ export function SessionSidebar({
               . Open source:
             </p>
             <a
-              href="https://github.com/sinameraji/dreamweav"
+              href="https://github.com/sinameraji/agents"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground/90 transition-colors hover:bg-muted"
             >
-              github.com/sinameraji/dreamweav <ExternalLink className="size-3" />
+              github.com/sinameraji/agents <ExternalLink className="size-3" />
             </a>
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               Runs entirely on Cloudflare (Workers, Durable Objects, Sandboxes, R2). Harnesses by their

@@ -90,9 +90,9 @@ export function LoginOptions() {
 
   return (
     <div className="flex w-full max-w-xs flex-col items-center gap-5">
-        <img src="/icon-512.png" alt="Dreamweav logo" className="size-28 drop-shadow-[0_8px_30px_rgba(117,230,99,0.25)] sm:size-36" />
+        <img src="/icon-512.png" alt="Agents logo" className="size-28 drop-shadow-[0_8px_30px_rgba(117,230,99,0.25)] sm:size-36" />
         <div className="text-center">
-          <h1 className="text-lg font-semibold tracking-tight">Dreamweav</h1>
+          <h1 className="text-lg font-semibold tracking-tight">Agents.</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Your favorite coding models, harnesses, and providers in your browser.
           </p>

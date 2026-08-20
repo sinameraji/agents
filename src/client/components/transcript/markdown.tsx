@@ -49,7 +49,7 @@ const components: Components = {
       return (
         <a
           href={href}
-          title={`Open in Dreamweav preview (port ${port})`}
+          title={`Open in Agents preview (port ${port})`}
           onClick={(e) => {
             e.preventDefault()
             window.dispatchEvent(new CustomEvent('dw:preview', { detail: { port } }))

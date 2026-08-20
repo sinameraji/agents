@@ -1,0 +1,65 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="800" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#061A0C"/>
+      <stop offset="1" stop-color="#021007"/>
+    </linearGradient>
+    <radialGradient id="rglow" cx="0.78" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3CCB2E" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#3CCB2E" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="820" y1="220" x2="820" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0C2E16"/>
+      <stop offset="1" stop-color="#04140A"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="640" y1="240" x2="1000" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A6FF6E"/>
+      <stop offset="0.5" stop-color="#5FD23A"/>
+      <stop offset="1" stop-color="#2C9A28"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="820" y1="300" x2="820" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C6FF8E"/>
+      <stop offset="0.55" stop-color="#8BF14C"/>
+      <stop offset="1" stop-color="#57C82F"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect width="1200" height="800" fill="url(#rglow)"/>
+
+  <!-- left: wordmark + tagline + url pill -->
+  <text x="86" y="330" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="168" letter-spacing="-6" fill="#8BF14C">Agents<tspan fill="#8BF14C">.</tspan></text>
+
+  <text x="90" y="430" font-family="Helvetica, Arial, sans-serif" font-weight="500" font-size="50" fill="#EAF6E9">Your favorite coding model,</text>
+  <text x="90" y="494" font-family="Helvetica, Arial, sans-serif" font-weight="500" font-size="50" fill="#EAF6E9">harness, and provider</text>
+  <text x="90" y="558" font-family="Helvetica, Arial, sans-serif" font-weight="500" font-size="50" fill="#8BF14C">in your browser.</text>
+
+  <rect x="90" y="620" width="640" height="72" rx="36" fill="none" stroke="#5FD23A" stroke-opacity="0.5" stroke-width="2"/>
+  <circle cx="140" cy="656" r="17" fill="none" stroke="#8BF14C" stroke-width="2.5"/>
+  <path d="M123 656 H157 M140 639 C131 648 131 664 140 673 C149 664 149 648 140 639" fill="none" stroke="#8BF14C" stroke-width="2.5"/>
+  <text x="178" y="670" font-family="Helvetica, Arial, sans-serif" font-weight="600" font-size="34" fill="#B6FF7A">agents.insertcompanywebsite.com</text>
+
+  <!-- right: the logo mark -->
+  <g transform="translate(720,180)">
+    <g filter="url(#glow)">
+      <rect x="20" y="20" width="400" height="400" rx="112" fill="url(#panel)" stroke="url(#edge)" stroke-width="11"/>
+    </g>
+    <circle cx="88" cy="96" r="9" fill="#A6FF6E"/>
+    <circle cx="116" cy="96" r="9" fill="#4F9A35"/>
+    <circle cx="144" cy="96" r="9" fill="#356B26"/>
+    <rect x="80" y="134" width="82" height="11" rx="5.5" fill="#5FD23A" fill-opacity="0.30"/>
+    <rect x="80" y="156" width="112" height="11" rx="5.5" fill="#5FD23A" fill-opacity="0.22"/>
+    <rect x="80" y="178" width="66" height="11" rx="5.5" fill="#A6FF6E" fill-opacity="0.85"/>
+    <rect x="168" y="356" width="112" height="11" rx="5.5" fill="#5FD23A" fill-opacity="0.24"/>
+    <rect x="296" y="356" width="66" height="11" rx="5.5" fill="#A6FF6E" fill-opacity="0.85"/>
+    <g filter="url(#glow)" stroke="url(#glyph)" stroke-linecap="round" fill="none">
+      <path d="M220 118 L150 320" stroke-width="44"/>
+      <path d="M220 118 L290 320" stroke-width="44"/>
+      <path d="M168 264 Q220 302 272 264" stroke-width="28"/>
+    </g>
+  </g>
+</svg>

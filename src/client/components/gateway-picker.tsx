@@ -9,14 +9,14 @@ import { Button } from '@/components/ui/button'
 
 /**
  * Pick-or-create an AI Gateway on the user's Cloudflare account. It's their account: they choose
- * which existing gateway Dreamweav uses, or create a new one with a name of their choosing
- * (pre-filled "dreamweav").
+ * which existing gateway Agents uses, or create a new one with a name of their choosing
+ * (pre-filled "agents").
  */
 export function GatewayPicker({ ua, compact }: { ua: UserAgentApi; compact?: boolean }) {
   const [gateways, setGateways] = useState<string[] | null>(null)
   const [loadNote, setLoadNote] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  const [name, setName] = useState('dreamweav')
+  const [name, setName] = useState('agents')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
 
@@ -107,7 +107,7 @@ export function GatewayPicker({ ua, compact }: { ua: UserAgentApi; compact?: boo
               value={name}
               onChange={(e) => setName(e.target.value)}
               aria-label="New gateway name"
-              placeholder="dreamweav"
+              placeholder="agents"
               className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 font-mono text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
             />
             <Button type="button" variant="outline" size="sm" disabled={busy || !name.trim()} onClick={() => void create()} className="h-9 shrink-0 gap-1.5">

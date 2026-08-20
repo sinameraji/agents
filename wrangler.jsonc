@@ -36,7 +36,7 @@
   ],
   "send_email": [{ "name": "EMAIL", "remote": true }],
   "vars": {
-    "APP_NAME": "Dreamweav",
+    "APP_NAME": "Agents",
     "WORKER_NAME": "dreamweav",
     // Hosts that render the public "deploy your own" landing page instead of the app.
     "LANDING_HOSTS": "dreamweav.com,www.dreamweav.com",
