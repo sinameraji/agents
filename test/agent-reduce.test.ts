@@ -32,6 +32,20 @@ describe('agent reducer', () => {
     }
   })
 
+  it('a terminal turn.update clears dangling streaming flags on text and reasoning parts', () => {
+    const events: AgentEvent[] = [
+      { t: 'turn.start', turn: { id: 't1', role: 'assistant', createdAt: 0, status: 'streaming', parts: [] } },
+      { t: 'part.upsert', turnId: 't1', part: { kind: 'reasoning', id: 'r1', text: 'hmm', streaming: true } },
+      { t: 'part.upsert', turnId: 't1', part: { kind: 'text', id: 'p1', text: 'Hello', streaming: true } },
+      { t: 'turn.update', id: 't1', patch: { status: 'complete', completedAt: 1 } },
+    ]
+    const s = applyEvents(emptyTranscript(), events)
+    expect(s.turns[0].status).toBe('complete')
+    for (const p of s.turns[0].parts) {
+      if (p.kind === 'text' || p.kind === 'reasoning') expect(p.streaming).toBe(false)
+    }
+  })
+
   it('keeps tool parts keyed by id with monotonic state', () => {
     const events: AgentEvent[] = [
       { t: 'turn.start', turn: { id: 't1', role: 'assistant', createdAt: 0, status: 'streaming', parts: [] } },

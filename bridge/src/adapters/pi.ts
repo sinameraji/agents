@@ -1,6 +1,7 @@
 /**
  * pi harness (@earendil-works/pi-coding-agent). Runs `pi --mode rpc` and speaks LF-JSONL.
- * Docs: prompt/steer/abort commands; events message_update(text_delta), tool_execution_start/end,
+ * Docs (docs/rpc.md + dist/modes/rpc/rpc-types.d.ts, verified against 0.84.2): prompt/steer/abort
+ * commands; events message_update(text_delta/thinking_delta), tool_execution_start/end,
  * agent_end. pi has no permission prompts — the sandbox is the boundary.
  */
 import { promises as fs } from 'node:fs'
@@ -78,6 +79,8 @@ export function createPiAdapter(): HarnessAdapter {
   let resolveDone: (() => void) | null = null
   let textId = ''
   let textAcc = ''
+  let thinkingId = ''
+  let thinkingAcc = ''
   const rpc = createPiRpc((obj) => proc?.send(obj))
 
   const handle = (ev: Record<string, unknown>) => {
@@ -89,6 +92,14 @@ export function createPiAdapter(): HarnessAdapter {
       if (ame?.type === 'text_delta' && typeof ame.delta === 'string') {
         textAcc += ame.delta
         sink.part({ kind: 'text', id: textId, text: textAcc, streaming: true })
+      } else if (ame?.type === 'thinking_delta' && typeof ame.delta === 'string') {
+        // One reasoning part per turn: later thinking blocks append to the same monologue.
+        thinkingAcc += ame.delta
+        sink.part({ kind: 'reasoning', id: thinkingId, text: thinkingAcc, streaming: true })
+      } else if (ame?.type === 'thinking_end' && thinkingAcc) {
+        sink.part({ kind: 'reasoning', id: thinkingId, text: thinkingAcc, streaming: false })
+      } else if (ame?.type === 'thinking_start' && thinkingAcc) {
+        thinkingAcc += '\n\n'
       }
       const usage = ev.usage as { input?: number; output?: number; cost?: { total?: number } } | undefined
       if (usage) sink.usage({ input: usage.input ?? 0, output: usage.output ?? 0, cost: usage.cost?.total })
@@ -149,10 +160,19 @@ export function createPiAdapter(): HarnessAdapter {
       sink = s
       textId = `t-${Date.now()}`
       textAcc = ''
+      thinkingId = `r-${Date.now()}`
+      thinkingAcc = ''
       await new Promise<void>((res) => {
         resolveDone = res
         proc?.send({ type: 'prompt', message: text })
       })
+    },
+    // Native mid-turn steering: pi queues the message and delivers it after the current
+    // assistant turn's tool calls, before the next LLM call — no abort. Acknowledged with
+    // {type:'response', command:'steer', success} (rpc-types.d.ts), so we await the ack.
+    async steer(text) {
+      const resp = await rpc.request({ type: 'steer', message: text })
+      if (resp.success === false) throw new Error(String(resp.error ?? 'steer rejected'))
     },
     async abort() {
       proc?.send({ type: 'abort' })

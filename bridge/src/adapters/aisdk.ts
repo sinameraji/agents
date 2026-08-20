@@ -166,6 +166,8 @@ export function createAiSdkAdapter(): HarnessAdapter {
 
       const textPartId = `t-${Date.now()}`
       let textAcc = ''
+      // Reasoning accumulates per stream id (one id per reasoning block in AI SDK v7 fullStream).
+      const reasoningAccs = new Map<string, string>()
       const toolStates = new Map<string, NormToolState & { name: string }>()
 
       try {
@@ -185,6 +187,13 @@ export function createAiSdkAdapter(): HarnessAdapter {
           } else if (ev.type === 'text-delta') {
             textAcc += ev.text
             sink.part({ kind: 'text', id: textPartId, text: textAcc, streaming: true })
+          } else if (ev.type === 'reasoning-delta') {
+            const acc = (reasoningAccs.get(ev.id) ?? '') + ev.text
+            reasoningAccs.set(ev.id, acc)
+            sink.part({ kind: 'reasoning', id: `r-${ev.id}`, text: acc, streaming: true })
+          } else if (ev.type === 'reasoning-end') {
+            const acc = reasoningAccs.get(ev.id)
+            if (acc) sink.part({ kind: 'reasoning', id: `r-${ev.id}`, text: acc, streaming: false })
           } else if (ev.type === 'tool-call') {
             toolStates.set(ev.toolCallId, { name: ev.toolName, status: 'running', input: ev.input as Record<string, unknown> })
             sink.part({ kind: 'tool', id: `tc-${ev.toolCallId}`, callId: ev.toolCallId, name: ev.toolName, state: { status: 'running', input: ev.input as Record<string, unknown> } })

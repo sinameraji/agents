@@ -437,14 +437,14 @@ export function ChatView({ session }: { session: SessionApi }) {
           }
           busy={busy}
           onSteer={(text, pasted, attachments) =>
-            void session.stop().then(() =>
-              (
-                session.send as (
-                  text: string,
-                  attachments?: { key: string; name: string; size: number }[],
-                ) => Promise<void>
-              )(withPasted(text, pasted), attachments),
-            )
+            // Native mid-turn steering where the harness supports it (pi); the server falls
+            // back to stop + re-prompt everywhere else.
+            void (
+              session.steer as (
+                text: string,
+                attachments?: { key: string; name: string; size: number }[],
+              ) => Promise<void>
+            )(withPasted(text, pasted), attachments)
           }
           sessionName={meta?.name ?? 'session'}
         />

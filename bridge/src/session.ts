@@ -72,6 +72,28 @@ export class BridgeSession {
     this.status = 'idle'
   }
 
+  /**
+   * Inject mid-turn guidance WITHOUT aborting. Only works while a turn is actually running and
+   * only on harnesses whose adapter implements steer (pi); everyone else gets an honest
+   * `unsupported` so the caller can fall back to abort + prompt.
+   */
+  async steer(text: string): Promise<{ ok: boolean; reason?: string }> {
+    if (!this.adapter) return { ok: false, reason: 'not started' }
+    if (!this.adapter.steer) return { ok: false, reason: 'unsupported' }
+    if (this.status !== 'busy' || !this.current) return { ok: false, reason: 'idle' }
+    try {
+      await this.adapter.steer(text)
+    } catch (e) {
+      return { ok: false, reason: (e as Error).message }
+    }
+    // Record the steering message so /state stays an honest transcript. Pushed AFTER the
+    // in-flight assistant turn (chronologically true), which also keeps the poll loop's
+    // "last assistant turn" lookup untouched.
+    const id = `u-${Date.now()}`
+    this.turns.push({ id, role: 'user', createdAt: Date.now(), status: 'complete', parts: [{ kind: 'text', id: `${id}-t`, text }] })
+    return { ok: true }
+  }
+
   /** Run a harness slash command; harnesses without a command surface answer honestly. */
   async command(name: string, args?: Record<string, unknown>): Promise<{ ok: boolean; note?: string; data?: unknown }> {
     if (!this.adapter?.command) return { ok: false, note: 'Not supported by this harness.' }

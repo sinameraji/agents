@@ -27,6 +27,8 @@ class FakeAdapter implements HarnessAdapter {
     this.resolved.push({ id, reply, note })
   }
   async dispose(): Promise<void> {}
+  /** Optional on the interface; attached per-test so its ABSENCE is itself a case under test. */
+  steer?(text: string): Promise<void>
 }
 
 /** Inject a fake adapter into the session's private field (test-only, src untouched). */
@@ -224,5 +226,55 @@ describe('BridgeSession', () => {
     expect(session.turns[3].status).toBe('complete')
     const second = session.turns[3].parts[0]
     if (second.kind === 'text') expect(second.text).toBe('two')
+  })
+})
+
+describe('BridgeSession.steer', () => {
+  it('answers not-started before start (no adapter yet)', async () => {
+    const session = new BridgeSession()
+    expect(await session.steer('go left')).toEqual({ ok: false, reason: 'not started' })
+  })
+
+  it('answers unsupported when the adapter has no steer method, even mid-turn', async () => {
+    const { session } = makeSession()
+    session.prompt('go')
+    expect(await session.steer('go left')).toEqual({ ok: false, reason: 'unsupported' })
+  })
+
+  it('answers idle when no turn is running, so callers fall back to a normal prompt', async () => {
+    const { session, adapter } = makeSession()
+    adapter.steer = async () => {}
+    expect(await session.steer('go left')).toEqual({ ok: false, reason: 'idle' })
+  })
+
+  it('delegates mid-turn to the adapter and records the steering message as a user turn', async () => {
+    const { session, adapter } = makeSession()
+    const steered: string[] = []
+    adapter.steer = async (text) => {
+      steered.push(text)
+    }
+    session.prompt('go')
+
+    expect(await session.steer('actually, use tabs')).toEqual({ ok: true })
+    expect(steered).toEqual(['actually, use tabs'])
+
+    // The in-flight assistant turn keeps streaming; the steer lands after it, chronologically true.
+    expect(session.status).toBe('busy')
+    expect(session.turns.map((t) => t.role)).toEqual(['user', 'assistant', 'user'])
+    expect(session.turns[1].status).toBe('streaming')
+    const steerPart = session.turns[2].parts[0]
+    expect(steerPart.kind).toBe('text')
+    if (steerPart.kind === 'text') expect(steerPart.text).toBe('actually, use tabs')
+  })
+
+  it('a rejecting adapter.steer surfaces the reason and records no user turn', async () => {
+    const { session, adapter } = makeSession()
+    adapter.steer = async () => {
+      throw new Error('steer rejected')
+    }
+    session.prompt('go')
+
+    expect(await session.steer('nope')).toEqual({ ok: false, reason: 'steer rejected' })
+    expect(session.turns.map((t) => t.role)).toEqual(['user', 'assistant'])
   })
 })

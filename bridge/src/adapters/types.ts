@@ -32,6 +32,12 @@ export interface HarnessAdapter {
   start(cfg: StartConfig): Promise<void>
   /** Begin a new assistant turn for `text`. Resolves when the turn is fully done. */
   prompt(text: string, sink: AdapterSink): Promise<void>
+  /**
+   * Inject guidance into the RUNNING turn without aborting it (pi's `steer` RPC command).
+   * Optional — leaving it undefined is the honest signal that the harness can only
+   * stop-and-reprompt; callers must fall back to abort + prompt.
+   */
+  steer?(text: string): Promise<void>
   abort(): Promise<void>
   resolvePermission(id: string, reply: 'once' | 'always' | 'reject', note?: string): Promise<void>
   dispose(): Promise<void>

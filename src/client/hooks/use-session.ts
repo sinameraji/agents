@@ -48,6 +48,8 @@ export interface SessionApi {
   permissions: NormPermission[]
   connected: boolean
   send: (text: string, attachments?: { key: string; name: string; size: number }[]) => Promise<void>
+  /** Mid-turn steering: native (no abort) where the harness supports it, stop + re-prompt otherwise. */
+  steer: (text: string, attachments?: { key: string; name: string; size: number }[]) => Promise<void>
   stop: () => Promise<void>
   setModel: (id: string) => Promise<void>
   setMode: (mode: SessionMode) => Promise<void>
@@ -143,6 +145,25 @@ export function useSession(sessionId: string): SessionApi {
     await agentRef.current.stub.sendMessage({ text, messageId, attachments })
   }, [])
 
+  const steer = useCallback(async (text: string, attachments?: { key: string; name: string; size: number }[]) => {
+    const messageId = `u-${crypto.randomUUID()}`
+    // optimistic echo with the SAME id the server will use, so its turn.start replaces this
+    dispatch({
+      type: 'event',
+      event: {
+        t: 'turn.start',
+        turn: {
+          id: messageId,
+          role: 'user',
+          createdAt: Date.now(),
+          status: 'complete',
+          parts: [{ kind: 'text', id: `${messageId}:text`, text }],
+        },
+      },
+    })
+    await agentRef.current.stub.steer({ text, messageId, attachments })
+  }, [])
+
   const stop = useCallback(async () => {
     await agentRef.current.stub.stop()
   }, [])
@@ -222,6 +243,7 @@ export function useSession(sessionId: string): SessionApi {
     permissions: transcript.permissions,
     connected,
     send,
+    steer,
     stop,
     setModel,
     setMode,
