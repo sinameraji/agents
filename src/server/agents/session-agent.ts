@@ -9,7 +9,7 @@ import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 import { buildOpencodeConfig, hasProviderKey, opencodePromptModel } from '../opencode-config'
 import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
-import { runCfAgentLoop, summarizeMessages } from '../harness/cfagent'
+import { runCfAgentLoop, summarizeMessages, stripImagesFromHistory, userMessageWithImages } from '../harness/cfagent'
 import type { ModelMessage } from 'ai'
 // The bridge (pi/KimiFlare/AI-SDK host) ships INSIDE the worker and is written into the container
 // at runtime, so its version always matches this deploy, no image rebuilds, no warm-pool staleness.
@@ -17,6 +17,15 @@ import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
 import { ORG_NAME } from '../auth/membership'
 import { applyEvent, emptyTranscript, sweepDanglingTools } from '~shared/agent-reduce'
 import { ApprovalBroker } from '~shared/approvals'
+import { harnessCaps } from '~shared/harness-caps'
+import {
+  MAX_IMAGE_BYTES,
+  MAX_TURN_IMAGE_BYTES,
+  dataUrlFromBytes,
+  imageMimeOf,
+  modelAcceptsImages,
+  planImageBudget,
+} from '~shared/vision'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
 import {
   DEFAULT_MODEL_BY_PROVIDER,
@@ -78,11 +87,26 @@ interface TurnRow {
   data_json: string
 }
 
+/** An uploaded file riding with a prompt (mirrors what POST /api/uploads returned). */
+interface Attachment {
+  key: string
+  name: string
+  size: number
+  /** Stored content type; old messages predate it, imageMimeOf falls back to the extension. */
+  mime?: string
+}
+
+/** An image already inlined as a base64 data URL, ready for a model API. */
+interface InlineImage {
+  name: string
+  dataUrl: string
+}
+
 interface QueuedMessage {
   messageId?: string
   text: string
   runText?: string
-  attachments?: { key: string; name: string; size: number }[]
+  attachments?: Attachment[]
 }
 
 /**
@@ -380,7 +404,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   /** Copy uploaded files from R2 into the sandbox at /workspace/uploads/. */
-  private async copyAttachments(attachments: { key: string; name: string; size: number }[]): Promise<void> {
+  private async copyAttachments(attachments: Attachment[]): Promise<void> {
     try {
       const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
       await sandbox.mkdir('/workspace/uploads', { recursive: true }).catch(() => null)
@@ -395,6 +419,54 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     } catch (e) {
       console.error('[agents] copyAttachments failed', e)
     }
+  }
+
+  /**
+   * Which image attachments ride to the model this turn. Both capability axes must pass —
+   * the harness pipe (harness-caps promptCapabilities.image) and the current model
+   * (vision.ts heuristic) — then the size budget applies. Skipped images get a visible note
+   * on the user turn; they are still ordinary files in /workspace/uploads either way.
+   */
+  private planTurnImages(input: QueuedMessage): { key: string; name: string; mime: string; size: number }[] {
+    const cfg = this.config()
+    if (!harnessCaps(cfg.harness).promptCapabilities.image) return []
+    if (!modelAcceptsImages(cfg.provider, cfg.model)) return []
+    const images = (input.attachments ?? []).flatMap((a) => {
+      const mime = imageMimeOf(a)
+      return mime ? [{ key: a.key, name: a.name, mime, size: a.size }] : []
+    })
+    if (!images.length) return []
+    const { deliver, skipped } = planImageBudget(images)
+    if (skipped.length && input.messageId) {
+      const mb = (n: number) => `${(n / (1024 * 1024)).toFixed(1)} MB`
+      const names = skipped.map((s) => `${s.att.name} (${mb(s.att.size)})`).join(', ')
+      this.emit({
+        t: 'part.upsert',
+        turnId: input.messageId,
+        part: {
+          kind: 'text',
+          id: `${input.messageId}:img-skip`,
+          text: `_Not sent to the model (limit ${mb(MAX_IMAGE_BYTES)} per image, ${mb(MAX_TURN_IMAGE_BYTES)} per turn): ${names}. The files are still in ./uploads/._`,
+        },
+      })
+    }
+    return deliver
+  }
+
+  /** Read the planned images from R2 and inline them as data URLs (cfagent + bridge lanes;
+   *  OpenCode skips this — it reads the workspace copies itself via file:// parts). */
+  private async inlineImages(images: { key: string; name: string; mime: string }[]): Promise<InlineImage[]> {
+    const out: InlineImage[] = []
+    for (const img of images) {
+      try {
+        const obj = await this.env.STORE.get(img.key)
+        if (!obj) continue
+        out.push({ name: img.name, dataUrl: dataUrlFromBytes(img.mime, new Uint8Array(await obj.arrayBuffer())) })
+      } catch (e) {
+        console.error('[agents] image inline failed', img.name, e)
+      }
+    }
+    return out
   }
 
   /** Snapshot /workspace to R2 so it survives container sleep. */
@@ -522,7 +594,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
-  private async runCfAgentTurn(text: string): Promise<void> {
+  private async runCfAgentTurn(text: string, images: InlineImage[] = []): Promise<void> {
     const gen = this.turnGen
     const cfg = this.config()
     const conn = await this.connections()
@@ -536,7 +608,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.setStatus('busy')
 
     const history = this.getKv<ModelMessage[]>('cfagent:messages', [])
-    history.push({ role: 'user', content: text })
+    // Multimodal only when images passed both capability axes; the model sees them THIS turn,
+    // persistence strips them below (DO KV can't hold megabytes of base64 per value).
+    history.push(userMessageWithImages(text, images))
 
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({
@@ -621,7 +695,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       }
       const { text: finalText, usage } = result
       history.push({ role: 'assistant', content: finalText })
-      this.putKv('cfagent:messages', history.slice(-40))
+      this.putKv('cfagent:messages', stripImagesFromHistory(history).slice(-40))
       this.emit({ t: 'turn.update', id: turnId, patch: { status: 'complete', usage, completedAt: Date.now() } })
       if (this.turnGen === gen) {
         this.setStatus('idle')
@@ -638,7 +712,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
-  private async runBridgeTurn(text: string): Promise<void> {
+  private async runBridgeTurn(text: string, images: InlineImage[] = []): Promise<void> {
     const gen = this.turnGen
     const cfg = this.config()
     const conn = await this.connections()
@@ -670,8 +744,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.handledQuestions.clear()
 
     // The CURRENT mode rides along so a mid-session switch reaches the running harness without
-    // a restart (the /start config only carried the boot-time mode).
-    await this.bridgeFetch(sandbox, 'POST', '/prompt', { text, mode: this.state.mode })
+    // a restart (the /start config only carried the boot-time mode). Images are only ever
+    // non-empty for harnesses whose caps declare an image lane (aisdk today).
+    await this.bridgeFetch(sandbox, 'POST', '/prompt', {
+      text,
+      mode: this.state.mode,
+      ...(images.length ? { images } : {}),
+    })
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
 
@@ -832,7 +911,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async sendMessage(input: {
     text: string
     messageId?: string
-    attachments?: { key: string; name: string; size: number }[]
+    attachments?: Attachment[]
     /** What actually goes to the harness when it differs from the displayed text (command templates). */
     runText?: string
   }): Promise<{ ok: true }> {
@@ -962,9 +1041,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       : promptText
     const run = (async () => {
       if (input.attachments?.length) await this.copyAttachments(input.attachments)
-      if (harness === 'opencode') return this.runOpencodeTurn(text)
-      if (harness === 'cfagent') return this.runCfAgentTurn(text)
-      return this.runBridgeTurn(text)
+      // Image lane: only when the harness pipe AND the current model take images; everything
+      // else already reached /workspace/uploads above, so this is purely additive.
+      const images = this.planTurnImages(input)
+      if (harness === 'opencode') return this.runOpencodeTurn(text, images)
+      if (harness === 'cfagent') return this.runCfAgentTurn(text, await this.inlineImages(images))
+      return this.runBridgeTurn(text, await this.inlineImages(images))
     })()
     void run
       .catch((err) => {
@@ -994,7 +1076,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.startTurn(next)
   }
 
-  private async runOpencodeTurn(text: string): Promise<void> {
+  private async runOpencodeTurn(text: string, images: { name: string; mime: string }[] = []): Promise<void> {
     const gen = this.turnGen
     const cfg = this.config()
     const conn = await this.connections()
@@ -1017,7 +1099,20 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     await client.session.promptAsync(
       {
         sessionID: ocSession,
-        parts: [{ type: 'text', text }],
+        parts: [
+          { type: 'text', text },
+          // Image inputs as FilePartInput: copyAttachments already put the file in
+          // /workspace/uploads, and OpenCode resolves file:// URLs with a non-text mime by
+          // reading the file and inlining it as a base64 data URL for the model (verified in
+          // sst/opencode v1.18.18 session/prompt.ts resolveUserPart). Names are sanitized to
+          // [\w.-] at upload, so raw interpolation into the URL is safe.
+          ...images.map((i) => ({
+            type: 'file' as const,
+            mime: i.mime,
+            filename: i.name,
+            url: `file:///workspace/uploads/${i.name}`,
+          })),
+        ],
         model: promptModel,
         ...(mode === 'plan' ? { agent: 'plan' } : {}),
       } as never,
@@ -1178,7 +1273,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async steer(input: {
     text: string
     messageId?: string
-    attachments?: { key: string; name: string; size: number }[]
+    attachments?: Attachment[]
     runText?: string
   }): Promise<{ ok: true; native: boolean }> {
     this.hydrate()
