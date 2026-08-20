@@ -174,3 +174,17 @@
     background: transparent;
   }
 }
+
+/* GitHub/Cursor-style unified-diff rows. Tints derive from the theme's --success/--destructive
+   tokens via color-mix, so they track light/dark automatically. The -num variants blend with
+   --card so the sticky line-number gutters stay opaque as the row scrolls horizontally. */
+@layer components {
+  .dv-add { background: color-mix(in oklch, var(--success) 13%, transparent); }
+  .dv-del { background: color-mix(in oklch, var(--destructive) 12%, transparent); }
+  /* srgb, not oklch: mixing a hued color with white in oklch rotates the hue (green→salmon)
+     because white's hue is undefined; sRGB blends toward a clean light green/red. */
+  .dv-add-num { background: color-mix(in srgb, var(--success) 26%, var(--card)); }
+  .dv-del-num { background: color-mix(in srgb, var(--destructive) 24%, var(--card)); }
+  .dv-ctx-num { background: var(--card); }
+  .dv-hunk { background: color-mix(in oklch, var(--chart-4, var(--muted)) 12%, transparent); }
+}

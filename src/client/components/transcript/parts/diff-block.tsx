@@ -3,12 +3,11 @@ import { ChevronRight, FileDiff } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NormDiffFile } from '~shared/agent'
-import { CodeBlock } from '../code-block'
+import { DiffView } from '../diff-view'
 
 /**
- * Renders changed files. A file with a unified-diff `patch` expands to a Shiki-highlighted diff;
- * otherwise we show the per-file +/- summary row. (We deliberately avoid @git-diff-view: its
- * bundled CSS ships a second Tailwind preflight that breaks the app's global styles.)
+ * Renders changed files. A file with a unified-diff `patch` expands to a GitHub-style DiffView (tinted rows);
+ * otherwise we show the per-file +/- summary row.
  */
 export function DiffBlock({ files }: { files: NormDiffFile[] }) {
   if (!files.length) return null
@@ -49,7 +48,7 @@ function DiffFile({ file }: { file: NormDiffFile }) {
       </button>
       {open && hasPatch && (
         <div className="mt-1">
-          <CodeBlock code={file.patch!} lang="diff" maxHeight={420} />
+          <DiffView diff={file.patch!} maxHeight={420} />
         </div>
       )}
     </div>
