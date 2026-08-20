@@ -1,6 +1,7 @@
 import { Agent, callable, getAgentByName } from 'agents'
 import { getSandbox } from '@cloudflare/sandbox'
 import { decryptSecret, encryptSecret, maskSecret } from '../crypto'
+import { monthKeyOf, rollSpendCheckpoint, type SpendCheckpoint } from '../spend'
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SETTINGS,
@@ -176,6 +177,22 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   markRead(id: string): { ok: true } {
     this.sql`UPDATE sessions SET unread = 0 WHERE id = ${id}`
     return { ok: true }
+  }
+
+  /**
+   * This user's current calendar-month spend, from the sessions index (SUM(sessions.cost), which
+   * SessionAgent keeps as lifetime cost per session) with a month-anchored baseline checkpoint.
+   * See ../spend.ts for the approximation and its caveats. Server-side RPC only (budget-cap gate
+   * in SessionAgent + /api/me); deliberately not @callable.
+   */
+  async monthlySpend(): Promise<{ monthKey: string; spentUsd: number; totalUsd: number }> {
+    const totalUsd = this.sql<{ t: number | null }>`SELECT SUM(cost) AS t FROM sessions`[0]?.t ?? 0
+    const stored = this.getSetting<SpendCheckpoint | null>('spendCheckpoint', null)
+    const { checkpoint, spentUsd } = rollSpendCheckpoint(stored, totalUsd, monthKeyOf(new Date()))
+    if (!stored || stored.monthKey !== checkpoint.monthKey || stored.baseline !== checkpoint.baseline) {
+      this.putSetting('spendCheckpoint', checkpoint)
+    }
+    return { monthKey: checkpoint.monthKey, spentUsd, totalUsd }
   }
 
   /** Called by SessionAgent (server-side RPC) to keep the sidebar in sync. */
