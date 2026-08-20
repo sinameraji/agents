@@ -99,8 +99,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private emittedParts = new Map<string, string>()
   /** Question ids already declined this turn (poll re-lists until the server drops them). */
   private handledQuestions = new Set<string>()
-  /** Set when the OpenCode process was restarted (model switch / clear) — the next turn gets an honest context note. */
-  private ocRestarted = false
+  /** Set when a persisted OpenCode session id could NOT be restored after a (re)boot (the server
+   *  no longer knows it — container recycled before the pinned store existed, or the store was
+   *  lost). The next turn opens with an honest context-reset note. Clean restarts — the normal
+   *  model-switch case, where session.get confirms the id — stay silent because context is intact. */
+  private ocContextLost = false
   private cfAbort: AbortController | null = null
   /** Bumped by stop() and every new turn; in-flight poll loops exit when their captured value goes stale. */
   private turnGen = 0
@@ -718,7 +721,6 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // running, so racing a dying server would silently keep the OLD config.
     if (this.getKv<boolean>('ocModelDirty', false)) {
       this.putKv('ocModelDirty', false)
-      this.ocRestarted = true
       this.opencode = undefined
       await sandbox
         .exec('sh -lc \'pkill -f "[o]pencode serve" || true; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do pgrep -f "[o]pencode serve" >/dev/null || break; sleep 0.25; done\'')
@@ -759,6 +761,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       }
       console.warn('[agents] opencode session', known, 'no longer exists (container recycled), creating a new one')
       this.opencodeSessionId = undefined
+      // Truth signal for the context-reset note: a session we promised to resume is gone.
+      this.ocContextLost = true
     }
     const res = await this.opencode!.session.create({ title: this.state.meta?.name ?? 'session' }, { throwOnError: true } as never)
     const id = (res as { data?: { id?: string } }).data?.id ?? (res as { id?: string }).id
@@ -950,11 +954,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // assistant messages for this prompt are grouped into ONE Agents turn.
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
-    if (this.ocRestarted) {
-      this.ocRestarted = false
+    if (this.ocContextLost) {
+      this.ocContextLost = false
       this.emit({
         t: 'part.upsert', turnId,
-        part: { kind: 'text', id: `${turnId}:ctx-note`, text: '_The harness was restarted (model switch or clear) — earlier conversation context may not carry over._' },
+        part: { kind: 'text', id: `${turnId}:ctx-note`, text: '_Context reset: the earlier conversation could not be restored (the sandbox was recycled), so the model starts fresh from this message._' },
       })
     }
 
