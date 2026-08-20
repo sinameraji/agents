@@ -94,6 +94,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private emittedParts = new Map<string, string>()
   /** Question ids already declined this turn (poll re-lists until the server drops them). */
   private handledQuestions = new Set<string>()
+  /** Set when the OpenCode process was restarted (model switch / clear) — the next turn gets an honest context note. */
+  private ocRestarted = false
   private cfAbort: AbortController | null = null
   /** Bumped by stop() and every new turn; in-flight poll loops exit when their captured value goes stale. */
   private turnGen = 0
@@ -702,6 +704,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // Session history persists on the container disk, so the same sessionID resumes seamlessly.
     if (this.getKv<boolean>('ocModelDirty', false)) {
       this.putKv('ocModelDirty', false)
+      this.ocRestarted = true
       this.opencode = undefined
       await sandbox.exec("sh -lc 'pkill -f opencode || true'").catch(() => null)
       await new Promise((r) => setTimeout(r, 500))
@@ -920,6 +923,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // assistant messages for this prompt are grouped into ONE Agents turn.
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
+    if (this.ocRestarted) {
+      this.ocRestarted = false
+      this.emit({
+        t: 'part.upsert', turnId,
+        part: { kind: 'text', id: `${turnId}:ctx-note`, text: '_The harness was restarted (model switch or clear) — earlier conversation context may not carry over._' },
+      })
+    }
 
     const deadline = Date.now() + 30 * 60 * 1000 // long agent turns are legit; this only guards runaway polls
     let stable = 0
@@ -1511,6 +1521,17 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.putKv('todos', [])
     this.putKv('permissions', [])
     this.putKv('cfagent:messages', [])
+    // Clearing must clear the HARNESS's memory too, not just our display: drop the OpenCode
+    // session (a new one is created on the next turn), restart the bridge session, and delete
+    // the on-disk histories the pi/aisdk adapters resume from.
+    this.putKv('opencodeSessionId', null)
+    this.opencodeSessionId = undefined
+    this.putKv('ocModelDirty', true) // force a fresh OpenCode process next turn
+    this.bridgeStarted = false
+    try {
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
+      void sandbox.exec("sh -lc 'rm -rf /workspace/.pi-sessions /workspace/.agents-history.json'").catch(() => null)
+    } catch { /* container may be asleep; the files only matter while it lives */ }
     this.emittedParts.clear()
     this.transcript = emptyTranscript()
     this.hydrated = true
