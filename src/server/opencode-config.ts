@@ -1,9 +1,22 @@
 import type { Config } from '@opencode-ai/sdk/v2'
-import type { Connections, Provider } from '~shared/protocol'
+import type { Connections, Provider, SessionMode } from '~shared/protocol'
 
 /** OpenCode provider id for each of our providers. */
 function providerId(provider: Provider): string {
   return provider === 'cloudflare' ? 'cloudflare-ai-gateway' : provider
+}
+
+/**
+ * Tool-permission preset for the session mode (Config['permission'], values 'ask'|'allow'|'deny'
+ * per @opencode-ai/sdk v2 PermissionConfig — this is how OpenCode's own TUI distinguishes modes).
+ * Build asks before file edits and shell; Auto allows everything (the sandbox is the boundary);
+ * Plan uses the ask preset too, on top of the per-prompt plan agent's own agent-level rules.
+ * Config only applies at process start, so a mode switch marks the process dirty (session-agent).
+ */
+function permissionFor(mode: SessionMode): Config['permission'] {
+  return mode === 'auto'
+    ? { edit: 'allow', bash: 'allow', webfetch: 'allow' }
+    : { edit: 'ask', bash: 'ask', webfetch: 'allow' }
 }
 
 /**
@@ -18,6 +31,8 @@ export function buildOpencodeConfig(
   provider: Provider,
   model: string,
   conn: Connections,
+  /** Session mode; drives the permission preset (see permissionFor). */
+  mode: SessionMode,
   /** When set (cloudflare only), model calls go through the worker's /aig broker: the worker
    *  validates this per-session bearer and stamps a fresh cf-aig-authorization upstream. */
   proxy?: { baseURL: string; token: string },
@@ -76,6 +91,7 @@ export function buildOpencodeConfig(
     $schema: 'https://opencode.ai/config.json',
     model: modelRef,
     small_model: modelRef,
+    permission: permissionFor(mode),
     provider: providerBlock,
   } as unknown as Config
 

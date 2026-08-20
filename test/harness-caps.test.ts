@@ -16,6 +16,23 @@ describe('harness capability manifest', () => {
     }
   })
 
+  it('modes reflect real behavior: all three where Plan/Build/Auto differ, build-only for pi', () => {
+    // opencode: plan agent + permission presets; kimiflare: per-prompt plan/edit/auto;
+    // aisdk + cfagent: plan blocks writes, build asks before mutations, auto never asks.
+    for (const id of ['opencode', 'kimiflare', 'aisdk', 'cfagent'] as const) {
+      expect(HARNESS_CAPS[id].modes, `harness "${id}"`).toEqual(['plan', 'build', 'auto'])
+    }
+    // pi ignores modes entirely (--no-approve; the sandbox is the boundary).
+    expect(HARNESS_CAPS.pi.modes).toEqual(['build'])
+  })
+
+  it('harnesses that ask before mutations advertise permissions', () => {
+    for (const id of ['opencode', 'kimiflare', 'aisdk', 'cfagent'] as const) {
+      expect(HARNESS_CAPS[id].permissions, `harness "${id}"`).toBe(true)
+    }
+    expect(HARNESS_CAPS.pi.permissions).toBe(false)
+  })
+
   it('falls back conservatively when the harness is unknown', () => {
     const caps = harnessCaps(undefined)
     expect(caps.modes).toEqual(['build'])

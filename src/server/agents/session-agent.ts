@@ -16,6 +16,7 @@ import type { ModelMessage } from 'ai'
 import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
 import { ORG_NAME } from '../auth/membership'
 import { applyEvent, emptyTranscript, sweepDanglingTools } from '~shared/agent-reduce'
+import { ApprovalBroker } from '~shared/approvals'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
 import {
   DEFAULT_MODEL_BY_PROVIDER,
@@ -95,9 +96,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private emittedParts = new Map<string, string>()
   /** Question ids already declined this turn (poll re-lists until the server drops them). */
   private handledQuestions = new Set<string>()
-  /** Set when the OpenCode process was restarted (model switch / clear) — the next turn gets an honest context note. */
+  /** Set when the OpenCode process was restarted (model/mode switch, clear) — the next turn gets an honest context note. */
   private ocRestarted = false
   private cfAbort: AbortController | null = null
+  /** Build-mode asks from the DO-side cfagent loop, settled by respondPermission (or timeout). */
+  private cfApprovals = new ApprovalBroker()
   /** Bumped by stop() and every new turn; in-flight poll loops exit when their captured value goes stale. */
   private turnGen = 0
   private transcript: TranscriptState = emptyTranscript()
@@ -534,6 +537,14 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
           part: (part) => this.emit({ t: 'part.upsert', turnId, part }),
           usage: (usage) => this.emit({ t: 'usage', usage }),
         },
+        // Build mode's ask-before-mutate: park the tool on a permission card; respondPermission
+        // settles it, a 5 min timeout (or stop()) denies it and clears the card.
+        askPermission: (title, metadata) =>
+          this.cfApprovals.ask({
+            tool: String(metadata?.tool ?? title),
+            announce: (id) => this.emit({ t: 'permission.ask', permission: { id, title, metadata } }),
+            expire: (id) => this.emit({ t: 'permission.resolve', id }),
+          }),
       })
 
     try {
@@ -637,7 +648,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.emittedParts.clear()
     this.handledQuestions.clear()
 
-    await this.bridgeFetch(sandbox, 'POST', '/prompt', { text })
+    // The CURRENT mode rides along so a mid-session switch reaches the running harness without
+    // a restart (the /start config only carried the boot-time mode).
+    await this.bridgeFetch(sandbox, 'POST', '/prompt', { text, mode: this.state.mode })
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
 
@@ -703,13 +716,16 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       cfg.provider === 'cloudflare' && ownerHost
         ? { baseURL: `https://${ownerHost}/aig/${this.name}`, token: this.proxyToken() }
         : undefined
-    const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn, proxy)
+    const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn, this.state.mode, proxy)
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
     await this.ensureWorkspace(sandbox)
-    // Model changed since the server booted: kill it so createOpencode starts fresh with the
-    // rebuilt config (the custom provider's model map + per-model options only apply at start).
-    // Session history persists on the container disk, so the same sessionID resumes seamlessly.
-    if (this.getKv<boolean>('ocModelDirty', false)) {
+    // Model or mode changed since the server booted: kill it so createOpencode starts fresh with
+    // the rebuilt config (the custom provider's model map, per-model options AND the permission
+    // preset only apply at process start). Session history persists on the container disk, so the
+    // same sessionID resumes seamlessly. (ocModelDirty is the flag's pre-rename key; honor a
+    // pending one across the deploy.)
+    if (this.getKv<boolean>('ocConfigDirty', false) || this.getKv<boolean>('ocModelDirty', false)) {
+      this.putKv('ocConfigDirty', false)
       this.putKv('ocModelDirty', false)
       this.ocRestarted = true
       this.opencode = undefined
@@ -977,7 +993,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       this.ocRestarted = false
       this.emit({
         t: 'part.upsert', turnId,
-        part: { kind: 'text', id: `${turnId}:ctx-note`, text: '_The harness was restarted (model switch or clear) — earlier conversation context may not carry over._' },
+        part: { kind: 'text', id: `${turnId}:ctx-note`, text: '_The harness was restarted (model or mode switch, or clear); earlier conversation context may not carry over._' },
       })
     }
 
@@ -1162,6 +1178,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       } catch { /* ignore */ }
     }
     this.cfAbort?.abort()
+    // Deny any cfagent tool still parked on an ask, and clear its card: stop means stop.
+    for (const pid of this.cfApprovals.denyAll()) this.emit({ t: 'permission.resolve', id: pid })
     if (this.config().harness !== 'opencode' && this.config().harness !== 'cfagent') {
       const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
       await this.bridgeFetch(sandbox, 'POST', '/abort').catch(() => null)
@@ -1174,9 +1192,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async respondPermission(id: string, reply: PermissionReply, note?: string): Promise<{ ok: true }> {
     this.emit({ t: 'permission.resolve', id })
     try {
-      if (this.config().harness === 'opencode') {
+      // DO-owned asks first: cfagent's Build-mode gate parks on the ApprovalBroker, no harness
+      // roundtrip involved. resolve() is false for ids it never issued, so this routes cleanly.
+      if (this.cfApprovals.resolve(id, reply)) return { ok: true }
+      const harness = this.config().harness
+      if (harness === 'opencode') {
         if (this.opencode) await this.opencode.permission.reply({ requestID: id, reply, message: note } as never)
-      } else {
+      } else if (harness !== 'cfagent') {
         const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
         await this.bridgeFetch(sandbox, 'POST', '/permission', { id, reply, note })
       }
@@ -1611,7 +1633,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // the on-disk histories the pi/aisdk adapters resume from.
     this.putKv('opencodeSessionId', null)
     this.opencodeSessionId = undefined
-    this.putKv('ocModelDirty', true) // force a fresh OpenCode process next turn
+    this.putKv('ocConfigDirty', true) // force a fresh OpenCode process next turn
     this.bridgeStarted = false
     try {
       const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
@@ -1626,7 +1648,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   @callable()
   setMode(mode: SessionMode): { ok: true } {
+    const prev = this.state.mode
     this.setState({ ...this.state, mode })
+    // OpenCode only reads its permission preset at process start: a real mode change marks the
+    // process dirty so the next turn restarts it with the new preset (same on-disk session, so
+    // context carries over). Other harnesses take the mode per prompt, no restart needed.
+    const cfg = this.getKv<SessionConfig | null>('config', null)
+    if (mode !== prev && cfg?.harness === 'opencode') this.putKv('ocConfigDirty', true)
     return { ok: true }
   }
 
@@ -1639,7 +1667,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // in its boot-time map ("languageModel is not a function"). Mark the process dirty so the next
     // turn restarts it with a rebuilt config — OpenCode persists sessions on disk, so the same
     // sessionID continues with context intact.
-    if (cfg.harness === 'opencode' && model !== cfg.model) this.putKv('ocModelDirty', true)
+    if (cfg.harness === 'opencode' && model !== cfg.model) this.putKv('ocConfigDirty', true)
     if (this.state.meta) this.setState({ ...this.state, meta: { ...this.state.meta, model } })
     void getAgentByName(this.env.UserAgent, cfg.owner).then((u) => u.upsertSessionSummary({ id: this.name, model }))
     return { ok: true }

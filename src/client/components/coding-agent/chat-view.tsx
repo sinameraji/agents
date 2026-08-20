@@ -21,11 +21,13 @@ import { WorkspaceDock } from '../workspace/workspace-dock'
 import type { PastedBlock } from '~shared/protocol'
 import { SubagentsPanel } from './subagents-panel'
 
-/** Mode slash commands + switcher metadata; which of these render is driven by caps.modes. */
+/** Mode slash commands + switcher metadata. The switcher always renders all three and DISABLES
+ *  the ones caps.modes lacks (a grayed Plan with a tooltip is information; a missing one is a
+ *  mystery). Slash commands still only exist for real modes. */
 const MODE_COMMANDS = [
   { id: 'plan', label: 'Plan', hint: 'read-only mode', title: 'Plan: read-only, no edits' },
-  { id: 'build', label: 'Build', hint: 'edits allowed', title: 'Build: edits allowed, approvals may apply' },
-  { id: 'auto', label: 'Auto', hint: 'approve everything', title: 'Auto: approve everything' },
+  { id: 'build', label: 'Build', hint: 'ask before edits/shell', title: 'Build: asks before file edits and shell commands' },
+  { id: 'auto', label: 'Auto', hint: 'run everything unasked', title: 'Auto: run everything without asking' },
 ] as const
 
 /** Registry for manifest-declared harness commands: slash id, label, hint, and how to run it. */
@@ -428,26 +430,30 @@ export function ChatView({ session }: { session: SessionApi }) {
           })()}
           extras={
             <>
-              {caps.modes.length > 1 && (
-                <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs" role="group" aria-label="Mode">
-                  {MODE_COMMANDS.filter((m) => caps.modes.includes(m.id)).map((m) => (
+              <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs" role="group" aria-label="Mode">
+                {MODE_COMMANDS.map((m) => {
+                  const supported = caps.modes.includes(m.id)
+                  return (
                     <button
                       key={m.id}
                       type="button"
+                      disabled={!supported}
                       onClick={() => void session.setMode(m.id)}
                       className={
                         'rounded-md px-2 py-0.5 capitalize transition-colors ' +
-                        (session.mode === m.id
-                          ? 'bg-secondary text-secondary-foreground'
-                          : 'text-muted-foreground hover:text-foreground')
+                        (!supported
+                          ? 'cursor-not-allowed text-muted-foreground/40'
+                          : session.mode === m.id
+                            ? 'bg-secondary text-secondary-foreground'
+                            : 'text-muted-foreground hover:text-foreground')
                       }
-                      title={m.title}
+                      title={supported ? m.title : `${harnessLabel || 'This harness'} doesn't support ${m.label} mode`}
                     >
                       {m.id}
                     </button>
-                  ))}
-                </div>
-              )}
+                  )
+                })}
+              </div>
               <ModelPicker
                 value={meta?.model ?? ''}
                 provider={meta?.provider ?? 'openrouter'}

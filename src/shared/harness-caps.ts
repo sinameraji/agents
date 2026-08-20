@@ -1,13 +1,15 @@
 /**
  * Harness capability manifest — the single source of truth for what each harness can actually do
- * through Dreamweav's pipe (ACP-shaped fields). The UI reads this to HIDE structural absences
- * (never disable-with-tooltip for things that can never work). This is the static "Option A" from
- * the capability audit; v2 lets adapters override these values at /start.
+ * through Dreamweav's pipe (ACP-shaped fields). The UI HIDES most structural absences; MODES are
+ * the exception: the switcher always renders Plan|Build|Auto and DISABLES the unsupported ones
+ * with a tooltip, because "this harness has no Plan" is information the user needs at the moment
+ * of reaching for it. This is the static "Option A" from the capability audit; v2 lets adapters
+ * override these values at /start.
  */
 import type { Harness, SessionMode } from './protocol'
 
 export interface HarnessCaps {
-  /** Session modes with real behavior behind them; the UI only renders these. */
+  /** Session modes with real behavior behind them; the switcher disables the rest. */
   modes: SessionMode[]
   /** 'live' = the harness accepts steering mid-turn; 'stop-and-send' = we abort and re-prompt. */
   steering: 'live' | 'stop-and-send'
@@ -33,10 +35,11 @@ export interface HarnessCaps {
 
 export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
   opencode: {
-    // plan → OpenCode's plan agent per prompt; 'auto' has no distinct behavior in our pipe.
-    modes: ['plan', 'build'],
+    // plan → the plan agent per prompt (+ ask permissions); build → permission preset asking on
+    // edit/bash; auto → allow-everything preset. Presets apply via ocConfigDirty restart.
+    modes: ['plan', 'build', 'auto'],
     steering: 'stop-and-send',
-    // setModel marks ocModelDirty → a fresh OpenCode process next turn picks up the new model.
+    // setModel/setMode mark ocConfigDirty → a fresh OpenCode process next turn picks it up.
     modelSwitch: 'restart',
     commands: ['compact', 'undo', 'redo', 'init', 'diff', 'share', 'unshare'],
     // permission.asked events, plus the permission.list poll during turns.
@@ -76,26 +79,27 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     reasoning: true,
   },
   aisdk: {
-    // plan gates the write tools; 'auto' is identical to build (there are no approvals to skip).
-    modes: ['plan', 'build'],
+    // plan blocks the write tools; build asks before mutations; auto runs everything unasked.
+    modes: ['plan', 'build', 'auto'],
     steering: 'stop-and-send',
     // Provider baseURL + model are captured at /start; no mid-session switch path.
     modelSwitch: 'none',
     commands: ['compact'],
-    // No interactive approvals; plan mode blocks writes instead of asking.
-    permissions: false,
+    // Build mode's ask-before-mutate surfaces as permission cards (gateMutation in the adapter).
+    permissions: true,
     subagents: false,
     promptCapabilities: { image: false, fileAttach: true },
     reasoning: false,
   },
   cfagent: {
-    // plan gates the write tools; 'auto' is identical to build (there are no approvals to skip).
-    modes: ['plan', 'build'],
+    // plan blocks the write tools; build asks before mutations; auto runs everything unasked.
+    modes: ['plan', 'build', 'auto'],
     steering: 'stop-and-send',
     // The loop runs in the DO and reads the session's model every turn.
     modelSwitch: 'per-prompt',
     commands: ['compact'],
-    permissions: false,
+    // Build mode's ask-before-mutate surfaces as permission cards (askPermission in the loop).
+    permissions: true,
     subagents: false,
     promptCapabilities: { image: false, fileAttach: true },
     reasoning: false,

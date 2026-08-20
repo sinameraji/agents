@@ -30,8 +30,12 @@ export interface AdapterSink {
 
 export interface HarnessAdapter {
   start(cfg: StartConfig): Promise<void>
-  /** Begin a new assistant turn for `text`. Resolves when the turn is fully done. */
-  prompt(text: string, sink: AdapterSink): Promise<void>
+  /**
+   * Begin a new assistant turn for `text`. Resolves when the turn is fully done.
+   * `mode` is the session's CURRENT mode (mid-session switches arrive per prompt);
+   * adapters fall back to StartConfig.mode when it is absent, and pi ignores it entirely.
+   */
+  prompt(text: string, sink: AdapterSink, mode?: StartConfig['mode']): Promise<void>
   /**
    * Inject guidance into the RUNNING turn without aborting it (pi's `steer` RPC command).
    * Optional — leaving it undefined is the honest signal that the harness can only

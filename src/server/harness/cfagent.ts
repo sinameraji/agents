@@ -9,6 +9,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import type { NormPart, NormUsage } from '~shared/agent'
 import type { Connections, Provider, SessionMode } from '~shared/protocol'
+import { isMutatingCommand } from '~shared/mutation-guard'
 
 /** Minimal sandbox surface the loop needs (subset of @cloudflare/sandbox's Sandbox stub). */
 export interface SandboxLike {
@@ -102,12 +103,22 @@ export async function runCfAgentLoop(opts: {
   messages: ModelMessage[]
   signal: AbortSignal
   emit: CfAgentEmit
+  /**
+   * Build mode's ask-before-mutate: resolves true (run the tool) or false (skip it). Implemented
+   * by the SessionAgent as a permission card + its respondPermission callable; times out to
+   * denied there. Absent = never ask (legacy behavior).
+   */
+  askPermission?: (title: string, metadata?: Record<string, unknown>) => Promise<boolean>
 }): Promise<{ text: string; usage: NormUsage }> {
   const { sandbox, mode, emit, signal } = opts
   const { url, key, headers } = providerBase(opts.provider, opts.creds)
   const provider = createOpenAICompatible({ name: opts.provider, baseURL: url, apiKey: key, headers })
   const readonly = mode === 'plan'
   const CWD = '/workspace'
+  const clip = (s: string, n = 120) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+  /** Build gates mutations behind the user's approval; Plan blocked already, Auto never asks. */
+  const approved = async (title: string, metadata: Record<string, unknown>) =>
+    mode !== 'build' || !opts.askPermission || (await opts.askPermission(title, metadata))
 
   const sh = async (command: string) => {
     try {
@@ -123,16 +134,11 @@ export async function runCfAgentLoop(opts: {
       description: 'Run a shell command in the project root (/workspace).',
       inputSchema: z.object({ command: z.string() }),
       execute: async ({ command }) => {
-        // Plan mode is read-only. Two guards because \b can't sit next to whitespace or
-        // punctuation: redirects (>, >>) need their own pattern, and interpreter/installer
-        // escapes (python -c 'open(...,"w")', git apply, dd, curl|sh) need explicit entries.
-        if (readonly) {
-          const redirect = /(^|[\s;|&])>{1,2}/.test(command)
-          const mutating =
-            /\b(rm|mv|cp|touch|mkdir|chmod|chown|ln|tee|truncate|dd|sed\s+-i|git\s+(commit|push|apply|checkout|reset|clean)|npm\s+(i|install|ci|update)|pip3?\s+install|apt(-get)?\s+install|(python3?|node|perl|ruby)\s+-[ce])\b/.test(
-              command,
-            )
-          if (redirect || mutating) return 'blocked in plan mode (read-only)'
+        // One shared detector (mutation-guard.ts) for what counts as mutating; Plan blocks it,
+        // Build asks first, Auto and read-only commands run straight through.
+        if (isMutatingCommand(command)) {
+          if (readonly) return 'blocked in plan mode (read-only)'
+          if (!(await approved(`Run: ${clip(command)}`, { tool: 'bash', command }))) return 'denied by user'
         }
         return sh(command)
       },
@@ -179,6 +185,7 @@ export async function runCfAgentLoop(opts: {
             description: 'Write (create/overwrite) a file with content.',
             inputSchema: z.object({ path: z.string(), content: z.string() }),
             execute: async ({ path, content }) => {
+              if (!(await approved(`Write ${clip(path)}`, { tool: 'write_file', path }))) return 'denied by user'
               try {
                 const target = abs(path)
                 const dir = target.slice(0, target.lastIndexOf('/'))
@@ -194,6 +201,7 @@ export async function runCfAgentLoop(opts: {
             description: 'Replace an exact string in a file with a new string.',
             inputSchema: z.object({ path: z.string(), old: z.string(), new: z.string() }),
             execute: async ({ path, old, new: nw }) => {
+              if (!(await approved(`Edit ${clip(path)}`, { tool: 'edit_file', path }))) return 'denied by user'
               try {
                 const r = (await sandbox.readFile(abs(path))) as { content?: string }
                 const cur = r.content ?? ''
