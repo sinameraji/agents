@@ -14,6 +14,7 @@
     "test": "vitest run",
     "types": "wrangler types",
     "deploy": "npm run build && wrangler deploy",
+    "deploy:self": "node scripts/make-self-config.mjs && WRANGLER_CONFIG=wrangler.self.jsonc npm run build && wrangler deploy",
     "setup": "node scripts/setup.mjs",
     "tail": "wrangler tail"
   },
