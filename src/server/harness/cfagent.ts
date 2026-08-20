@@ -217,6 +217,17 @@ export async function runCfAgentLoop(opts: {
     lastFlush = now
     if (textAcc) emit.part({ kind: 'text', id: textPartId, text: textAcc, streaming: !final })
   }
+  // Reasoning accumulates per stream id (one id per reasoning block in AI SDK v7 fullStream),
+  // throttled like text so the DO does not broadcast every token.
+  const reasoningAccs = new Map<string, string>()
+  let lastReasoningFlush = 0
+  const flushReasoning = (id: string, final = false) => {
+    const now = Date.now()
+    if (!final && now - lastReasoningFlush < 120) return
+    lastReasoningFlush = now
+    const acc = reasoningAccs.get(id)
+    if (acc) emit.part({ kind: 'reasoning', id: `r-${id}`, text: acc, streaming: !final })
+  }
   const toolNames = new Map<string, { name: string; input?: Record<string, unknown> }>()
   let streamError: string | null = null
 
@@ -240,6 +251,11 @@ export async function runCfAgentLoop(opts: {
     } else if (ev.type === 'text-delta') {
       textAcc += ev.text
       flushText()
+    } else if (ev.type === 'reasoning-delta') {
+      reasoningAccs.set(ev.id, (reasoningAccs.get(ev.id) ?? '') + ev.text)
+      flushReasoning(ev.id)
+    } else if (ev.type === 'reasoning-end') {
+      flushReasoning(ev.id, true)
     } else if (ev.type === 'tool-call') {
       toolNames.set(ev.toolCallId, { name: ev.toolName, input: ev.input as Record<string, unknown> })
       emit.part({
@@ -262,6 +278,8 @@ export async function runCfAgentLoop(opts: {
   }
   if (streamError) throw new Error(streamError)
 
+  // Turn is over: finalize any reasoning block the stream never closed (aborted providers).
+  for (const id of reasoningAccs.keys()) flushReasoning(id, true)
   const finalText = (await result.text) || textAcc
   textAcc = finalText
   flushText(true)
