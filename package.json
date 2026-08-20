@@ -60,5 +60,28 @@
     "esbuild@0.27.7": true,
     "esbuild@0.28.1": true,
     "core-js-pure@3.50.0": true
+  },
+  "cloudflare": {
+    "label": "Agents",
+    "bindings": {
+      "ENCRYPTION_KEY": {
+        "description": "32 random bytes, base64. Encrypts your stored model-provider keys at rest. Generate with `openssl rand -base64 32`."
+      },
+      "AUTH_SECRET": {
+        "description": "HMAC key that signs the login session cookie. Generate with `openssl rand -base64 32`."
+      },
+      "APP_PASSWORD": {
+        "description": "The password you will log in with. Pick a strong one; anyone who knows it can use your instance."
+      },
+      "OWNER_EMAIL": {
+        "description": "Your email address. Seeded as the instance owner (admin) so you can invite members later. Optional: leave blank to run as the default password-gate owner."
+      },
+      "STORE": {
+        "description": "R2 bucket for file uploads and app storage."
+      },
+      "BACKUP_BUCKET": {
+        "description": "R2 bucket for workspace snapshots, so session workspaces survive container sleep."
+      }
+    }
   }
 }
