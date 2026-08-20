@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
+import type { OrgRole } from '~shared/protocol'
 
 export interface Me {
   id: string
   email: string
+  /** Org role, or null when the user is authenticated but NOT an active member (ask-admin screen). */
+  role: OrgRole | null
 }
 
-/** Fetch the signed-in user's identity once (Cloudflare Access / dev bypass on the server). */
+/** Fetch the signed-in user's identity + org role once. `me` is null only when unauthenticated;
+ *  an authenticated non-member resolves to a `me` with `role: null`. */
 export function useMe(): { me: Me | null; loading: boolean } {
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)

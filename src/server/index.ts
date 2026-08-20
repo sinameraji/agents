@@ -8,15 +8,19 @@ const getSandbox: typeof sdkGetSandbox = (ns, id, opts) =>
 import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
 import { finishCfLogin, finishEmailLogin, finishGithubLogin, startCfLogin, startEmailLogin, startGithubLogin } from './auth/oauth'
+import { memberAccess } from './auth/membership'
+import { registerOrgRoutes } from './api/org'
 import { fetchOpenRouterModels } from './api/models'
 import { handleUpload } from './api/uploads'
 import { getAgentByName } from 'agents'
+import type { OrgRole } from '~shared/protocol'
 
 export { UserAgent } from './agents/user-agent'
 export { SessionAgent } from './agents/session-agent'
+export { OrgAgent } from './agents/org-agent'
 export { Sandbox } from '@cloudflare/sandbox'
 
-type Variables = { identity: Identity }
+type Variables = { identity: Identity; role: OrgRole }
 const app = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 /** Header we set (never trust from the client) so agents can authorize per-user access. */
@@ -143,10 +147,30 @@ app.all('/aig/:sid/*', async (c) => {
 })
 
 // --- api ------------------------------------------------------------------------------------
-app.get('/api/me', (c) => {
+// Identity + membership. Authenticated but NOT a member returns role:null so the SPA can render
+// the "ask your admin for access" screen. This route is deliberately reachable by non-members,
+// so it is registered BEFORE the membership gate below.
+app.get('/api/me', async (c) => {
   const { id, email } = c.get('identity')
-  return c.json({ id, email })
+  const { active, role } = await memberAccess(c.env, email)
+  return c.json({ id, email, role: active ? role : null })
 })
+
+// --- membership gate: every guarded API + agent route past here requires an active member ------
+// (Registered AFTER /api/me so a non-member can still learn they need access.) A non-member gets
+// a clear JSON 403 the SPA renders as the ask-your-admin screen. `role` is stashed for admin routes.
+const requireMember = async (c: any, next: any) => {
+  const identity = c.get('identity') as Identity
+  const { active, role } = await memberAccess(c.env, identity.email)
+  if (!active || !role) return c.json({ error: 'not_a_member' }, 403)
+  c.set('role', role)
+  await next()
+}
+app.use('/api/*', requireMember)
+app.use('/agents/*', requireMember)
+
+// Admin-only roster management (each route re-verifies the caller's admin role server-side).
+registerOrgRoutes(app)
 
 // KimiFlare's supported models, from its registry (src/models/registry.ts in sinameraji/kimiflare):
 // the @cf/ ones are Workers AI (run on the account directly, gateway optional); kimi-k3 is a

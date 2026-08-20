@@ -30,12 +30,14 @@
     "bindings": [
       { "name": "UserAgent", "class_name": "UserAgent" },
       { "name": "SessionAgent", "class_name": "SessionAgent" },
-      { "name": "Sandbox", "class_name": "Sandbox" }
+      { "name": "Sandbox", "class_name": "Sandbox" },
+      { "name": "OrgAgent", "class_name": "OrgAgent" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["UserAgent"] },
-    { "tag": "v2", "new_sqlite_classes": ["SessionAgent", "Sandbox"] }
+    { "tag": "v2", "new_sqlite_classes": ["SessionAgent", "Sandbox"] },
+    { "tag": "v3", "new_sqlite_classes": ["OrgAgent"] }
   ],
   "r2_buckets": [
     { "binding": "STORE", "bucket_name": "dreamweav-store" },

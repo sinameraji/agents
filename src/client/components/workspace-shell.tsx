@@ -12,6 +12,7 @@ import { NewSession } from './new-session'
 import { Onboarding } from './onboarding'
 import { EmptyState } from './empty-state'
 import { LoginDialog } from './login-dialog'
+import { NotAMember } from './not-a-member'
 import { useConfig } from '@/hooks/use-config'
 import { DEFAULT_SETTINGS } from '~shared/protocol'
 import type { UserAgentApi } from '@/hooks/use-user-agent'
@@ -24,7 +25,9 @@ export function WorkspaceShell() {
   // sign-in call to action becomes "Deploy to Cloudflare", since Agents is self-hosted.
   if (config.mode === 'landing') return <GuestShell deploy />
   if (!me) return <GuestShell />
-  return <Shell userId={me.id} email={me.email} />
+  // Authenticated but not an active member of this instance: membership-only access.
+  if (me.role === null) return <NotAMember email={me.email} />
+  return <Shell userId={me.id} email={me.email} isAdmin={me.role === 'admin'} />
 }
 
 /** The app IS the homepage: guests browse the real UI. Consequential actions raise the login
@@ -106,7 +109,7 @@ function GuestShell({ deploy }: { deploy?: boolean }) {
   )
 }
 
-function Shell({ userId, email }: { userId: string; email: string }) {
+function Shell({ userId, email, isAdmin }: { userId: string; email: string; isAdmin: boolean }) {
   const ua = useUserAgent(userId)
   const { path, navigate } = useRouter()
   const sessionId = useSessionRoute()
@@ -202,7 +205,9 @@ function Shell({ userId, email }: { userId: string; email: string }) {
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1">{main}</div>
-      {settingsOpen && <SettingsDialog ua={ua} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />}
+      {settingsOpen && (
+        <SettingsDialog ua={ua} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} isAdmin={isAdmin} />
+      )}
     </div>
   )
 }
