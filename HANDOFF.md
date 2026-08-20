@@ -70,6 +70,10 @@ return 401/400 (BYOK required) - they are no longer listed as unified billing.
 Call-shape quirks: openai gpt-5.x REJECTS max_tokens (needs max_completion_tokens) and REQUIRES
 reasoning_effort:none with tools; gpt-4.1-x REJECTS reasoning_effort. Anthropic catalog ids are
 published dotted (claude-sonnet-4.6) but only DASHED ids work (claude-sonnet-4-6) -> normalizeUnifiedId.
+DOCS list 6 unified-billing providers (adds google-ai-studio, google-vertex-ai, xai, groq) but on
+this account those 3 return 400/401 no-credentials on BOTH documented paths; the REST /ai/v1 path is
+strictly worse than compat (404s anthropic ids compat serves). BYOK keys stored in the gateway under
+the "default" alias would make any provider work keyless - that is the real unlock, not yet built.
 Wholesale rate limits surface as 402/429; provider geo-blocks as 403 (depends on the CF colo the
 request egresses from: HKG is blocked by OpenAI, ICN/ORD/KUL worked). Both now explained by /aig.
 
