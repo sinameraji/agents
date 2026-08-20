@@ -142,6 +142,25 @@ export function describeCfError(input: CfErrorInput, ctx: CfErrorContext): strin
     : 'Cloudflare rejected the request. Try again.'
 }
 
+// --- wizard state (wire type) -------------------------------------------------------------------
+
+/** Server-persisted onboarding state (settings KV on the UserAgent) so a reload resumes mid-wait. */
+export interface DomainWizardState {
+  /** Full hostname being wired, e.g. agents.yourcompany.com. */
+  hostname: string
+  /** Registrable zone the hostname lives in, e.g. yourcompany.com. */
+  zone: string
+  zoneId: string
+  /** The two Cloudflare-assigned nameservers the registrar must be switched to. */
+  nameServers: string[]
+  /** Cloudflare zone status: initializing | pending | active | moved. */
+  status: string
+  step: 'nameservers' | 'attach' | 'done'
+  /** Final URL, set once the attach step succeeds. */
+  url?: string
+  updatedAt: number
+}
+
 // --- zone status --------------------------------------------------------------------------------
 
 /** Zone lifecycle per the Cloudflare API: initializing | pending | active | moved. */
