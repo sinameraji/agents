@@ -6,11 +6,12 @@ import type { NormPart } from '~shared/agent'
 
 type ReasoningPartData = Extract<NormPart, { kind: 'reasoning' }>
 
-/** Collapsed-by-default "Thinking" disclosure. Auto-expands (and pulses) while streaming. */
+/** Collapsed "Thinking" disclosure. The monologue only shows on explicit click — never
+ *  auto-expanded, for any harness; while streaming the label pulses as the activity signal. */
 export function ReasoningPart({ part }: { part: ReasoningPartData }) {
   const [open, setOpen] = useState(false)
   const streaming = Boolean(part.streaming)
-  const expanded = open || streaming
+  const expanded = open
 
   return (
     <div className="min-w-0">
