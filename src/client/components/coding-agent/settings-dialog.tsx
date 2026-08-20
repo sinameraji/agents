@@ -26,6 +26,7 @@ import { HARNESSES, type Connections, type Provider } from '~shared/protocol'
 import { harnessRequirements } from '../new-session'
 import { Button } from '@/components/ui/button'
 import { MembersPanel } from './members-panel'
+import { DomainWizard } from './domain-wizard'
 
 export const PROVIDERS: { id: Provider; label: string; field: keyof Connections; placeholder: string; keyUrl: string }[] = [
   { id: 'anthropic', label: 'Anthropic', field: 'anthropicKey', placeholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/keys' },
@@ -203,8 +204,7 @@ export function SettingsDialog({
                   ['providers', 'Providers'],
                   ['harness', 'Harness'],
                   ['git', 'Git'],
-                  ['domain', 'Domain'],
-                  ...(isAdmin ? ([['members', 'Members']] as const) : []),
+                  ...(isAdmin ? ([['domain', 'Domain'], ['members', 'Members']] as const) : []),
                 ] as [SettingsTab, string][]
               ).map(([id, label]) => (
                 <button
@@ -403,7 +403,7 @@ export function SettingsDialog({
           </section>
           )}
 
-          {tab === 'domain' && <DomainSection ua={ua} />}
+          {tab === 'domain' && isAdmin && <DomainWizard ua={ua} />}
 
           {tab === 'members' && isAdmin && <MembersPanel />}
         </div>
@@ -416,114 +416,5 @@ export function SettingsDialog({
         </footer>
       </div>
     </div>
-  )
-}
-
-/** Self-host: wire a custom domain (app + wildcard previews). When the user logged in with
- *  Cloudflare, one click does it via that connection — no manual token. Manual is the fallback. */
-function DomainSection({ ua }: { ua: UserAgentApi }) {
-  const [domain, setDomain] = useState('')
-  const [token, setToken] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [manual, setManual] = useState(false)
-  const [result, setResult] = useState<{ ok: boolean; note: string; needsReconnect?: boolean } | null>(null)
-
-
-  const wireAuto = async () => {
-    setBusy(true)
-    setResult(null)
-    try {
-      setResult(await ua.setupCustomDomainAuto(domain))
-    } catch (e) {
-      setResult({ ok: false, note: (e as Error).message })
-    } finally {
-      setBusy(false)
-    }
-  }
-  const wireManual = async () => {
-    setBusy(true)
-    setResult(null)
-    try {
-      setResult(await ua.setupCustomDomain(domain, token))
-    } catch (e) {
-      setResult({ ok: false, note: (e as Error).message })
-    } finally {
-      setBusy(false)
-      setToken('')
-    }
-  }
-
-  return (
-    <section className="flex flex-col gap-2">
-      <p className="text-xs text-muted-foreground">
-        Wire a custom domain to this app and add the wildcard DNS that live previews need. The domain
-        must already be a zone on your Cloudflare account. Without one, previews fall back to
-        temporary trycloudflare.com URLs.
-      </p>
-      <label htmlFor="dw-domain" className="text-sm font-medium">Domain</label>
-      <input
-        id="dw-domain"
-        value={domain}
-        onChange={(e) => setDomain(e.target.value)}
-        placeholder="example.com"
-        className="h-10 rounded-lg border border-border bg-background px-3 font-mono text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
-      />
-
-      {!manual ? (
-        <>
-          <Button size="sm" className="mt-1 gap-2 self-start bg-[#F6821F] text-white hover:bg-[#e2760f]" disabled={busy || !domain.trim()} onClick={() => void wireAuto()}>
-            <CloudflareMark fill="#fff" className="size-4" />
-            {busy ? 'Configuring…' : 'Configure with my Cloudflare'}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Uses your Cloudflare login to set up DNS and routing automatically. No token needed.
-          </p>
-          <button type="button" onClick={() => setManual(true)} className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
-            Use a manual API token instead
-          </button>
-        </>
-      ) : (
-        <>
-          <label htmlFor="dw-domain-token" className="text-sm font-medium">API token</label>
-          <p className="text-xs text-muted-foreground">
-            Zone:Read + DNS:Edit + Workers Routes:Edit for that zone. Used once, never stored.
-          </p>
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary/50">
-            <KeyRound className="size-4 shrink-0 text-muted-foreground" />
-            <input
-              id="dw-domain-token"
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Cloudflare API token"
-              className="h-10 w-full bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/60"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" disabled={busy || !domain.trim() || !token.trim()} onClick={() => void wireManual()}>
-              {busy ? 'Wiring…' : 'Wire domain'}
-            </Button>
-            <button type="button" onClick={() => setManual(false)} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
-              Use my Cloudflare login instead
-            </button>
-          </div>
-        </>
-      )}
-
-      {result && (
-        <div className={cn('text-xs', result.ok ? 'text-success' : 'text-destructive')}>
-          {result.note}
-          {result.needsReconnect && (
-            <button
-              type="button"
-              onClick={() => window.location.assign('/auth/cloudflare')}
-              className="ml-1 underline underline-offset-2 hover:opacity-80"
-            >
-              Reconnect Cloudflare
-            </button>
-          )}
-        </div>
-      )}
-    </section>
   )
 }
