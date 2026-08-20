@@ -60,6 +60,8 @@ export interface SessionApi {
   fork: () => Promise<{ id?: string; note: string }>
   gitStatus: () => Promise<{ repo: boolean; branch: string; dirty: number; remote: string | null; lastCommit: string | null }>
   gitExport: (input: { message?: string; branch?: string; openPr?: boolean }) => Promise<{ ok: boolean; note: string; branchUrl?: string; prUrl?: string }>
+  gitChanges: () => Promise<{ repo: boolean; changes: { path: string; status: 'M' | 'A' | 'D' | 'R' | '?' }[] }>
+  gitDiff: (path: string) => Promise<{ diff: string }>
   listFiles: (path?: string) => Promise<{ name: string; path: string; isDirectory: boolean; size: number }[]>
   readFile: (path: string) => Promise<string | null>
   writeFile: (path: string, content: string) => Promise<boolean>
@@ -182,6 +184,12 @@ export function useSession(sessionId: string): SessionApi {
   const gitExport = useCallback(async (input: { message?: string; branch?: string; openPr?: boolean }) => {
     return (await agentRef.current.stub.gitExport(input)) as { ok: boolean; note: string; branchUrl?: string; prUrl?: string }
   }, [])
+  const gitChanges = useCallback(async () => {
+    return (await agentRef.current.stub.gitChanges()) as { repo: boolean; changes: { path: string; status: 'M' | 'A' | 'D' | 'R' | '?' }[] }
+  }, [])
+  const gitDiff = useCallback(async (path: string) => {
+    return (await agentRef.current.stub.gitDiff(path)) as { diff: string }
+  }, [])
   const listFiles = useCallback(async (path?: string) => {
     const r = (await agentRef.current.stub.listFiles(path)) as { files: { name: string; path: string; isDirectory: boolean; size: number }[] }
     return r.files
@@ -226,6 +234,8 @@ export function useSession(sessionId: string): SessionApi {
     fork,
     gitStatus,
     gitExport,
+    gitChanges,
+    gitDiff,
     listFiles,
     readFile,
     writeFile,

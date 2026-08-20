@@ -1171,6 +1171,60 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
+  /** Per-file change status vs HEAD (git status --porcelain), so the Files panel can flag what
+   *  the agent touched. Empty for a non-repo (blank) workspace. */
+  @callable()
+  async gitChanges(): Promise<{ repo: boolean; changes: { path: string; status: 'M' | 'A' | 'D' | 'R' | '?' }[] }> {
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    await this.ensureWorkspace(sandbox).catch(() => null)
+    const { stdout } = await this.sandboxSh(
+      sandbox,
+      `cd /workspace 2>/dev/null; git config --global --add safe.directory /workspace >/dev/null 2>&1; ` +
+        `git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo NOREPO; exit 0; }; ` +
+        `git status --porcelain=v1 2>/dev/null`,
+    )
+    if (stdout.includes('NOREPO')) return { repo: false, changes: [] }
+    const changes: { path: string; status: 'M' | 'A' | 'D' | 'R' | '?' }[] = []
+    for (const line of stdout.split('\n')) {
+      if (!line.trim()) continue
+      const xy = line.slice(0, 2)
+      let raw = line.slice(3).trim()
+      // Renames read "old -> new"; the new path is what the user sees.
+      if (raw.includes(' -> ')) raw = raw.split(' -> ').pop()!.trim()
+      const path = raw.startsWith('/workspace') ? raw : `/workspace/${raw}`.replace(/\/+/g, '/')
+      const status: 'M' | 'A' | 'D' | 'R' | '?' = xy.includes('?')
+        ? '?'
+        : xy.includes('D')
+          ? 'D'
+          : xy.includes('R')
+            ? 'R'
+            : xy.includes('A')
+              ? 'A'
+              : 'M'
+      changes.push({ path, status })
+    }
+    return { repo: true, changes }
+  }
+
+  /** Unified diff of one file vs HEAD (green/red for the Files panel). Untracked files come back
+   *  as an all-added diff so new files still render. */
+  @callable()
+  async gitDiff(path: string): Promise<{ diff: string }> {
+    const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+    const rel = path.replace(/^\/workspace\/?/, '').replace(/'/g, '')
+    if (!rel) return { diff: '' }
+    // IMPORTANT: emit the diff DIRECTLY to stdout — capturing it into `d=$(git diff …)` comes back
+    // empty through the sandbox's shell layering (command substitution is mangled), even though the
+    // same command prints fine unquoted. So branch on tracked-vs-untracked and let git write stdout.
+    const { stdout } = await this.sandboxSh(
+      sandbox,
+      `cd /workspace 2>/dev/null; git config --global --add safe.directory /workspace >/dev/null 2>&1; ` +
+        `if git ls-files --error-unmatch '${rel}' >/dev/null 2>&1; then git diff HEAD -- '${rel}'; ` +
+        `else git diff --no-index /dev/null '${rel}' 2>/dev/null || true; fi`,
+    )
+    return { diff: stdout.slice(0, 200_000) }
+  }
+
   /** Commit everything, push a branch to the user's GitHub (creating a private repo for blank
    *  sessions), optionally open a PR. BYO GitHub PAT from Settings. */
   @callable()
