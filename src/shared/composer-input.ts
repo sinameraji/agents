@@ -47,6 +47,27 @@ export function parseSlashInvocation(text: string, known: readonly string[]): Sl
   return { name, args: (m[2] ?? '').trim() }
 }
 
+/**
+ * Which harness-advertised commands still deserve a row after the static menu is built.
+ *
+ * The built-in entries win every collision: a workspace command called `compact` must not shadow
+ * the one wired to the harness's own compaction. Order and duplicates within `dynamic` are
+ * preserved/collapsed as first-seen.
+ */
+export function mergeDynamicCommands<D extends { name: string }>(
+  base: readonly { id: string }[],
+  dynamic: readonly D[],
+): D[] {
+  const taken = new Set(base.map((c) => c.id))
+  const out: D[] = []
+  for (const cmd of dynamic) {
+    if (!cmd.name || taken.has(cmd.name)) continue
+    taken.add(cmd.name)
+    out.push(cmd)
+  }
+  return out
+}
+
 /** What the '@' / '/' popover is currently offering. */
 export type MenuTrigger = { kind: 'mention' | 'command'; query: string }
 

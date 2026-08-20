@@ -46,11 +46,28 @@ describe('harness capability manifest', () => {
     for (const h of HARNESSES) expect(HARNESS_CAPS[h.id].promptCapabilities.fileAttach).toBe(true)
   })
 
+  it("only OpenCode claims the '!' shell pipe (it is the one harness with session.shell)", () => {
+    expect(HARNESS_CAPS.opencode.bangShell).toBe(true)
+    for (const id of ['pi', 'kimiflare', 'aisdk', 'cfagent'] as const) {
+      expect(HARNESS_CAPS[id].bangShell, `harness "${id}"`).toBe(false)
+    }
+  })
+
+  it('the named-agent roster rides the same flag as subtask parts', () => {
+    // The '@' agent picker and the sub-agents panel are both gated on subagents, so a harness
+    // that grows one must grow the other; today that is OpenCode alone.
+    expect(HARNESS_CAPS.opencode.subagents).toBe(true)
+    for (const id of ['pi', 'kimiflare', 'aisdk', 'cfagent'] as const) {
+      expect(HARNESS_CAPS[id].subagents, `harness "${id}"`).toBe(false)
+    }
+  })
+
   it('falls back conservatively when the harness is unknown', () => {
     const caps = harnessCaps(undefined)
     expect(caps.modes).toEqual(['build'])
     expect(caps.commands).toEqual([])
     expect(caps.subagents).toBe(false)
+    expect(caps.bangShell).toBe(false)
     expect(caps.promptCapabilities.image).toBe(false)
   })
 

@@ -9,7 +9,7 @@ import { transcriptToMarkdown } from '~shared/transcript-markdown'
 import { HARNESS_MARKS, PROVIDER_MARKS, PROVIDER_LABELS } from '../brand-marks'
 import { HARNESSES } from '~shared/protocol'
 import { harnessCaps } from '~shared/harness-caps'
-import { parseBangCommand, parseSlashInvocation } from '~shared/composer-input'
+import { mergeDynamicCommands, parseBangCommand, parseSlashInvocation } from '~shared/composer-input'
 import { modelAcceptsImages } from '~shared/vision'
 import type { UploadedAttachment } from '@/lib/upload'
 import { useRouter } from '@/router'
@@ -459,19 +459,18 @@ export function ChatView({ session }: { session: SessionApi }) {
                   ]
                 : []),
             ]
-            const taken = new Set(base.map((c) => c.id))
+            // Dynamic section: whatever the harness itself reports, minus anything the static
+            // menu already owns.
             return [
               ...base,
-              ...dynamicCommands
-                .filter((c) => !taken.has(c.name))
-                .map((c) => ({
-                  id: c.name,
-                  label: c.name,
-                  hint: c.description ?? 'harness command',
-                  // Commands whose template reads $ARGUMENTS wait in the composer for them.
-                  takesArgs: c.takesArgs,
-                  run: (args?: string) => void session.runCustomCommand(c.name, args ?? ''),
-                })),
+              ...mergeDynamicCommands(base, dynamicCommands).map((c) => ({
+                id: c.name,
+                label: c.name,
+                hint: c.description ?? 'harness command',
+                // Commands whose template reads $ARGUMENTS wait in the composer for them.
+                takesArgs: c.takesArgs,
+                run: (args?: string) => void session.runCustomCommand(c.name, args ?? ''),
+              })),
             ]
           })()}
           extras={
