@@ -275,7 +275,11 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
 function ProTip({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <li className="flex items-start gap-2.5">
-      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span>
+      {/* The badge is taller than one line of text, so centre it inside a box the height of that
+          first line. Nudging with a margin only ever looks right at one text length. */}
+      <span className="flex h-5 shrink-0 items-center">
+        <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span>
+      </span>
       <span className="text-muted-foreground">{children}</span>
     </li>
   )
