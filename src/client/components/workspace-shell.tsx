@@ -27,7 +27,14 @@ export function WorkspaceShell() {
   if (!me) return <GuestShell />
   // Authenticated but not an active member of this instance: membership-only access.
   if (me.role === null) return <NotAMember email={me.email} />
-  return <Shell userId={me.id} email={me.email} isAdmin={me.role === 'admin'} />
+  return (
+    <Shell
+      userId={me.id}
+      email={me.email}
+      isAdmin={me.role === 'admin'}
+      budget={me.capUsd != null ? { capUsd: me.capUsd, spentUsd: me.spentUsd ?? 0 } : undefined}
+    />
+  )
 }
 
 /** The app IS the homepage: guests browse the real UI. Consequential actions raise the login
@@ -109,7 +116,17 @@ function GuestShell({ deploy }: { deploy?: boolean }) {
   )
 }
 
-function Shell({ userId, email, isAdmin }: { userId: string; email: string; isAdmin: boolean }) {
+function Shell({
+  userId,
+  email,
+  isAdmin,
+  budget,
+}: {
+  userId: string
+  email: string
+  isAdmin: boolean
+  budget?: { capUsd: number; spentUsd: number }
+}) {
   const ua = useUserAgent(userId)
   const { path, navigate } = useRouter()
   const sessionId = useSessionRoute()
@@ -159,6 +176,7 @@ function Shell({ userId, email, isAdmin }: { userId: string; email: string; isAd
       sessions={ua.sessions}
       activeId={sessionId ?? ''}
       email={email}
+      budget={budget}
       onSelect={(id) => {
         void ua.markRead(id)
         setDrawerOpen(false)

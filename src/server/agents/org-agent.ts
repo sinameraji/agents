@@ -1,6 +1,7 @@
 import { Agent } from 'agents'
 import type { OrgMember, OrgRole } from '~shared/protocol'
 import { PASSWORD_OWNER_FALLBACK } from '../auth/session'
+import { userIdFromEmail } from '../auth/access'
 
 /**
  * One instance per deployment (name = "org"; see ORG_NAME in ../auth/membership). Owns the
@@ -121,6 +122,28 @@ export class OrgAgent extends Agent<Env, { ready: boolean }> {
     const row = this.getRow(norm(email))
     if (!row || row.status !== 'active') return { active: false, role: null }
     return { active: true, role: row.role === 'admin' ? 'admin' : 'member' }
+  }
+
+  // --- budget caps (read by the enforcement gate; server-side RPC only) ---------------------
+  /** Monthly USD cap for an ACTIVE member, by email. null = no cap set (or not an active
+   *  member). Caps apply to whoever carries one, admins and the owner included; NO role check
+   *  here on purpose — "no cap set" is the only bypass. */
+  async capFor(email: string): Promise<number | null> {
+    this.seedBootstrapAdmins()
+    const row = this.getRow(norm(email))
+    return row && row.status === 'active' ? row.cap_usd : null
+  }
+
+  /** Same lookup keyed by the derived per-user DO id (userIdFromEmail), for callers that only
+   *  know a UserAgent/SessionAgent owner id. Scans capped active members (rosters are small)
+   *  because the id is a one-way hash of the email. */
+  async capForUserId(userId: string): Promise<number | null> {
+    this.seedBootstrapAdmins()
+    const rows = this.sql<MemberRow>`SELECT * FROM members WHERE status = 'active' AND cap_usd IS NOT NULL`
+    for (const r of rows) {
+      if ((await userIdFromEmail(r.email)) === userId) return r.cap_usd
+    }
+    return null
   }
 
   // --- admin management (caller's admin role verified in the Worker) ------------------------

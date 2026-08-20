@@ -14,6 +14,7 @@ import type { ModelMessage } from 'ai'
 // The bridge (pi/KimiFlare/AI-SDK host) ships INSIDE the worker and is written into the container
 // at runtime, so its version always matches this deploy, no image rebuilds, no warm-pool staleness.
 import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
+import { ORG_NAME } from '../auth/membership'
 import { applyEvent, emptyTranscript, sweepDanglingTools } from '~shared/agent-reduce'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
 import {
@@ -238,12 +239,17 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       case 'usage': {
         const last = this.transcript.turns[this.transcript.turns.length - 1]
         if (last) this.persistTurn(last.id)
+        // Usage events carry the CURRENT TURN's running totals (every harness poll re-sums this
+        // prompt's messages), so cost must accumulate ACROSS turns: lifetime = cost at turn start
+        // (costBase, checkpointed in startTurn) + this turn's running cost. Overwriting with
+        // ev.usage.cost directly would reset the session's cost every turn — the sidebar cost and
+        // the monthly budget accounting (UserAgent.monthlySpend) both need the lifetime sum.
         this.setState({
           ...this.state,
           usage: {
             tokensIn: ev.usage.input,
             tokensOut: ev.usage.output + (ev.usage.reasoning ?? 0),
-            costUsd: ev.usage.cost ?? this.state.usage.costUsd,
+            costUsd: this.getKv<number>('costBase', 0) + (ev.usage.cost ?? 0),
           },
         })
         break
@@ -742,6 +748,29 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return id
   }
 
+  // --- monthly budget cap ---------------------------------------------------------------------
+  /**
+   * Should this turn be blocked by the owner's monthly budget cap? A cap applies to whoever
+   * carries one, admins and the owner included; "no cap set" is the only bypass. FAIL-OPEN:
+   * a broken cap/spend lookup must never brick sessions, so any error logs a warning and
+   * allows the turn.
+   */
+  private async budgetGate(): Promise<{ blocked: false } | { blocked: true; capUsd: number; spentUsd: number }> {
+    try {
+      const owner = this.config().owner
+      const org = await getAgentByName(this.env.OrgAgent, ORG_NAME)
+      const capUsd = await org.capForUserId(owner)
+      if (capUsd === null) return { blocked: false }
+      const user = await getAgentByName(this.env.UserAgent, owner)
+      const { spentUsd } = await user.monthlySpend()
+      if (spentUsd < capUsd) return { blocked: false }
+      return { blocked: true, capUsd, spentUsd }
+    } catch (e) {
+      console.warn('[agents] budget cap lookup failed, allowing the turn (fail-open):', e)
+      return { blocked: false }
+    }
+  }
+
   // --- the turn -----------------------------------------------------------------------------
   @callable()
   async sendMessage(input: {
@@ -771,6 +800,23 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       const name = input.text.replace(/\s+/g, ' ').trim().slice(0, 48) || 'Untitled session'
       this.setState({ ...this.state, meta: { ...this.state.meta, name } })
       void getAgentByName(this.env.UserAgent, this.config().owner).then((u) => u.upsertSessionSummary({ id: this.name, name }))
+    }
+    // Monthly budget cap: enforced BEFORE the turn starts (or queues), so a capped member's
+    // message lands in the transcript but no model call happens. Status stays idle.
+    const budget = await this.budgetGate()
+    if (budget.blocked) {
+      const capId = `cap-${Date.now()}`
+      const money = (n: number) => `$${n.toFixed(2)}`
+      const message = `Monthly budget cap reached (${money(budget.spentUsd)} of ${money(budget.capUsd)}). Ask your admin to raise it.`
+      this.emit({
+        t: 'turn.start',
+        turn: {
+          id: capId, role: 'assistant', createdAt: Date.now(), status: 'error', completedAt: Date.now(),
+          error: { name: 'budget_cap', message },
+          parts: [{ kind: 'error', id: `${capId}:e`, name: 'Budget cap', message }],
+        },
+      })
+      return { ok: true }
     }
     // While a turn runs, new messages QUEUE (the user turn is already in the transcript) and
     // drain in order after the current turn finishes. Stop clears the queue.
@@ -849,6 +895,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   /** Kick off the harness turn for an (already transcript-visible) user message. */
   private startTurn(input: QueuedMessage): void {
     this.turnGen += 1
+    // Checkpoint lifetime cost before the turn starts: usage events report per-turn running
+    // totals, and the accumulator in emit('usage') adds them on top of this base.
+    this.putKv('costBase', this.state.usage.costUsd)
     this.setStatus('busy')
     const harness = this.config().harness
     const promptText = input.runText ?? input.text

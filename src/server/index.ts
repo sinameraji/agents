@@ -8,7 +8,7 @@ const getSandbox: typeof sdkGetSandbox = (ns, id, opts) =>
 import { resolveIdentity, type Identity } from './auth/access'
 import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/session'
 import { finishCfLogin, finishEmailLogin, finishGithubLogin, startCfLogin, startEmailLogin, startGithubLogin } from './auth/oauth'
-import { memberAccess } from './auth/membership'
+import { memberAccess, ORG_NAME } from './auth/membership'
 import { registerOrgRoutes } from './api/org'
 import { fetchOpenRouterModels } from './api/models'
 import { handleUpload } from './api/uploads'
@@ -153,7 +153,23 @@ app.all('/aig/:sid/*', async (c) => {
 app.get('/api/me', async (c) => {
   const { id, email } = c.get('identity')
   const { active, role } = await memberAccess(c.env, email)
-  return c.json({ id, email, role: active ? role : null })
+  // When an admin set a monthly budget cap for this member, include cap + current-month spend
+  // so the UI can render a usage meter. Best-effort: a failed lookup only omits the fields.
+  let budget: { capUsd: number; spentUsd: number } | undefined
+  if (active) {
+    try {
+      const org = await getAgentByName(c.env.OrgAgent, ORG_NAME)
+      const capUsd = await org.capFor(email)
+      if (capUsd !== null) {
+        const user = await getAgentByName(c.env.UserAgent, id)
+        const { spentUsd } = await user.monthlySpend()
+        budget = { capUsd, spentUsd }
+      }
+    } catch (e) {
+      console.warn('[agents] /api/me budget lookup failed:', e)
+    }
+  }
+  return c.json({ id, email, role: active ? role : null, ...(budget ?? {}) })
 })
 
 // --- membership gate: every guarded API + agent route past here requires an active member ------
