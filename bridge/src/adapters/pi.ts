@@ -1,6 +1,7 @@
 /**
  * pi harness (@earendil-works/pi-coding-agent). Runs `pi --mode rpc` and speaks LF-JSONL.
- * Docs: prompt/steer/abort commands; events message_update(text_delta), tool_execution_start/end,
+ * Docs (docs/rpc.md + dist/modes/rpc/rpc-types.d.ts, verified against 0.84.2): prompt/steer/abort
+ * commands; events message_update(text_delta), tool_execution_start/end,
  * agent_end. pi has no permission prompts — the sandbox is the boundary.
  */
 import { promises as fs } from 'node:fs'
@@ -153,6 +154,13 @@ export function createPiAdapter(): HarnessAdapter {
         resolveDone = res
         proc?.send({ type: 'prompt', message: text })
       })
+    },
+    // Native mid-turn steering: pi queues the message and delivers it after the current
+    // assistant turn's tool calls, before the next LLM call — no abort. Acknowledged with
+    // {type:'response', command:'steer', success} (rpc-types.d.ts), so we await the ack.
+    async steer(text) {
+      const resp = await rpc.request({ type: 'steer', message: text })
+      if (resp.success === false) throw new Error(String(resp.error ?? 'steer rejected'))
     },
     async abort() {
       proc?.send({ type: 'abort' })
