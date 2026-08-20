@@ -37,12 +37,13 @@ committed; finish per the plan in its section. Worktrees under .claude/worktrees
    plumbed to bridges (/prompt {text, mode}); manifest modes updated (opencode/aisdk/cfagent =
    plan+build+auto REAL, pi = build only); mode switcher shows ALL modes, unsupported = disabled +
    tooltip "<Harness> doesn't support <Mode> mode" (Sina's explicit spec).
-2. **worktree-agent-abd014774fdbe1c31 — custom-domain wizard** (3 commits: zone derivation utils,
-   UserAgent methods, admin /api/domain routes). Left when snapshotted: client Settings→Domain
-   stepper UI + wizard-state persistence + tests.
-3. **worktree-agent-abd2b0f70d25f7d87 — budget caps + export** (5 commits, looks near-complete:
-   lifetime cost fix, month-anchored spend, enforcement at turn start, /api/me + sidebar surface,
-   markdown export generator). Verify client export UI exists + tests pass before merging.
+2. ~~custom-domain wizard~~ MERGED + DEPLOYED (7174533): full stepper (zone create via dns.write,
+   NS copy, poll, attach via wireDomain — NOT the workers/domains endpoint, which needs a scope we
+   lack). Live verification still pending (needs a real external domain; checklist in the agent
+   report / git log 9113a00).
+3. ~~budget caps + export~~ MERGED + DEPLOYED (7174533): lifetime-cost fix, month-anchored spend,
+   turn-start enforcement (fail-open), /api/me + sidebar meter, markdown export in session menu.
+   135/135 tests. Live verification pending: set a cap on a member, watch the block message.
 4. **worktree-agent-a97d17af028358b5c — OpenCode restart-resume investigation** (0 commits yet).
    Goal: root-cause why restarted OpenCode forgets history despite same session id (suspect storage
    dir not persisted/pinned); fix = pin data dir (e.g. XDG_DATA_HOME=/workspace/.opencode-data) or
