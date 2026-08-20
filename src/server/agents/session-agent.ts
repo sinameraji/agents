@@ -1630,7 +1630,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       })
       return { ok: false, note: message }
     } finally {
-      if (this.turnGen === gen) this.setStatus('idle')
+      if (this.turnGen === gen) {
+        this.setStatus('idle')
+        // A '!' command holds the session busy exactly like a turn, so anything the user queued
+        // behind it has to be released here too.
+        this.drainQueue()
+      }
     }
   }
 
