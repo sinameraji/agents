@@ -64,7 +64,10 @@ cap block message, mode tooltips). Branch 1 also touches harness-caps.ts/chat-vi
 changed today — expect small conflicts.
 
 ## LEFT AFTER THAT (roadmap tail)
-- #7 remainder: image model inputs (manifest promptCapabilities.image currently false everywhere).
+- IMAGE INPUTS SHIPPED (merge 8625559, 186 tests): composer thumbnails + clipboard paste, per-model
+  vision detection (OpenRouter input_modalities live + family heuristic), OpenCode file:// parts
+  (server inlines), aisdk/cfagent ai@7 FilePart (ImagePart is deprecated), 4MB/8MB caps with skip
+  notes, pi/kimiflare honest tooltip. Live verify: paste screenshot into opencode+vision model.
 - #3 finish: after kimiflare custom-endpoint publishes → bump pin, adapter passes /aig broker URL +
   per-session token instead of CF token (see session-agent proxyToken/ensureOpencode for the pattern).
 - /aig broker OWNER_HOST dependency: generic deploys skip the cloudflare provider path (derive host
