@@ -31,12 +31,11 @@ cf-unified-billing.md).
 Integration order + conflict notes below. If an agent died mid-task, its branch holds whatever it
 committed; finish per the plan in its section. Worktrees under .claude/worktrees/agent-<id>/.
 
-1. **worktree-agent-a135e37a6449a29a4 — #6 real modes** (0 commits yet at snapshot time).
-   Plan: OpenCode Build=ask/Auto=allow via permission config + restart-on-mode-change (reuse
-   ocModelDirty flow); aisdk + cfagent ask-before-mutate permission cards in Build; per-prompt mode
-   plumbed to bridges (/prompt {text, mode}); manifest modes updated (opencode/aisdk/cfagent =
-   plan+build+auto REAL, pi = build only); mode switcher shows ALL modes, unsupported = disabled +
-   tooltip "<Harness> doesn't support <Mode> mode" (Sina's explicit spec).
+1. ~~#6 real modes~~ MERGED + DEPLOYED (165 tests): OpenCode permission preset per mode +
+   ocConfigDirty restart; aisdk/cfagent Build ask-before-mutate via ApprovalBroker (5-min timeout =
+   denied); per-prompt mode in /prompt body (fixed kimiflare stale boot mode); switcher shows all
+   modes, unsupported disabled + title tooltip. LIVE VERIFICATION PENDING: Build-mode ask on aisdk +
+   opencode in browser, kimiflare per-prompt mode, mode tooltips on pi. Close issue #6 after.
 2. ~~custom-domain wizard~~ MERGED + DEPLOYED (7174533): full stepper (zone create via dns.write,
    NS copy, poll, attach via wireDomain — NOT the workers/domains endpoint, which needs a scope we
    lack). Live verification still pending (needs a real external domain; checklist in the agent
