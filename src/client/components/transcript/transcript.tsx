@@ -4,6 +4,8 @@ import type {
   PermissionReply,
   SessionStatus,
 } from '~shared/agent'
+import { Check, Loader2 } from 'lucide-react'
+
 import { TurnView } from './turn-view'
 import { PermissionCard } from './parts/permission-card'
 
@@ -26,6 +28,7 @@ export function Transcript({
   permissions,
   status,
   phase,
+  phaseLog,
   onPermissionReply,
 }: {
   turns: NormTurn[]
@@ -34,6 +37,8 @@ export function Transcript({
   /** What the session is doing while it boots. Shown verbatim: a cold start is tens of seconds,
    *  and "Cloning owner/repo" is the difference between waiting and wondering if it broke. */
   phase?: string
+  /** Provisioning steps already finished, oldest first. */
+  phaseLog?: string[]
   onPermissionReply?: (id: string, reply: PermissionReply, note?: string) => void
 }) {
   const working = status === 'booting' || status === 'busy'
@@ -58,8 +63,28 @@ export function Transcript({
       ),
   )
 
+  // Provisioning is the one moment where infra detail helps: a cold start pulls an image and
+  // clones a repo before anything can happen, and silence reads as breakage.
+  const steps = [...(phaseLog ?? []), ...(phase ? [phase] : [])]
   return (
     <div className="flex flex-col gap-7">
+      {steps.length > 0 && (
+        <ul className="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs">
+          {steps.map((step, i) => {
+            const current = Boolean(phase) && i === steps.length - 1
+            return (
+              <li key={`${step}-${i}`} className="flex items-center gap-2">
+                {current ? (
+                  <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+                ) : (
+                  <Check className="size-3.5 shrink-0 text-primary" />
+                )}
+                <span className={current ? 'text-foreground' : 'text-muted-foreground'}>{step}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
       {visibleTurns.map((turn) => (
         <TurnView key={turn.id} turn={turn} />
       ))}

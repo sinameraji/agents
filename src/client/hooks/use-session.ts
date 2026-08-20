@@ -33,6 +33,8 @@ interface SyncState {
   agents?: HarnessAgent[]
   /** Boot narration ("Cloning owner/repo"), present only while the session is starting up. */
   phase?: string
+  /** Provisioning steps already finished. */
+  phaseLog?: string[]
 }
 
 type Action = { type: 'hydrate'; state: TranscriptState } | { type: 'event'; event: AgentEvent }
@@ -51,6 +53,8 @@ export interface SessionApi {
   agents: HarnessAgent[]
   /** What the session is doing while it boots, for the working indicator. */
   phase?: string
+  /** Provisioning steps already finished, for the progress list. */
+  phaseLog?: string[]
   turns: NormTurn[]
   todos: NormTodo[]
   permissions: NormPermission[]
@@ -267,6 +271,7 @@ export function useSession(sessionId: string): SessionApi {
     usage: sync.usage,
     agents: sync.agents ?? [],
     phase: sync.phase,
+    phaseLog: sync.phaseLog,
     turns: transcript.turns,
     todos: transcript.todos,
     permissions: transcript.permissions,

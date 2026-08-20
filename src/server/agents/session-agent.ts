@@ -78,6 +78,9 @@ interface SessionAgentState {
    *  starts pull an image, restore a workspace and boot a harness, which is tens of seconds of
    *  apparent nothing without this. Cleared once the harness starts producing. */
   phase?: string
+  /** Steps already finished, oldest first, so the UI can show provisioning as progress rather
+   *  than a single label that keeps changing. Capped: this is a status line, not a log file. */
+  phaseLog?: string[]
 }
 
 const BRIDGE_HASH = (() => {
@@ -212,6 +215,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     void getAgentByName(this.env.UserAgent, config.owner).then((u) =>
       u.upsertSessionSummary({ id: this.name, status: 'idle' }),
     )
+    void this.warmUp()
     return { ok: true }
   }
 
@@ -251,7 +255,29 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   /** Narrate a boot step. Cheap: state is already synced to every open client. */
   private setPhase(phase: string | undefined) {
     if (this.state.phase === phase) return
-    this.setState({ ...this.state, phase })
+    const done = this.state.phase && this.state.phase !== phase ? this.state.phase : null
+    const phaseLog = done ? [...(this.state.phaseLog ?? []), done].slice(-5) : this.state.phaseLog
+    this.setState({ ...this.state, phase, phaseLog })
+  }
+
+  /** Provisioning starts the moment the session exists, not when the first message arrives:
+   *  pulling the container image and cloning a repo is the slowest part of a cold start, and doing
+   *  it while the user is still reading the empty chat is free time. Typing stays available
+   *  throughout; a message sent mid-warmup simply queues behind the same single-flight hydration. */
+  private async warmUp(): Promise<void> {
+    try {
+      this.setStatus('booting')
+      this.setPhase('Starting your sandbox')
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
+      await this.ensureWorkspace(sandbox)
+      this.setPhase('Workspace ready')
+    } catch (e) {
+      console.error('[agents] warmup failed', e)
+    } finally {
+      // Never clobber a turn that started while we were warming.
+      if (this.state.status === 'booting') this.setStatus('idle')
+      this.setPhase(undefined)
+    }
   }
 
   private setStatus(status: SessionStatus) {

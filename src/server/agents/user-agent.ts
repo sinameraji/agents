@@ -412,7 +412,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
         note: `No zone for ${clean} on this token's account. The token needs Zone:Read (to find the zone), plus DNS:Edit and Workers Routes:Edit. Add the domain to Cloudflare first.`,
       }
     }
-    const script = (this.env as unknown as { WORKER_NAME?: string }).WORKER_NAME ?? 'dreamweav'
+    const script = (this.env as unknown as { WORKER_NAME?: string }).WORKER_NAME ?? 'agents'
 
     // A record must be an A record and proxied (orange-cloud) for the worker route to catch it;
     // an existing CNAME or grey-cloud record would silently break previews, so verify, don't

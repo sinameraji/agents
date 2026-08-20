@@ -25,7 +25,7 @@ type Variables = { identity: Identity; role: OrgRole }
 const app = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 /** Header we set (never trust from the client) so agents can authorize per-user access. */
-export const USER_HEADER = 'x-dreamweav-user'
+export const USER_HEADER = 'x-agents-user'
 
 // --- login (unauthenticated) ---------------------------------------------------------------
 app.post('/api/login', async (c) => {

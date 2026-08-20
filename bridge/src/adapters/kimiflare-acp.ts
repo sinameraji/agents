@@ -372,7 +372,7 @@ export function createKimiflareAcpAdapter(spawn: SpawnAcpPeer = spawnKimiflareAc
 
       const init = (await request('initialize', {
         protocolVersion: PROTOCOL_VERSION,
-        clientInfo: { name: 'dreamweav-bridge', version: '1' },
+        clientInfo: { name: 'agents-bridge', version: '1' },
         // We are a headless client behind a sandbox: the agent must use its OWN fs and shell.
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       })) as unknown as InitializeResponse
