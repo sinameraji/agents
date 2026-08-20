@@ -60,11 +60,20 @@ export function createAiSdkAdapter(): HarnessAdapter {
     })
 
   const resolveIn = (rel: string) => path.resolve(cfg.cwd, rel)
+  const saveHistory = () => fs.writeFile(resolveIn('.agents-history.json'), JSON.stringify(messages.slice(-80)), 'utf8').catch(() => null)
 
   return {
     async start(c) {
       cfg = c
+      // Durable history: a bridge restart (container sleep, deploy) used to silently wipe the
+      // conversation while the UI transcript looked continuous. The file lives in the workspace,
+      // so it also rides the R2 snapshots.
       messages = []
+      try {
+        const raw = await fs.readFile(path.resolve(c.cwd, '.agents-history.json'), 'utf8')
+        const parsed = JSON.parse(raw) as ModelMessage[]
+        if (Array.isArray(parsed)) messages = parsed.slice(-80)
+      } catch { /* fresh session */ }
     },
     async prompt(text, sink: AdapterSink) {
       const { url, key, model, headers } = baseURL(cfg)
@@ -78,8 +87,14 @@ export function createAiSdkAdapter(): HarnessAdapter {
           description: 'Run a shell command in the project root.',
           inputSchema: z.object({ command: z.string() }),
           execute: async ({ command }) => {
-            if (readonly && /\b(rm|mv|>|>>|tee|sed -i|git (commit|push)|npm i|pip install)\b/.test(command))
-              return 'blocked in plan mode'
+            if (readonly) {
+              const redirect = /(^|[\s;|&])>{1,2}/.test(command)
+              const mutating =
+                /\b(rm|mv|cp|touch|mkdir|chmod|chown|ln|tee|truncate|dd|sed\s+-i|git\s+(commit|push|apply|checkout|reset|clean)|npm\s+(i|install|ci|update)|pip3?\s+install|apt(-get)?\s+install|(python3?|node|perl|ruby)\s+-[ce])\b/.test(
+                  command,
+                )
+              if (redirect || mutating) return 'blocked in plan mode (read-only)'
+            }
             const r = await sh(command, cfg.cwd)
             return `exit ${r.exitCode}\n${r.stdout}`
           },
@@ -184,6 +199,7 @@ export function createAiSdkAdapter(): HarnessAdapter {
         const usage = await result.usage
         sink.usage({ input: usage.inputTokens ?? 0, output: usage.outputTokens ?? 0 })
         messages.push({ role: 'assistant', content: finalText || textAcc })
+        void saveHistory()
         sink.done()
       } catch (e) {
         sink.done({ name: 'error', message: (e as Error).message })
@@ -208,6 +224,7 @@ export function createAiSdkAdapter(): HarnessAdapter {
           messages: [...messages, { role: 'user', content: 'Summarize the conversation so far into a single compact briefing.' }],
         })
         messages = [{ role: 'user', content: `Context summary of the conversation so far:\n${text}` }]
+        void saveHistory()
         return { ok: true, note: 'Context compacted.' }
       } catch (e) {
         return { ok: false, note: `Compaction failed: ${(e as Error).message}` }

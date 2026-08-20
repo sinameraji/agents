@@ -119,7 +119,21 @@ export function createPiAdapter(): HarnessAdapter {
       if (c.creds.anthropicKey) auth.anthropic = { type: 'api_key', key: c.creds.anthropicKey }
       if (c.creds.openaiKey) auth.openai = { type: 'api_key', key: c.creds.openaiKey }
       await fs.writeFile(path.join(dir, 'auth.json'), JSON.stringify(auth, null, 2), { mode: 0o600 })
-      proc = new JsonlProcess('pi', ['--mode', 'rpc', '--provider', PI_PROVIDER[c.provider], '--model', c.model, '--no-approve'], { cwd: c.cwd, env: {} }, handle, (message) => {
+      // Durable sessions: pi defaults to ~/.pi, which dies with the container (and is not in the
+      // R2 workspace snapshot). Keep sessions in the workspace and resume the newest one so a
+      // container recycle no longer silently wipes the model's memory.
+      const sessDir = path.join(c.cwd, '.pi-sessions')
+      await fs.mkdir(sessDir, { recursive: true })
+      let resume: string[] = []
+      try {
+        const files = await fs.readdir(sessDir)
+        const stamped = await Promise.all(
+          files.map(async (f) => ({ f, m: (await fs.stat(path.join(sessDir, f))).mtimeMs })),
+        )
+        const newest = stamped.sort((a, b) => b.m - a.m)[0]
+        if (newest) resume = ['--session', path.join(sessDir, newest.f)]
+      } catch { /* fresh workspace */ }
+      proc = new JsonlProcess('pi', ['--mode', 'rpc', '--provider', PI_PROVIDER[c.provider], '--model', c.model, '--no-approve', '--session-dir', sessDir, ...resume], { cwd: c.cwd, env: {} }, handle, (message) => {
         sink?.done({ name: 'harness', message })
         resolveDone?.()
       })
