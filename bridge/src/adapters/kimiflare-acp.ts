@@ -182,7 +182,14 @@ export function createKimiflareAcpAdapter(spawn: SpawnAcpPeer = spawnKimiflareAc
   const upsertTool = (toolCallId: string, patch: Partial<NormToolState> & { name?: string }) => {
     const prev = tools.get(toolCallId) ?? { name: 'other', state: { status: 'pending' as const } }
     const { name, ...rest } = patch
-    const next = { name: name ?? prev.name, state: { ...prev.state, ...rest } }
+    // ToolCallUpdate is a genuine PATCH: everything but toolCallId is optional and an omitted
+    // field means "unchanged". A plain spread would let those absent fields (which arrive here as
+    // `undefined`) erase the title/kind/rawInput the initial tool_call established.
+    const state: NormToolState = { ...prev.state }
+    for (const [k, v] of Object.entries(rest)) {
+      if (v !== undefined) Object.assign(state, { [k]: v })
+    }
+    const next = { name: name ?? prev.name, state }
     tools.set(toolCallId, next)
     sink?.part({ kind: 'tool', id: `tc-${toolCallId}`, callId: toolCallId, name: next.name, state: next.state })
   }
