@@ -9,12 +9,63 @@ const PAGE = 40
 
 // Cache per (provider, harness) so reopening is instant and KimiFlare's filtered list is distinct.
 const cache = new Map<string, ModelInfo[]>()
+// In-flight fetches per key, so the picker opening while the cost chip is loading (or two chips)
+// share one request instead of racing.
+const inflight = new Map<string, Promise<ModelInfo[]>>()
 
-/** The live catalog entry for a model id, when a picker already fetched that provider's catalog.
- *  Callers treat absence as "no live metadata" and fall back to heuristics (vision.ts). */
-export function cachedModelInfo(provider: Provider, harness: Harness | undefined, id: string): ModelInfo | undefined {
-  const key = harness === 'kimiflare' ? 'kimiflare' : provider
-  return cache.get(key)?.find((m) => m.id === id)
+/** Catalog key + query string for a (provider, harness) pair: KimiFlare serves a fixed set
+ *  regardless of provider, everything else is keyed by provider. */
+function catalogKey(provider: Provider, harness: Harness | undefined) {
+  return harness === 'kimiflare'
+    ? { key: 'kimiflare', query: `provider=${provider}&harness=kimiflare` }
+    : { key: provider as string, query: `provider=${provider}` }
+}
+
+/** Fetch a provider's catalog once per page load. Failures resolve to [] and are NOT cached, so
+ *  the next caller retries. */
+function loadCatalog(key: string, query: string): Promise<ModelInfo[]> {
+  const hit = cache.get(key)
+  if (hit) return Promise.resolve(hit)
+  const running = inflight.get(key)
+  if (running) return running
+  const p = fetch(`/api/models?${query}`)
+    .then((r) => r.json())
+    .then((d: { models?: ModelInfo[] }) => {
+      const list = d.models ?? []
+      cache.set(key, list)
+      return list
+    })
+    .catch(() => [] as ModelInfo[])
+    .finally(() => inflight.delete(key))
+  inflight.set(key, p)
+  return p
+}
+
+/** The already-fetched catalog entry for a model id: the synchronous seed for useModelInfo, so a
+ *  remount with a warm cache renders the price on the first paint instead of a frame later. */
+function cachedModelInfo(provider: Provider, harness: Harness | undefined, id: string): ModelInfo | undefined {
+  return cache.get(catalogKey(provider, harness).key)?.find((m) => m.id === id)
+}
+
+/** Live catalog entry for the session's current model (pricing, vision), fetching the catalog if
+ *  no picker has opened yet. Shares the picker's cache, so opening the picker stays instant. */
+export function useModelInfo(provider: Provider, harness: Harness | undefined, id: string): ModelInfo | undefined {
+  const { key, query } = catalogKey(provider, harness)
+  const [info, setInfo] = useState<ModelInfo | undefined>(() => cachedModelInfo(provider, harness, id))
+  useEffect(() => {
+    if (!id) {
+      setInfo(undefined)
+      return
+    }
+    let alive = true
+    void loadCatalog(key, query).then((list) => {
+      if (alive) setInfo(list.find((m) => m.id === id))
+    })
+    return () => {
+      alive = false
+    }
+  }, [key, query, id])
+  return info
 }
 
 export function ModelPicker({
@@ -30,9 +81,7 @@ export function ModelPicker({
   onChange: (id: string) => void
   direction?: 'up' | 'down'
 }) {
-  // KimiFlare serves a fixed set regardless of provider; everything else is keyed by provider.
-  const key = harness === 'kimiflare' ? 'kimiflare' : provider
-  const query$ = harness === 'kimiflare' ? `provider=${provider}&harness=kimiflare` : `provider=${provider}`
+  const { key, query: query$ } = catalogKey(provider, harness)
   const [open, setOpen] = useState(false)
   const [models, setModels] = useState<ModelInfo[]>(() => cache.get(key) ?? [])
   const [loading, setLoading] = useState(false)
@@ -59,14 +108,8 @@ export function ModelPicker({
       return
     }
     setLoading(true)
-    fetch(`/api/models?${query$}`)
-      .then((r) => r.json())
-      .then((d: { models?: ModelInfo[] }) => {
-        const list = d.models ?? []
-        cache.set(key, list)
-        setModels(list)
-      })
-      .catch(() => setModels([]))
+    void loadCatalog(key, query$)
+      .then(setModels)
       .finally(() => setLoading(false))
   }, [open, key, query$])
 

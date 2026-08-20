@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useState } from 'react'
 import { Bot, Check, Copy, Download, FileText, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'lucide-react'
 
@@ -10,13 +10,14 @@ import { HARNESS_MARKS, PROVIDER_MARKS, PROVIDER_LABELS } from '../brand-marks'
 import { HARNESSES } from '~shared/protocol'
 import { harnessCaps } from '~shared/harness-caps'
 import { modelAcceptsImages } from '~shared/vision'
+import { pricingOf } from '~shared/pricing'
 import type { UploadedAttachment } from '@/lib/upload'
 import { useRouter } from '@/router'
 import { Button } from '@/components/ui/button'
 import { StatusDot, statusLabel } from './status-dot'
 import { TokenMeter } from './token-meter'
 import { Composer } from './composer'
-import { ModelPicker, cachedModelInfo } from '../model-picker'
+import { ModelPicker, useModelInfo } from '../model-picker'
 import { Transcript } from '../transcript/transcript'
 import { TodoList } from '../transcript/parts/todo-list'
 import { WorkspaceDock } from '../workspace/workspace-dock'
@@ -236,10 +237,23 @@ export function ChatView({ session }: { session: SessionApi }) {
   // Both image axes, mirrored from the server's delivery decision: the harness pipe (caps) AND
   // the current model (live OpenRouter metadata when the picker cached it, heuristic otherwise).
   // Only drives the composer's "model won't see this" hint; the DO decides delivery itself.
+  // One live catalog lookup for the current model, shared by the image hint and the cost chip.
+  const modelInfo = useModelInfo(meta?.provider ?? 'openrouter', meta?.harness, meta?.model ?? '')
   const imagesReachModel =
-    caps.promptCapabilities.image &&
-    !!meta &&
-    modelAcceptsImages(meta.provider, meta.model, cachedModelInfo(meta.provider, meta.harness, meta.model)?.vision)
+    caps.promptCapabilities.image && !!meta && modelAcceptsImages(meta.provider, meta.model, modelInfo?.vision)
+  // Pre-send cost estimate: only when the catalog actually prices this model (Workers AI and the
+  // direct anthropic/openai lanes publish no price here, and a chip is worse than no chip if the
+  // number is invented). The measured half comes from the session's own assistant turns.
+  const costHint = useMemo(() => {
+    const pricing = pricingOf(modelInfo)
+    if (!pricing) return undefined
+    const measured = session.turns.filter((t) => t.role === 'assistant' && t.usage)
+    return {
+      pricing,
+      lastInputTokens: measured[measured.length - 1]?.usage?.input,
+      recentOutputTokens: measured.slice(-3).map((t) => t.usage?.output ?? 0),
+    }
+  }, [modelInfo, session.turns])
   const harnessLabel = HARNESSES.find((h) => h.id === meta?.harness)?.label ?? meta?.harness ?? ''
   const busy = session.status === 'busy' || session.status === 'booting'
   const turnCount = session.turns.length
@@ -400,6 +414,7 @@ export function ChatView({ session }: { session: SessionApi }) {
           onCommandMenuOpen={fetchHarnessCommands}
           allowAttachments={caps.promptCapabilities.fileAttach}
           imagesReachModel={imagesReachModel}
+          costHint={costHint}
           liveSteer={caps.steering === 'live'}
           commands={(() => {
             // Mode commands only exist where the harness has more than one real mode.

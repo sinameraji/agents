@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -11,7 +12,8 @@ import {
 import { ArrowUp, AtSign, EyeOff, File as FileIcon, Image as ImageIcon, Loader2, Paperclip, SquareSlash, X, Zap } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { countLines } from '~shared/format'
+import { countLines, formatCost } from '~shared/format'
+import { estimateCostUsd, nextTurnTokens, type ModelPricing } from '~shared/pricing'
 import type { PastedBlock } from '~shared/protocol'
 import { imageMimeOf } from '~shared/vision'
 import { uploadFiles, type UploadedAttachment } from '@/lib/upload'
@@ -37,6 +39,17 @@ export interface SlashCommand {
   run: () => void
 }
 
+/** What the pre-send cost chip needs: the current model's price plus the session's measured
+ *  token shape. Absent when the catalog has no price for the model, and the chip stays hidden
+ *  rather than guessing. Build it with useMemo so typing doesn't rebuild the estimate inputs. */
+export interface CostHint {
+  pricing: ModelPricing
+  /** Input tokens the last assistant turn reported = the current context size. */
+  lastInputTokens?: number
+  /** Output tokens of recent assistant turns, oldest first. */
+  recentOutputTokens?: number[]
+}
+
 export function Composer({
   onSend,
   sessionName,
@@ -49,6 +62,7 @@ export function Composer({
   allowAttachments = true,
   imagesReachModel = true,
   liveSteer = false,
+  costHint,
 }: {
   onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   sessionName: string
@@ -68,6 +82,8 @@ export function Composer({
   /** From the harness capability manifest: true = the harness injects steering mid-turn
    *  without aborting; false = the fallback (stop, then send) — the hint must not overpromise. */
   liveSteer?: boolean
+  /** Priced model + measured token shape: drives the "~ $0.012/turn" chip. Omit = no chip. */
+  costHint?: CostHint
 }) {
   const [text, setText] = useState('')
   const [pasted, setPasted] = useState<PastedBlock[]>([])
@@ -195,6 +211,22 @@ export function Composer({
   }
 
   const canSend = text.trim().length > 0 || pasted.length > 0 || attachments.length > 0
+
+  /** What the next turn is likely to cost: the context we last sent (plus what is typed) at the
+   *  current model's price. Recomputed only when the draft length or the session's numbers move,
+   *  so it never gets in the way of typing. */
+  const costChip = useMemo(() => {
+    if (!costHint) return null
+    const { input, output } = nextTurnTokens({
+      lastInputTokens: costHint.lastInputTokens,
+      recentOutputTokens: costHint.recentOutputTokens,
+      draftChars: text.length,
+    })
+    const usd = estimateCostUsd(costHint.pricing, input, output)
+    if (usd === undefined) return null
+    // Sub-tenth-of-a-cent turns would round to "$0.000", which reads like the bug this replaces.
+    return usd < 0.001 ? '< $0.001/turn' : `~ ${formatCost(usd)}/turn`
+  }, [costHint, text.length])
 
   /** Thumbnail object URLs are only for the pending chips; release them once the message left. */
   const releasePreviews = () => {
@@ -456,6 +488,14 @@ export function Composer({
               <AtSign className="size-4" />
             </Button>
             {extras}
+            {costChip && (
+              <span
+                title="Rough estimate for the next turn at current context size"
+                className="hidden shrink-0 font-mono text-[0.7rem] text-muted-foreground/70 sm:inline"
+              >
+                {costChip}
+              </span>
+            )}
             {uploadError && <span className="ml-1 truncate text-xs text-destructive">{uploadError}</span>}
             {busy && onSteer && (
               <Button
