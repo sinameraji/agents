@@ -83,6 +83,64 @@ export function mapPart(part: Any): NormPart | null {
   return null
 }
 
+/** What POST /session/{id}/shell produced, folded into one terminal part's worth of data. */
+export interface ShellResult {
+  output: string
+  exitCode?: number
+  /** False while OpenCode is still running the command (the caller keeps polling). */
+  done: boolean
+}
+
+/** Exit codes hide in the tool state's free-form metadata bag under a few spellings. */
+function metadataExit(meta: Any): number | undefined {
+  for (const key of ['exit', 'exitCode', 'exit_code', 'code', 'status']) {
+    const v = meta[key]
+    if (typeof v === 'number' && Number.isFinite(v)) return v
+  }
+  return undefined
+}
+
+/**
+ * Fold the `parts` of a session.shell response (or a later session.message poll of the same
+ * message) into command output + exit code.
+ *
+ * OpenCode runs the '!' command through its bash tool rather than the model, so the payload is a
+ * ToolPart (types.gen.d.ts:387) whose ToolStateCompleted carries `output` + a metadata bag
+ * (:357) and whose ToolStateError carries `error` (:374). Text parts are a fallback for servers
+ * that answer with plain text instead. `done` is false while every tool part is still
+ * pending/running, which is the caller's signal to poll again.
+ */
+export function shellResult(parts: unknown[]): ShellResult {
+  const chunks: string[] = []
+  let exitCode: number | undefined
+  let sawTool = false
+  let allSettled = true
+  for (const raw of Array.isArray(parts) ? parts : []) {
+    const part = obj(raw)
+    const type = str(part.type)
+    if (type === 'tool') {
+      sawTool = true
+      const state = obj(part.state)
+      const status = str(state.status)
+      const meta = obj(state.metadata)
+      if (status === 'completed') {
+        const out = str(state.output) ?? ''
+        if (out) chunks.push(out)
+        exitCode = metadataExit(meta) ?? exitCode ?? 0
+      } else if (status === 'error') {
+        const err = str(state.error) ?? 'Command failed.'
+        chunks.push(err)
+        exitCode = metadataExit(meta) ?? exitCode ?? 1
+      } else {
+        allSettled = false
+      }
+    } else if (type === 'text' && typeof part.text === 'string' && part.text.trim()) {
+      chunks.push(part.text)
+    }
+  }
+  return { output: chunks.join('\n').replace(/\n+$/, ''), exitCode, done: sawTool ? allSettled : true }
+}
+
 /** Usage from an assistant message info (session.messages). */
 export function usageFromInfo(info: Any): NormUsage {
   return mapUsage(obj(info.tokens), info.cost)
