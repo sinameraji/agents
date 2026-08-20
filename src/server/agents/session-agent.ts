@@ -15,6 +15,7 @@ import type { ModelMessage } from 'ai'
 // at runtime, so its version always matches this deploy, no image rebuilds, no warm-pool staleness.
 import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
 import { applyEvent, emptyTranscript, sweepDanglingTools } from '~shared/agent-reduce'
+import { ApprovalBroker } from '~shared/approvals'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
 import {
   DEFAULT_MODEL_BY_PROVIDER,
@@ -97,6 +98,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   /** Set when the OpenCode process was restarted (model/mode switch, clear) — the next turn gets an honest context note. */
   private ocRestarted = false
   private cfAbort: AbortController | null = null
+  /** Build-mode asks from the DO-side cfagent loop, settled by respondPermission (or timeout). */
+  private cfApprovals = new ApprovalBroker()
   /** Bumped by stop() and every new turn; in-flight poll loops exit when their captured value goes stale. */
   private turnGen = 0
   private transcript: TranscriptState = emptyTranscript()
@@ -528,6 +531,14 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
           part: (part) => this.emit({ t: 'part.upsert', turnId, part }),
           usage: (usage) => this.emit({ t: 'usage', usage }),
         },
+        // Build mode's ask-before-mutate: park the tool on a permission card; respondPermission
+        // settles it, a 5 min timeout (or stop()) denies it and clears the card.
+        askPermission: (title, metadata) =>
+          this.cfApprovals.ask({
+            tool: String(metadata?.tool ?? title),
+            announce: (id) => this.emit({ t: 'permission.ask', permission: { id, title, metadata } }),
+            expire: (id) => this.emit({ t: 'permission.resolve', id }),
+          }),
       })
 
     try {
@@ -1118,6 +1129,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       } catch { /* ignore */ }
     }
     this.cfAbort?.abort()
+    // Deny any cfagent tool still parked on an ask, and clear its card: stop means stop.
+    for (const pid of this.cfApprovals.denyAll()) this.emit({ t: 'permission.resolve', id: pid })
     if (this.config().harness !== 'opencode' && this.config().harness !== 'cfagent') {
       const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
       await this.bridgeFetch(sandbox, 'POST', '/abort').catch(() => null)
@@ -1130,9 +1143,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   async respondPermission(id: string, reply: PermissionReply, note?: string): Promise<{ ok: true }> {
     this.emit({ t: 'permission.resolve', id })
     try {
-      if (this.config().harness === 'opencode') {
+      // DO-owned asks first: cfagent's Build-mode gate parks on the ApprovalBroker, no harness
+      // roundtrip involved. resolve() is false for ids it never issued, so this routes cleanly.
+      if (this.cfApprovals.resolve(id, reply)) return { ok: true }
+      const harness = this.config().harness
+      if (harness === 'opencode') {
         if (this.opencode) await this.opencode.permission.reply({ requestID: id, reply, message: note } as never)
-      } else {
+      } else if (harness !== 'cfagent') {
         const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
         await this.bridgeFetch(sandbox, 'POST', '/permission', { id, reply, note })
       }
