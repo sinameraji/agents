@@ -9,6 +9,9 @@
 import type { AdapterSink, HarnessAdapter, StartConfig } from './types'
 import { JsonlProcess } from './jsonl'
 
+/** Per-turn usage accumulator (reset on each prompt). */
+let turnUsage: { input: number; output: number; cost?: number } = { input: 0, output: 0 }
+
 /** The registry ids KimiFlare actually serves (kimiflare src/models/registry.ts). */
 const KIMIFLARE_IDS = new Set([
   '@cf/moonshotai/kimi-k2.7-code',
@@ -71,11 +74,12 @@ export function createKimiflareAdapter(): HarnessAdapter {
         state: ev.isError ? { status: 'error', error: result } : { status: 'completed', output: result },
       })
     } else if (type === 'usage') {
-      sink.usage({
-        input: Number(ev.inputTokens ?? 0),
-        output: Number(ev.outputTokens ?? 0) + Number(ev.reasoningTokens ?? 0),
-        cost: typeof ev.cost === 'number' ? ev.cost : undefined,
-      })
+      // Multiple usage events fire per turn (one per API call); the turn total is input=max
+      // (full context of the last call) + output summed — overwriting showed only the last call.
+      turnUsage.input = Math.max(turnUsage.input, Number(ev.inputTokens ?? 0))
+      turnUsage.output += Number(ev.outputTokens ?? 0) + Number(ev.reasoningTokens ?? 0)
+      if (typeof ev.cost === 'number') turnUsage.cost = (turnUsage.cost ?? 0) + ev.cost
+      sink.usage({ ...turnUsage })
     } else if (type === 'tasks.update') {
       const tasks = (Array.isArray(ev.tasks) ? ev.tasks : []) as Array<Record<string, unknown>>
       sink.todos(
@@ -114,6 +118,8 @@ export function createKimiflareAdapter(): HarnessAdapter {
       })
       proc.send({
         type: 'new_session',
+        // Resume across container/bridge restarts on CLIs >= the rpc fix; older CLIs ignore it.
+        sessionId: `dw-${c.sessionId ?? 'default'}`,
         cwd: c.cwd,
         config: {
           accountId: c.creds.cloudflareAccountId,
@@ -127,6 +133,7 @@ export function createKimiflareAdapter(): HarnessAdapter {
       })
     },
     async prompt(text, s) {
+      turnUsage = { input: 0, output: 0 }
       sink = s
       finished = false
       textId = `t-${Date.now()}`

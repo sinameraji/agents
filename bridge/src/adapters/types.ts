@@ -4,6 +4,8 @@ export interface StartConfig {
   provider: 'openrouter' | 'cloudflare' | 'anthropic' | 'openai'
   model: string
   cwd: string
+  /** Stable Dreamweav session id — adapters use it to resume harness-side sessions across restarts. */
+  sessionId?: string
   mode: 'plan' | 'build' | 'auto'
   creds: {
     openrouterKey?: string

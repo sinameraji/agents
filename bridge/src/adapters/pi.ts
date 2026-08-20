@@ -102,7 +102,14 @@ export function createPiAdapter(): HarnessAdapter {
       sink.part({ kind: 'tool', id: `tc-${id}`, callId: id, name: String(ev.toolName ?? 'tool'), state: { status: ev.isError ? 'error' : 'completed', output: out, error: ev.isError ? out : undefined } })
     } else if (type === 'extension_ui_request') {
       const id = String(ev.id ?? '')
-      sink.permission({ id, title: String(ev.title ?? ev.message ?? 'Allow?'), metadata: ev })
+      const method = String(ev.method ?? ev.kind ?? '')
+      // Only genuine dialogs need the user; fire-and-forget UI calls (notify/setStatus/
+      // setWidget/…) previously ALL became permission cards, stalling turns on noise.
+      if (['confirm', 'select', 'input', 'editor', ''].includes(method) && (ev.title || ev.message)) {
+        sink.permission({ id, title: String(ev.title ?? ev.message ?? 'Allow?'), metadata: ev })
+      } else {
+        proc?.send({ type: 'extension_ui_response', id, confirmed: true })
+      }
     } else if (type === 'agent_end' || type === 'agent_settled') {
       sink.done()
       resolveDone?.()
