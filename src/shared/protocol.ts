@@ -179,3 +179,19 @@ export interface SessionSummary {
   costUsd: number
   unread?: boolean
 }
+
+// --- org access control (roster) -------------------------------------------------------------
+export type OrgRole = 'admin' | 'member'
+export type MemberStatus = 'active' | 'suspended'
+
+/** One roster row owned by the OrgAgent. Membership only — never usage, cost, or sessions. */
+export interface OrgMember {
+  email: string
+  role: OrgRole
+  status: MemberStatus
+  /** Optional monthly USD spend cap (P1: persisted + displayed only; enforcement is P2). */
+  capUsd: number | null
+  /** Email of the admin who added this member (or 'bootstrap' for OWNER_EMAIL seeds). */
+  addedBy: string
+  addedAt: string
+}
