@@ -1,4 +1,4 @@
-import { Agent, callable, getAgentByName } from 'agents'
+import { Agent, callable, getAgentByName, type Connection, type ConnectionContext } from 'agents'
 import { getSandbox } from '@cloudflare/sandbox'
 import { decryptSecret, encryptSecret, maskSecret } from '../crypto'
 import { monthKeyOf, rollSpendCheckpoint, type SpendCheckpoint } from '../spend'
@@ -111,6 +111,16 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   }
 
   @callable()
+  /** Remember which hostname served the client. On instances without OWNER_HOST (generic
+   *  workers.dev deploys) this is the only way sessions learn a URL that reaches this worker,
+   *  which the /aig unified-billing broker needs. Any host that routes here works. */
+  override async onConnect(_connection: Connection, ctx: ConnectionContext): Promise<void> {
+    try {
+      const host = new URL(ctx.request.url).host
+      if (host && this.getSetting<string>('servingHost', '') !== host) this.putSetting('servingHost', host)
+    } catch { /* never block a connect on bookkeeping */ }
+  }
+
   async createSession(input: {
     source: SessionSource
     name?: string
@@ -136,7 +146,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
              VALUES (${id}, ${name}, ${repo}, ${branch}, ${harness}, 'provisioning', ${model}, ${provider},
                      ${JSON.stringify(input.source)}, ${new Date().toISOString()})`
     void getAgentByName(this.env.SessionAgent, id).then((sa) =>
-      sa.init({ owner: this.name, source: input.source, harness, provider, model, name, repo, branch }),
+      sa.init({ owner: this.name, source: input.source, harness, provider, model, name, repo, branch, host: this.getSetting<string>('servingHost', '') || undefined }),
     )
     return { id }
   }

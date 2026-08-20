@@ -36,6 +36,8 @@ interface SessionConfig {
   name: string
   repo: string
   branch: string
+  /** Hostname that served the creating client — /aig broker fallback when OWNER_HOST is unset. */
+  host?: string
 }
 
 interface SessionMeta {
@@ -453,7 +455,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       // Cloudflare-provider model traffic goes through the /aig broker (same as OpenCode): the
       // adapter gets a per-session bearer and, for harnesses that support a custom endpoint
       // (kimiflare >= 0.99), the raw CF token is withheld from the container entirely.
-      const ownerHost = (this.env as unknown as { OWNER_HOST?: string }).OWNER_HOST
+      const ownerHost = (this.env as unknown as { OWNER_HOST?: string }).OWNER_HOST || this.getKv<SessionConfig | null>('config', null)?.host
       const proxy = cfg.provider === 'cloudflare' && ownerHost
         ? { baseURL: `https://${ownerHost}/aig/${this.name}`, token: this.proxyToken() }
         : undefined
@@ -730,7 +732,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const conn = await this.connections()
     // Cloudflare model calls route through the worker's /aig broker (fresh cf-aig-authorization
     // per request, keyless unified billing); needs a public host for the container to reach.
-    const ownerHost = (this.env as unknown as { OWNER_HOST?: string }).OWNER_HOST
+    const ownerHost = (this.env as unknown as { OWNER_HOST?: string }).OWNER_HOST || this.getKv<SessionConfig | null>('config', null)?.host
     const proxy =
       cfg.provider === 'cloudflare' && ownerHost
         ? { baseURL: `https://${ownerHost}/aig/${this.name}`, token: this.proxyToken() }
