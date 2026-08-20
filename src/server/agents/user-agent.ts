@@ -2,6 +2,7 @@ import { Agent, callable, getAgentByName } from 'agents'
 import { getSandbox } from '@cloudflare/sandbox'
 import { decryptSecret, encryptSecret, maskSecret } from '../crypto'
 import { monthKeyOf, rollSpendCheckpoint, type SpendCheckpoint } from '../spend'
+import { deriveZone, describeCfError, isCfAuthError, normalizeHostname, type DomainWizardState } from '~shared/domain'
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SETTINGS,
@@ -444,6 +445,148 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
         ? 'Some records or routes could not be created. Try reconnecting Cloudflare, or use a manual token.'
         : 'Some records or routes failed. Check the token has Zone DNS Edit and Workers Routes Edit for this zone.',
     }
+  }
+
+  // --- domain onboarding wizard (Settings → Domain) -------------------------------------------
+  // Called ONLY from the admin-gated /api/domain routes in src/server/api/domain.ts, over plain
+  // server-side DO RPC (deliberately NOT @callable, so the browser cannot reach these without
+  // passing the admin gate). Flow: find-or-create the zone on the user's own account, show the
+  // assigned nameservers, poll until the zone is active, then wire this worker to the hostname.
+  // State persists in the settings KV so a page reload resumes mid-wait.
+
+  private async cfDomainFetch(token: string, path: string, init?: RequestInit) {
+    const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+      ...init,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    })
+    const json = (await res.json().catch(() => ({}))) as {
+      success?: boolean
+      result?: unknown
+      errors?: Array<{ code?: number; message?: string }>
+    }
+    return { httpStatus: res.status, json }
+  }
+
+  private static readonly RECONNECT_NOTE = 'Connect Cloudflare first (log in with Cloudflare), then try again.'
+
+  async domainWizardState(): Promise<DomainWizardState | null> {
+    return this.getSetting<DomainWizardState | null>('domainWizard', null)
+  }
+
+  async domainWizardReset(): Promise<{ ok: true }> {
+    this.sql`DELETE FROM settings WHERE k = ${'domainWizard'}`
+    return { ok: true }
+  }
+
+  /** Step 1: validate the hostname, derive its registrable zone, then find-or-create that zone
+   *  (full setup, plan-free) on the user's account. Returns the nameservers to show. */
+  async domainStart(input: { hostname: string; zone?: string }): Promise<
+    { ok: true; state: DomainWizardState } | { ok: false; note: string; needsReconnect?: boolean }
+  > {
+    const derived = deriveZone(input.hostname ?? '', input.zone)
+    if (!derived.ok) return { ok: false, note: derived.error }
+    const token = await this.cfControlToken()
+    if (!token) return { ok: false, note: UserAgent.RECONNECT_NOTE, needsReconnect: true }
+
+    // Find the zone on THIS account first; create only when it is genuinely absent.
+    const found = await this.cfDomainFetch(token, `/zones?name=${encodeURIComponent(derived.zone)}`)
+    const foundErr = { httpStatus: found.httpStatus, errors: found.json.errors }
+    if (found.json.success === false && isCfAuthError(foundErr)) {
+      return { ok: false, note: describeCfError(foundErr, 'zone-read'), needsReconnect: true }
+    }
+    let zone = (Array.isArray(found.json.result) ? found.json.result : [])[0] as
+      | { id?: string; status?: string; name_servers?: string[] }
+      | undefined
+    if (!zone?.id) {
+      const conn = await this.getDecryptedConnections()
+      if (!conn.cloudflareAccountId) {
+        return { ok: false, note: 'No Cloudflare account id stored. Reconnect Cloudflare, then try again.', needsReconnect: true }
+      }
+      // POST /zones is allowed by Zone Edit OR Zone DNS Edit; the OAuth login carries dns.write.
+      const created = await this.cfDomainFetch(token, '/zones', {
+        method: 'POST',
+        body: JSON.stringify({ name: derived.zone, account: { id: conn.cloudflareAccountId }, type: 'full' }),
+      })
+      const createdZone = created.json.result as { id?: string; status?: string; name_servers?: string[] } | undefined
+      if (created.json.success !== true || !createdZone?.id) {
+        const errInput = { httpStatus: created.httpStatus, errors: created.json.errors }
+        const auth = isCfAuthError(errInput)
+        return { ok: false, note: describeCfError(errInput, 'zone-create'), ...(auth ? { needsReconnect: true } : {}) }
+      }
+      zone = createdZone
+    }
+    const state: DomainWizardState = {
+      hostname: derived.hostname,
+      zone: derived.zone,
+      zoneId: zone.id!,
+      nameServers: zone.name_servers ?? [],
+      status: zone.status ?? 'pending',
+      step: zone.status === 'active' ? 'attach' : 'nameservers',
+      updatedAt: Date.now(),
+    }
+    this.putSetting('domainWizard', state)
+    return { ok: true, state }
+  }
+
+  /** Step 2 polling: current zone status + nameservers. Promotes the stored wizard step when the
+   *  registrar change lands and the zone flips to active. */
+  async domainStatus(zoneId: string): Promise<{ ok: boolean; status?: string; nameServers?: string[]; note?: string; needsReconnect?: boolean }> {
+    if (!zoneId) return { ok: false, note: 'Missing zoneId.' }
+    const token = await this.cfControlToken()
+    if (!token) return { ok: false, note: UserAgent.RECONNECT_NOTE, needsReconnect: true }
+    const r = await this.cfDomainFetch(token, `/zones/${encodeURIComponent(zoneId)}`)
+    const zone = r.json.result as { status?: string; name_servers?: string[] } | undefined
+    if (r.json.success !== true || !zone) {
+      const errInput = { httpStatus: r.httpStatus, errors: r.json.errors }
+      const auth = isCfAuthError(errInput)
+      return { ok: false, note: describeCfError(errInput, 'zone-read'), ...(auth ? { needsReconnect: true } : {}) }
+    }
+    const status = zone.status ?? 'pending'
+    const nameServers = zone.name_servers ?? []
+    const state = this.getSetting<DomainWizardState | null>('domainWizard', null)
+    if (state && state.zoneId === zoneId && state.step !== 'done') {
+      this.putSetting('domainWizard', {
+        ...state,
+        status,
+        nameServers: nameServers.length ? nameServers : state.nameServers,
+        step: status === 'active' ? 'attach' : 'nameservers',
+        updatedAt: Date.now(),
+      })
+    }
+    return { ok: true, status, nameServers }
+  }
+
+  /** Step 3: the zone is active, wire this worker to the hostname. Reuses the same wiring as the
+   *  zone-already-on-Cloudflare path: proxied A records + worker routes for the hostname AND
+   *  *.hostname (previews). PUT /accounts/:a/workers/domains is NOT used on purpose: it requires
+   *  Workers Scripts Write, which the OAuth login does not carry, and it cannot cover the
+   *  wildcard previews anyway. */
+  async domainAttach(input?: { hostname?: string; zoneId?: string }): Promise<{ ok: boolean; url?: string; note: string; needsReconnect?: boolean }> {
+    const stored = this.getSetting<DomainWizardState | null>('domainWizard', null)
+    const hostname = normalizeHostname(input?.hostname ?? stored?.hostname ?? '')
+    const zoneId = input?.zoneId ?? stored?.zoneId
+    if (!hostname || !zoneId) return { ok: false, note: 'Start the domain setup first.' }
+    const token = await this.cfControlToken()
+    if (!token) return { ok: false, note: UserAgent.RECONNECT_NOTE, needsReconnect: true }
+    // Only attach once the zone answers on Cloudflare's nameservers; routes on a pending zone
+    // would sit dark and look broken.
+    const check = await this.cfDomainFetch(token, `/zones/${encodeURIComponent(zoneId)}`)
+    const zone = check.json.result as { status?: string } | undefined
+    if (check.json.success !== true || !zone) {
+      const errInput = { httpStatus: check.httpStatus, errors: check.json.errors }
+      const auth = isCfAuthError(errInput)
+      return { ok: false, note: describeCfError(errInput, 'zone-read'), ...(auth ? { needsReconnect: true } : {}) }
+    }
+    if (zone.status !== 'active') {
+      return { ok: false, note: 'The zone is not active yet. Wait for the nameserver change to be picked up, then try again.' }
+    }
+    const wired = await this.wireDomain(hostname, token, true)
+    if (!wired.ok) return wired
+    const url = `https://${hostname}`
+    if (stored && stored.zoneId === zoneId) {
+      this.putSetting('domainWizard', { ...stored, hostname, status: 'active', step: 'done', url, updatedAt: Date.now() })
+    }
+    return { ok: true, url, note: `${url} is wired to this app. TLS certificates can take a few minutes to issue.` }
   }
 
   /** Delete the attached (or 'agents'-named) gateway from the USER'S Cloudflare account and

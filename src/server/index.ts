@@ -10,6 +10,7 @@ import { checkPassword, clearSessionCookie, mintSessionCookie } from './auth/ses
 import { finishCfLogin, finishEmailLogin, finishGithubLogin, startCfLogin, startEmailLogin, startGithubLogin } from './auth/oauth'
 import { memberAccess, ORG_NAME } from './auth/membership'
 import { registerOrgRoutes } from './api/org'
+import { registerDomainRoutes } from './api/domain'
 import { fetchOpenRouterModels } from './api/models'
 import { handleUpload } from './api/uploads'
 import { getAgentByName } from 'agents'
@@ -187,6 +188,9 @@ app.use('/agents/*', requireMember)
 
 // Admin-only roster management (each route re-verifies the caller's admin role server-side).
 registerOrgRoutes(app)
+
+// Admin-only custom-domain onboarding wizard (zone create → nameservers → attach).
+registerDomainRoutes(app)
 
 // KimiFlare's supported models, from its registry (src/models/registry.ts in sinameraji/kimiflare):
 // the @cf/ ones are Workers AI (run on the account directly, gateway optional); kimi-k3 is a
