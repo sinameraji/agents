@@ -238,12 +238,17 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       case 'usage': {
         const last = this.transcript.turns[this.transcript.turns.length - 1]
         if (last) this.persistTurn(last.id)
+        // Usage events carry the CURRENT TURN's running totals (every harness poll re-sums this
+        // prompt's messages), so cost must accumulate ACROSS turns: lifetime = cost at turn start
+        // (costBase, checkpointed in startTurn) + this turn's running cost. Overwriting with
+        // ev.usage.cost directly would reset the session's cost every turn — the sidebar cost and
+        // the monthly budget accounting (UserAgent.monthlySpend) both need the lifetime sum.
         this.setState({
           ...this.state,
           usage: {
             tokensIn: ev.usage.input,
             tokensOut: ev.usage.output + (ev.usage.reasoning ?? 0),
-            costUsd: ev.usage.cost ?? this.state.usage.costUsd,
+            costUsd: this.getKv<number>('costBase', 0) + (ev.usage.cost ?? 0),
           },
         })
         break
@@ -849,6 +854,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   /** Kick off the harness turn for an (already transcript-visible) user message. */
   private startTurn(input: QueuedMessage): void {
     this.turnGen += 1
+    // Checkpoint lifetime cost before the turn starts: usage events report per-turn running
+    // totals, and the accumulator in emit('usage') adds them on top of this base.
+    this.putKv('costBase', this.state.usage.costUsd)
     this.setStatus('busy')
     const harness = this.config().harness
     const promptText = input.runText ?? input.text
