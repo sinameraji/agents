@@ -12,7 +12,8 @@
  */
 import { getAgentByName } from 'agents'
 import { userIdFromEmail } from './access'
-import { isAllowedUser, mintSessionCookieFor } from './session'
+import { mintSessionCookieFor } from './session'
+import { isActiveMember } from './membership'
 
 /** Constant-time string compare, to keep HMAC signature checks off the timing side channel. */
 function safeStrEqual(a: string, b: string): boolean {
@@ -49,13 +50,12 @@ const GH_SCOPES = 'repo read:user user:email'
 
 export interface OauthEnv {
   AUTH_SECRET?: string
-  /** Comma/space-separated emails allowed to log in. Unset = open instance (self-host default). */
-  ALLOWED_USERS?: string
   CF_OAUTH_CLIENT_ID?: string
   CF_OAUTH_CLIENT_SECRET?: string
   GITHUB_OAUTH_CLIENT_ID?: string
   GITHUB_OAUTH_CLIENT_SECRET?: string
   UserAgent: Env['UserAgent']
+  OrgAgent: Env['OrgAgent']
 }
 
 const OAUTH_COOKIE = 'dw_oauth'
@@ -132,17 +132,16 @@ function failPage(message: string): Response {
   )
 }
 
-/** Provision the user's account + mint their session; shared tail of both callbacks. */
+/** Provision the user's account + mint their session; shared tail of both callbacks.
+ *
+ *  Login proves identity; it does NOT grant access. A successfully-authenticated non-member still
+ *  gets a session cookie so the SPA loads and can render the "ask your admin for access" screen —
+ *  the membership gate on the API/agent routes (see index.ts) is what actually allows or denies. */
 async function completeLogin(
   env: OauthEnv,
   email: string,
   provision: (user: unknown) => Promise<void>,
 ): Promise<Response> {
-  if (!isAllowedUser(env.ALLOWED_USERS, email)) {
-    return failPage(
-      'This Dreamweav instance is private. Dreamweav is self-hosted software: deploy your own at github.com/sinameraji/dreamweav.',
-    )
-  }
   const id = await userIdFromEmail(email)
   const user = await getAgentByName(env.UserAgent, id)
   await provision(user)
@@ -268,9 +267,10 @@ export async function startEmailLogin(request: Request, env: OauthEnv, email0: s
   if (!emailBinding || !env.AUTH_SECRET) return Response.json({ error: 'Email login is not configured yet.' }, { status: 503 })
   const email = email0.trim().toLowerCase()
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Response.json({ error: 'Enter a valid email address.' }, { status: 400 })
-  // Don't email addresses that could never log in (avoids using the sender as an email bomb /
-  // reputation sink). Return ok either way so this isn't an allowlist-membership oracle.
-  if (!isAllowedUser(env.ALLOWED_USERS, email)) return Response.json({ ok: true })
+  // Only send magic links to active members: this both preserves access control and avoids using
+  // the sender as an email bomb / reputation sink. Return ok either way so this isn't a
+  // membership oracle. (Not-yet-invited people reach the "ask your admin" screen via OAuth login.)
+  if (!(await isActiveMember(env, email))) return Response.json({ ok: true })
   const origin = new URL(request.url).origin
   const nonce = rand(18)
   const payload = b64url(enc.encode(JSON.stringify({ e: email, n: nonce, exp: Date.now() + 15 * 60_000 } satisfies LoginToken)))
