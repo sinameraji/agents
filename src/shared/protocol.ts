@@ -189,7 +189,7 @@ export interface OrgMember {
   email: string
   role: OrgRole
   status: MemberStatus
-  /** Optional monthly USD spend cap (P1: persisted + displayed only; enforcement is P2). */
+  /** Optional monthly USD spend cap, enforced at turn start (SessionAgent.budgetGate). */
   capUsd: number | null
   /** Email of the admin who added this member (or 'bootstrap' for OWNER_EMAIL seeds). */
   addedBy: string
