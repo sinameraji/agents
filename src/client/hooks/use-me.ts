@@ -6,6 +6,10 @@ export interface Me {
   email: string
   /** Org role, or null when the user is authenticated but NOT an active member (ask-admin screen). */
   role: OrgRole | null
+  /** Monthly USD budget cap; present only when an admin set one for this member. */
+  capUsd?: number
+  /** Approximate current calendar-month spend; present alongside capUsd. */
+  spentUsd?: number
 }
 
 /** Fetch the signed-in user's identity + org role once. `me` is null only when unauthenticated;

@@ -25,6 +25,7 @@ export function SessionSidebar({
   onSignIn,
   collapsed,
   onToggleCollapse,
+  budget,
 }: {
   sessions: SessionSummary[]
   activeId: string
@@ -39,6 +40,8 @@ export function SessionSidebar({
   email: string
   collapsed?: boolean
   onToggleCollapse?: () => void
+  /** Monthly budget meter data; present only when an admin set a cap for this member. */
+  budget?: { capUsd: number; spentUsd: number }
 }) {
   const initials = email.slice(0, 2).toUpperCase()
   const handle = email.split('@')[0]
@@ -143,6 +146,8 @@ export function SessionSidebar({
         )}
       </nav>
 
+      {budget && !guest && <BudgetMeter capUsd={budget.capUsd} spentUsd={budget.spentUsd} />}
+
       <footer className="flex items-center gap-1 border-t border-sidebar-border px-3 py-2.5">
         {guest ? (
           deploy ? (
@@ -244,6 +249,43 @@ export function SessionSidebar({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Subtle monthly-budget meter: shown only when an admin set a cap for this member.
+ *  When the cap is reached, new turns are blocked server-side until an admin raises it. */
+function BudgetMeter({ capUsd, spentUsd }: { capUsd: number; spentUsd: number }) {
+  const ratio = capUsd > 0 ? spentUsd / capUsd : 1
+  const capped = ratio >= 1
+  return (
+    <div
+      className="border-t border-sidebar-border px-3 pt-2 pb-2"
+      title={
+        capped
+          ? 'Monthly budget cap reached. Ask your admin to raise it.'
+          : 'This month\'s spend against the budget cap set by your admin'
+      }
+    >
+      <div className="flex items-center justify-between text-[0.7rem] text-muted-foreground">
+        <span>{capped ? 'Monthly budget reached' : 'Monthly budget'}</span>
+        <span className="font-mono">
+          {formatCost(spentUsd)} of {formatCost(capUsd)}
+        </span>
+      </div>
+      <div
+        className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-label="Monthly budget usage"
+        aria-valuemin={0}
+        aria-valuemax={capUsd}
+        aria-valuenow={Math.min(spentUsd, capUsd)}
+      >
+        <div
+          className={cn('h-full rounded-full', capped ? 'bg-destructive' : ratio >= 0.8 ? 'bg-chart-4' : 'bg-primary')}
+          style={{ width: `${Math.min(100, Math.max(0, ratio * 100))}%` }}
+        />
+      </div>
     </div>
   )
 }
