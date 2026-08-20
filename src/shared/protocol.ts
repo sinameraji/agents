@@ -82,6 +82,9 @@ export interface ModelInfo {
   provider: string
   inputPerM: number
   outputPerM: number
+  /** Live catalog metadata: the model accepts image input (OpenRouter `input_modalities`).
+   *  Absent when the catalog doesn't say — callers fall back to the vision.ts heuristic. */
+  vision?: boolean
 }
 
 // ---------------------------------------------------------------------------

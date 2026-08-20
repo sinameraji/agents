@@ -10,6 +10,13 @@ const PAGE = 40
 // Cache per (provider, harness) so reopening is instant and KimiFlare's filtered list is distinct.
 const cache = new Map<string, ModelInfo[]>()
 
+/** The live catalog entry for a model id, when a picker already fetched that provider's catalog.
+ *  Callers treat absence as "no live metadata" and fall back to heuristics (vision.ts). */
+export function cachedModelInfo(provider: Provider, harness: Harness | undefined, id: string): ModelInfo | undefined {
+  const key = harness === 'kimiflare' ? 'kimiflare' : provider
+  return cache.get(key)?.find((m) => m.id === id)
+}
+
 export function ModelPicker({
   value,
   provider,

@@ -33,6 +33,19 @@ describe('harness capability manifest', () => {
     expect(HARNESS_CAPS.pi.permissions).toBe(false)
   })
 
+  it('image prompt capability matches what each pipe can actually deliver', () => {
+    // opencode (FilePartInput), aisdk (bridge /prompt images), cfagent (DO-built message) can
+    // put images in front of the model; pi and kimiflare pipes are text-only.
+    for (const id of ['opencode', 'aisdk', 'cfagent'] as const) {
+      expect(HARNESS_CAPS[id].promptCapabilities.image, `harness "${id}"`).toBe(true)
+    }
+    for (const id of ['pi', 'kimiflare'] as const) {
+      expect(HARNESS_CAPS[id].promptCapabilities.image, `harness "${id}"`).toBe(false)
+    }
+    // generic file attachments stay harness-agnostic (R2 → /workspace/uploads).
+    for (const h of HARNESSES) expect(HARNESS_CAPS[h.id].promptCapabilities.fileAttach).toBe(true)
+  })
+
   it('falls back conservatively when the harness is unknown', () => {
     const caps = harnessCaps(undefined)
     expect(caps.modes).toEqual(['build'])

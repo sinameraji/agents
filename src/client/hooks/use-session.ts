@@ -47,9 +47,9 @@ export interface SessionApi {
   todos: NormTodo[]
   permissions: NormPermission[]
   connected: boolean
-  send: (text: string, attachments?: { key: string; name: string; size: number }[]) => Promise<void>
+  send: (text: string, attachments?: { key: string; name: string; size: number; mime?: string }[]) => Promise<void>
   /** Mid-turn steering: native (no abort) where the harness supports it, stop + re-prompt otherwise. */
-  steer: (text: string, attachments?: { key: string; name: string; size: number }[]) => Promise<void>
+  steer: (text: string, attachments?: { key: string; name: string; size: number; mime?: string }[]) => Promise<void>
   stop: () => Promise<void>
   setModel: (id: string) => Promise<void>
   setMode: (mode: SessionMode) => Promise<void>
@@ -126,7 +126,7 @@ export function useSession(sessionId: string): SessionApi {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
-  const send = useCallback(async (text: string, attachments?: { key: string; name: string; size: number }[]) => {
+  const send = useCallback(async (text: string, attachments?: { key: string; name: string; size: number; mime?: string }[]) => {
     const messageId = `u-${crypto.randomUUID()}`
     // optimistic echo with the SAME id the server will use, so its turn.start replaces this
     dispatch({
@@ -145,7 +145,7 @@ export function useSession(sessionId: string): SessionApi {
     await agentRef.current.stub.sendMessage({ text, messageId, attachments })
   }, [])
 
-  const steer = useCallback(async (text: string, attachments?: { key: string; name: string; size: number }[]) => {
+  const steer = useCallback(async (text: string, attachments?: { key: string; name: string; size: number; mime?: string }[]) => {
     const messageId = `u-${crypto.randomUUID()}`
     // optimistic echo with the SAME id the server will use, so its turn.start replaces this
     dispatch({

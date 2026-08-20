@@ -8,11 +8,12 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react'
-import { ArrowUp, AtSign, File as FileIcon, Loader2, Paperclip, SquareSlash, X, Zap } from 'lucide-react'
+import { ArrowUp, AtSign, EyeOff, File as FileIcon, Image as ImageIcon, Loader2, Paperclip, SquareSlash, X, Zap } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { countLines } from '~shared/format'
 import type { PastedBlock } from '~shared/protocol'
+import { imageMimeOf } from '~shared/vision'
 import { uploadFiles, type UploadedAttachment } from '@/lib/upload'
 import { Button } from '@/components/ui/button'
 import { PastedBlock as PastedChip } from './pasted-block'
@@ -46,6 +47,7 @@ export function Composer({
   busy,
   onSteer,
   allowAttachments = true,
+  imagesReachModel = true,
   liveSteer = false,
 }: {
   onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
@@ -60,6 +62,9 @@ export function Composer({
   onSteer?: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   /** When false, the attach button and drag/drop uploads are hidden (harness can't take them). */
   allowAttachments?: boolean
+  /** Effective image capability (harness pipe AND current model): when false, image chips warn
+   *  that the model will not see the image (it still lands in /workspace/uploads). */
+  imagesReachModel?: boolean
   /** From the harness capability manifest: true = the harness injects steering mid-turn
    *  without aborting; false = the fallback (stop, then send) — the hint must not overpromise. */
   liveSteer?: boolean
@@ -109,6 +114,21 @@ export function Composer({
   }
 
   const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    // Images (and other files) pasted from the clipboard arrive as files: upload them exactly
+    // like an attach. Screenshots come in as a generic "image.png", so give those a unique name.
+    const files = Array.from(e.clipboardData.files)
+    if (files.length > 0) {
+      if (!allowAttachments) return
+      e.preventDefault()
+      const named = files.map((f, i) => {
+        if (f.name && !/^image\.[a-z]+$/i.test(f.name)) return f
+        const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
+        const suffix = files.length > 1 ? `-${i + 1}` : ''
+        return new File([f], `pasted-${Date.now()}${suffix}.${ext}`, { type: f.type })
+      })
+      void uploadSelected(named)
+      return
+    }
     const clip = e.clipboardData.getData('text')
     const lines = countLines(clip)
     if (lines >= LINE_THRESHOLD || clip.length >= CHAR_THRESHOLD) {
@@ -176,9 +196,15 @@ export function Composer({
 
   const canSend = text.trim().length > 0 || pasted.length > 0 || attachments.length > 0
 
+  /** Thumbnail object URLs are only for the pending chips; release them once the message left. */
+  const releasePreviews = () => {
+    for (const a of attachments) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+  }
+
   const submit = () => {
     if (!canSend) return
     onSend(text.trim(), pasted, attachments)
+    releasePreviews()
     setText('')
     setPasted([])
     setAttachments([])
@@ -188,6 +214,7 @@ export function Composer({
   const steer = () => {
     if (!canSend || !onSteer) return
     onSteer(text.trim(), pasted, attachments)
+    releasePreviews()
     setText('')
     setPasted([])
     setAttachments([])
@@ -318,30 +345,47 @@ export function Composer({
                   onRemove={() => setPasted((prev) => prev.filter((b) => b.id !== block.id))}
                 />
               ))}
-              {attachments.map((file) => (
-                <span
-                  key={file.key}
-                  className="group inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-muted/60 py-1 pr-1 pl-2 text-sm text-foreground/90 transition-colors hover:border-primary/40 hover:bg-muted"
-                >
-                  <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-mono text-xs" title={file.name}>
-                    {file.name}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatSize(file.size)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setAttachments((prev) => prev.filter((f) => f.key !== file.key))
-                    }
-                    aria-label={`Remove ${file.name}`}
-                    className="grid size-4 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+              {attachments.map((file) => {
+                const isImage = imageMimeOf({ name: file.name, mime: file.mime }) !== null
+                const blindNote = "This model won't see the image; it lands in /workspace/uploads"
+                return (
+                  <span
+                    key={file.key}
+                    title={isImage && !imagesReachModel ? blindNote : file.name}
+                    className="group inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-muted/60 py-1 pr-1 pl-1.5 text-sm text-foreground/90 transition-colors hover:border-primary/40 hover:bg-muted"
                   >
-                    <X className="size-3" />
-                  </button>
-                </span>
-              ))}
+                    {isImage && file.previewUrl ? (
+                      <img
+                        src={file.previewUrl}
+                        alt={file.name}
+                        className="size-8 shrink-0 rounded-sm border border-border object-cover"
+                      />
+                    ) : isImage ? (
+                      <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <span className="truncate font-mono text-xs">{file.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatSize(file.size)}
+                    </span>
+                    {isImage && !imagesReachModel && (
+                      <EyeOff className="size-3 shrink-0 text-muted-foreground/70" aria-label={blindNote} />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (file.previewUrl) URL.revokeObjectURL(file.previewUrl)
+                        setAttachments((prev) => prev.filter((f) => f.key !== file.key))
+                      }}
+                      aria-label={`Remove ${file.name}`}
+                      className="grid size-4 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                )
+              })}
             </div>
           )}
 

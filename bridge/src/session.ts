@@ -1,5 +1,5 @@
 import type { NormPart, NormTurn, NormTodo, NormPermission, NormUsage, SessionStatus } from './normalize'
-import type { AdapterSink, HarnessAdapter, StartConfig } from './adapters/types'
+import type { AdapterSink, HarnessAdapter, PromptImage, StartConfig } from './adapters/types'
 import { createAiSdkAdapter } from './adapters/aisdk'
 import { createPiAdapter } from './adapters/pi'
 import { createKimiflareAdapter } from './adapters/kimiflare'
@@ -27,7 +27,7 @@ export class BridgeSession {
     this.status = 'idle'
   }
 
-  prompt(text: string, mode?: StartConfig['mode']) {
+  prompt(text: string, mode?: StartConfig['mode'], images?: PromptImage[]) {
     if (!this.adapter) throw new Error('not started')
     const userTurn: NormTurn = { id: `u-${Date.now()}`, role: 'user', createdAt: Date.now(), status: 'complete', parts: [{ kind: 'text', id: `u-${Date.now()}-t`, text }] }
     this.turns.push(userTurn)
@@ -60,7 +60,7 @@ export class BridgeSession {
       },
     }
 
-    void this.adapter.prompt(text, sink, mode).catch((e) => {
+    void this.adapter.prompt(text, sink, mode, images).catch((e) => {
       turn.status = 'error'
       turn.error = { name: 'error', message: (e as Error).message }
       this.status = 'idle'

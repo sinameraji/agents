@@ -9,12 +9,14 @@ import { transcriptToMarkdown } from '~shared/transcript-markdown'
 import { HARNESS_MARKS, PROVIDER_MARKS, PROVIDER_LABELS } from '../brand-marks'
 import { HARNESSES } from '~shared/protocol'
 import { harnessCaps } from '~shared/harness-caps'
+import { modelAcceptsImages } from '~shared/vision'
+import type { UploadedAttachment } from '@/lib/upload'
 import { useRouter } from '@/router'
 import { Button } from '@/components/ui/button'
 import { StatusDot, statusLabel } from './status-dot'
 import { TokenMeter } from './token-meter'
 import { Composer } from './composer'
-import { ModelPicker } from '../model-picker'
+import { ModelPicker, cachedModelInfo } from '../model-picker'
 import { Transcript } from '../transcript/transcript'
 import { TodoList } from '../transcript/parts/todo-list'
 import { WorkspaceDock } from '../workspace/workspace-dock'
@@ -41,6 +43,11 @@ const HARNESS_COMMAND_DEFS: Record<string, { label: string; hint: string; run: (
   unshare: { label: 'Unshare', hint: 'revoke the share link', run: (s) => void s.runCommand('unshare') },
   stats: { label: 'Stats', hint: 'session statistics', run: (s) => void s.bridgeCommand('stats') },
   export: { label: 'Export', hint: 'session → HTML in the workspace', run: (s) => void s.bridgeCommand('export') },
+}
+
+/** Strip client-only fields (thumbnail object URLs) before attachments cross the RPC. */
+function attachmentsToWire(attachments: UploadedAttachment[]) {
+  return attachments.map(({ key, name, size, mime }) => ({ key, name, size, mime }))
 }
 
 /** Collapsed paste-chips carry real content, fold it back into the outgoing prompt. */
@@ -226,6 +233,13 @@ export function ChatView({ session }: { session: SessionApi }) {
   const { navigate } = useRouter()
   const meta = session.meta
   const caps = harnessCaps(meta?.harness)
+  // Both image axes, mirrored from the server's delivery decision: the harness pipe (caps) AND
+  // the current model (live OpenRouter metadata when the picker cached it, heuristic otherwise).
+  // Only drives the composer's "model won't see this" hint; the DO decides delivery itself.
+  const imagesReachModel =
+    caps.promptCapabilities.image &&
+    !!meta &&
+    modelAcceptsImages(meta.provider, meta.model, cachedModelInfo(meta.provider, meta.harness, meta.model)?.vision)
   const harnessLabel = HARNESSES.find((h) => h.id === meta?.harness)?.label ?? meta?.harness ?? ''
   const busy = session.status === 'busy' || session.status === 'booting'
   const turnCount = session.turns.length
@@ -385,6 +399,7 @@ export function ChatView({ session }: { session: SessionApi }) {
           listFiles={listWorkspaceFiles}
           onCommandMenuOpen={fetchHarnessCommands}
           allowAttachments={caps.promptCapabilities.fileAttach}
+          imagesReachModel={imagesReachModel}
           liveSteer={caps.steering === 'live'}
           commands={(() => {
             // Mode commands only exist where the harness has more than one real mode.
@@ -477,9 +492,9 @@ export function ChatView({ session }: { session: SessionApi }) {
             void (
               session.send as (
                 text: string,
-                attachments?: { key: string; name: string; size: number }[],
+                attachments?: { key: string; name: string; size: number; mime?: string }[],
               ) => Promise<void>
-            )(withPasted(text, pasted), attachments)
+            )(withPasted(text, pasted), attachmentsToWire(attachments))
           }
           busy={busy}
           onSteer={(text, pasted, attachments) =>
@@ -488,9 +503,9 @@ export function ChatView({ session }: { session: SessionApi }) {
             void (
               session.steer as (
                 text: string,
-                attachments?: { key: string; name: string; size: number }[],
+                attachments?: { key: string; name: string; size: number; mime?: string }[],
               ) => Promise<void>
-            )(withPasted(text, pasted), attachments)
+            )(withPasted(text, pasted), attachmentsToWire(attachments))
           }
           sessionName={meta?.name ?? 'session'}
         />

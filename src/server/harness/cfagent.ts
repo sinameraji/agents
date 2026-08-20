@@ -10,6 +10,7 @@ import { z } from 'zod'
 import type { NormPart, NormUsage } from '~shared/agent'
 import type { Connections, Provider, SessionMode } from '~shared/protocol'
 import { isMutatingCommand } from '~shared/mutation-guard'
+import { mimeFromDataUrl } from '~shared/vision'
 
 /** Minimal sandbox surface the loop needs (subset of @cloudflare/sandbox's Sandbox stub). */
 export interface SandboxLike {
@@ -56,6 +57,48 @@ function providerBase(provider: Provider, conn: Connections): { url: string; key
     case 'openai':
       return { url: 'https://api.openai.com/v1', key: conn.openaiKey ?? '' }
   }
+}
+
+/**
+ * The user turn as a ModelMessage: plain text without images, a multimodal part array with
+ * them. AI SDK v7 file parts take a bare data-URL string as `data` (the SDK splits header →
+ * base64 + mediaType); the openai-compatible provider turns image file parts into `image_url`
+ * content. Exported for tests.
+ */
+export function userMessageWithImages(text: string, images?: Array<{ name: string; dataUrl: string }>): ModelMessage {
+  if (!images?.length) return { role: 'user', content: text }
+  return {
+    role: 'user',
+    content: [
+      { type: 'text', text },
+      ...images.map((i) => ({
+        type: 'file' as const,
+        data: i.dataUrl,
+        mediaType: mimeFromDataUrl(i.dataUrl),
+        filename: i.name,
+      })),
+    ],
+  }
+}
+
+/**
+ * Replace inline images with a small text marker before the history is persisted: cfagent
+ * history lives in DO KV, where megabytes of base64 would blow the per-value storage limit.
+ * The model sees images on the turn they were sent; later turns see the marker (plus the file
+ * itself is always in /workspace/uploads). Exported for tests.
+ */
+export function stripImagesFromHistory(messages: ModelMessage[]): ModelMessage[] {
+  return messages.map((m) => {
+    if (m.role !== 'user' || typeof m.content === 'string') return m
+    return {
+      ...m,
+      content: m.content.map((part) =>
+        part.type === 'file'
+          ? { type: 'text' as const, text: `[image attached earlier: ${part.filename ?? 'image'} (see ./uploads/)]` }
+          : part,
+      ),
+    } as ModelMessage
+  })
 }
 
 /** Compact a cfagent conversation: flatten the history to text and summarize it in one LLM call. */

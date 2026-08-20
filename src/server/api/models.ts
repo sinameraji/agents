@@ -12,6 +12,7 @@ interface OpenRouterModel {
   id: string
   name: string
   pricing?: { prompt?: string; completion?: string }
+  architecture?: { input_modalities?: string[] }
 }
 
 export async function fetchOpenRouterModels(): Promise<ModelInfo[]> {
@@ -29,6 +30,10 @@ export async function fetchOpenRouterModels(): Promise<ModelInfo[]> {
         provider: provider.charAt(0).toUpperCase() + provider.slice(1),
         inputPerM: Number(m.pricing?.prompt ?? 0) * 1_000_000,
         outputPerM: Number(m.pricing?.completion ?? 0) * 1_000_000,
+        // Live vision metadata: only set when OpenRouter actually says; absent = heuristic.
+        ...(Array.isArray(m.architecture?.input_modalities)
+          ? { vision: m.architecture.input_modalities.includes('image') }
+          : {}),
       }
     })
     .filter((m) => m.inputPerM > 0 || m.outputPerM > 0)

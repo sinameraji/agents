@@ -23,7 +23,9 @@ export interface HarnessCaps {
   subagents: boolean
   /** What a prompt may carry beyond text. */
   promptCapabilities: {
-    /** Image input reaches the model. No harness supports this through our pipe yet. */
+    /** The HARNESS pipe can put image input in front of the model. This is only the harness
+     *  axis: the selected model must also accept images (shared/vision.ts modelAcceptsImages);
+     *  the DO ANDs both before inlining an image into a turn. */
     image: boolean
     /** Generic file attachments (uploaded to R2, copied into /workspace/uploads by the DO) —
      *  harness-agnostic, so true everywhere; image is the model-input axis and stays per-harness. */
@@ -46,7 +48,8 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     permissions: true,
     // The only harness that emits subtask/agent parts (opencode-map.ts).
     subagents: true,
-    promptCapabilities: { image: false, fileAttach: true },
+    // image: promptAsync FilePartInput with a file:// URL; the server base64s it for the model.
+    promptCapabilities: { image: true, fileAttach: true },
     reasoning: true,
   },
   pi: {
@@ -60,6 +63,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // No tool-permission asks (--no-approve); only rare extension UI dialogs surface as cards.
     permissions: false,
     subagents: false,
+    // image: pi's RPC prompt pipe carries text only — images stay workspace files.
     promptCapabilities: { image: false, fileAttach: true },
     // The adapter maps text deltas only; thinking output is not surfaced.
     reasoning: false,
@@ -74,6 +78,8 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // permission.request events, resolved via resolve_permission.
     permissions: true,
     subagents: false,
+    // image: the kimiflare prompt pipe is text-only (options.images is not wired through) —
+    // images stay workspace files.
     promptCapabilities: { image: false, fileAttach: true },
     // message.reasoning deltas stream as reasoning parts.
     reasoning: true,
@@ -88,7 +94,8 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // Build mode's ask-before-mutate surfaces as permission cards (gateMutation in the adapter).
     permissions: true,
     subagents: false,
-    promptCapabilities: { image: false, fileAttach: true },
+    // image: data URLs ride POST /prompt into a multimodal AI SDK user message.
+    promptCapabilities: { image: true, fileAttach: true },
     reasoning: false,
   },
   cfagent: {
@@ -101,7 +108,8 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // Build mode's ask-before-mutate surfaces as permission cards (askPermission in the loop).
     permissions: true,
     subagents: false,
-    promptCapabilities: { image: false, fileAttach: true },
+    // image: the DO builds the multimodal AI SDK user message itself (shares the ai package).
+    promptCapabilities: { image: true, fileAttach: true },
     reasoning: false,
   },
 }
