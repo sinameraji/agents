@@ -457,7 +457,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       const proxy = cfg.provider === 'cloudflare' && ownerHost
         ? { baseURL: `https://${ownerHost}/aig/${this.name}`, token: this.proxyToken() }
         : undefined
-      const brokered = !!proxy && cfg.harness === 'kimiflare'
+      const brokered = !!proxy && (cfg.harness === 'kimiflare' || cfg.harness === 'aisdk')
       const credsOut = brokered ? { ...conn, cloudflareApiToken: undefined } : conn
       const res = await this.bridgeFetch(sandbox, 'POST', '/start', {
         harness: cfg.harness,

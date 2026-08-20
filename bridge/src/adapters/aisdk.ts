@@ -46,10 +46,17 @@ function baseURL(cfg: StartConfig): { url: string; key: string; model: string; h
     case 'openrouter':
       return { url: 'https://openrouter.ai/api/v1', key: cfg.creds.openrouterKey ?? '', model: cfg.model }
     case 'cloudflare':
-      // Cloudflare's unified inference endpoint: Workers AI models as bare @cf/... ids plus
-      // vendor models via unified billing. Account-token auth; cf-aig-gateway-id attributes the
-      // traffic to the user's gateway. (The gateway compat URL forwards Authorization upstream
-      // as the provider key — never use it here.)
+      // Brokered: the host's /aig route swaps the per-session bearer for a fresh
+      // cf-aig-authorization on every request, so no CF credential lives in the container. The
+      // broker fronts the gateway compat endpoint, which takes catalog ids verbatim
+      // (workers-ai/@cf/... included) — no prefix stripping.
+      if (cfg.proxy) {
+        return { url: `${cfg.proxy.baseURL}/compat`, key: cfg.proxy.token, model: cfg.model }
+      }
+      // Direct: Cloudflare's unified inference endpoint: Workers AI models as bare @cf/... ids
+      // plus vendor models via unified billing. Account-token auth; cf-aig-gateway-id attributes
+      // the traffic to the user's gateway. (The RAW gateway compat URL forwards Authorization
+      // upstream as the provider key — never use it here with a CF token.)
       return {
         url: `https://api.cloudflare.com/client/v4/accounts/${cfg.creds.cloudflareAccountId}/ai/v1`,
         key: cfg.creds.cloudflareApiToken ?? '',
