@@ -14,6 +14,8 @@ interface UploadedFile {
   key: string
   name: string
   size: number
+  /** Stored content type — the client sends the file's real mime so images are recognizable. */
+  mime: string
 }
 
 /** Keep only a safe basename: no path segments, no hidden/".." names, no exotic characters. */
@@ -35,10 +37,11 @@ async function store(
 ): Promise<UploadedFile> {
   const name = sanitizeName(rawName)
   const key = `uploads/${userId}/${crypto.randomUUID()}/${name}`
+  const mime = contentType || 'application/octet-stream'
   await c.env.STORE.put(key, body, {
-    httpMetadata: { contentType: contentType || 'application/octet-stream' },
+    httpMetadata: { contentType: mime },
   })
-  return { key, name, size: body.byteLength }
+  return { key, name, size: body.byteLength, mime }
 }
 
 export async function handleUpload(c: UploadContext): Promise<Response> {
