@@ -60,11 +60,16 @@ export async function mintSessionCookieFor(email: string, env: Pick<SessionEnv, 
   return `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`
 }
 
+/** Identity the password gate mints when no OWNER_EMAIL is configured (e.g. a fresh workers.dev
+ *  deploy where only APP_PASSWORD/AUTH_SECRET/ENCRYPTION_KEY were set). The OrgAgent seeds this
+ *  same identity as the bootstrap admin in that case — keep the two in sync via this constant. */
+export const PASSWORD_OWNER_FALLBACK = 'owner@agents.local'
+
 /** Mint the owner session for the password gate. The owner (OWNER_EMAIL) is the bootstrap admin
  *  and is always seeded as an active member by the OrgAgent, so the password path always resolves
  *  to a valid member — the membership gate on the API/agent routes does the real enforcement. */
 export async function mintSessionCookie(env: SessionEnv): Promise<string | null> {
-  const owner = env.OWNER_EMAIL ?? 'owner@agents.local'
+  const owner = env.OWNER_EMAIL || PASSWORD_OWNER_FALLBACK
   return mintSessionCookieFor(owner, env)
 }
 
