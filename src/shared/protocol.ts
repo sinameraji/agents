@@ -102,6 +102,19 @@ export const HARNESSES: { id: Harness; label: string; blurb: string; repoUrl: st
   { id: 'pi', label: 'pi', blurb: 'Minimal, fast agent by Mario Zechner', repoUrl: 'https://github.com/earendil-works/pi', enabled: true },
 ]
 
+/**
+ * A named agent the running harness advertises (OpenCode's built-in build/plan/general plus
+ * anything under `.opencode/agent/`). Mirrors the fields of the SDK's `Agent`
+ * (@opencode-ai/sdk/dist/v2/gen/types.gen.d.ts:1933) that the picker actually needs; the DO
+ * pushes the roster through the synced session state.
+ */
+export interface HarnessAgent {
+  name: string
+  description?: string
+  /** 'primary'/'all' can drive a whole turn; 'subagent' is something the main agent delegates to. */
+  mode: 'primary' | 'subagent' | 'all'
+}
+
 /** Where LLM requests are billed / routed. */
 export type Provider = 'openrouter' | 'cloudflare' | 'anthropic' | 'openai'
 

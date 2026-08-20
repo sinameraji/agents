@@ -9,12 +9,13 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react'
-import { ArrowUp, AtSign, EyeOff, File as FileIcon, Image as ImageIcon, Loader2, Paperclip, SquareSlash, X, Zap } from 'lucide-react'
+import { ArrowUp, AtSign, Bot, EyeOff, File as FileIcon, Image as ImageIcon, Loader2, Paperclip, SquareSlash, X, Zap } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { countLines, formatCost } from '~shared/format'
 import { estimateCostUsd, nextTurnTokens, type ModelPricing } from '~shared/pricing'
-import type { PastedBlock } from '~shared/protocol'
+import { clearMentionToken, detectTrigger, insertMention } from '~shared/composer-input'
+import type { HarnessAgent, PastedBlock } from '~shared/protocol'
 import { imageMimeOf } from '~shared/vision'
 import { uploadFiles, type UploadedAttachment } from '@/lib/upload'
 import { Button } from '@/components/ui/button'
@@ -36,7 +37,10 @@ export interface SlashCommand {
   id: string
   label: string
   hint: string
-  run: () => void
+  /** True for harness commands whose template interpolates $ARGUMENTS. Picking one of those from
+   *  the menu types `/name ` into the composer so arguments can follow, instead of firing now. */
+  takesArgs?: boolean
+  run: (args?: string) => void
 }
 
 /** What the pre-send cost chip needs: the current model's price plus the session's measured
@@ -50,11 +54,18 @@ export interface CostHint {
   recentOutputTokens?: number[]
 }
 
+/** '@' popover rows: named agents first, then workspace files. */
+type MenuItem = { id: string; label: string; hint?: string; kind: 'command' | 'agent' | 'file' }
+
+const AGENT_PREFIX = 'agent:'
+
 export function Composer({
   onSend,
   sessionName,
   extras,
   commands,
+  agents = [],
+  bangShell = false,
   listFiles,
   onCommandMenuOpen,
   busy,
@@ -64,10 +75,19 @@ export function Composer({
   liveSteer = false,
   costHint,
 }: {
-  onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
+  onSend: (
+    text: string,
+    pasted: PastedBlock[],
+    attachments: UploadedAttachment[],
+    agent?: string,
+  ) => void
   sessionName: string
   extras?: React.ReactNode
   commands?: SlashCommand[]
+  /** Named harness agents the '@' popover offers alongside files; empty hides that section. */
+  agents?: HarnessAgent[]
+  /** The harness runs a leading '!' as a shell command, so the footer hint may advertise it. */
+  bangShell?: boolean
   listFiles?: () => Promise<string[]>
   /** Called when the '/' menu opens, lets the host lazily fetch harness-specific commands. */
   onCommandMenuOpen?: () => void
@@ -93,24 +113,17 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const [menu, setMenu] = useState<{ kind: 'mention' | 'command'; query: string } | null>(null)
   const [menuIndex, setMenuIndex] = useState(0)
+  /** Named agent picked for THIS prompt via '@'; rides the send as the prompt's agent field. */
+  const [agent, setAgent] = useState<string | null>(null)
   const [fileList, setFileList] = useState<string[] | 'loading' | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
-  /** '@token' before the caret opens the file-mention menu; a leading '/' opens commands. */
-  const detectTrigger = (value: string, caret: number): { kind: 'mention' | 'command'; query: string } | null => {
-    const upToCaret = value.slice(0, caret)
-    if (/^\/[a-zA-Z0-9-]*$/.test(upToCaret) && commands?.length) {
-      return { kind: 'command', query: upToCaret.slice(1).toLowerCase() }
-    }
-    const m = upToCaret.match(/(?:^|\s)@([\w./-]*)$/)
-    if (m && listFiles) return { kind: 'mention', query: m[1].toLowerCase() }
-    return null
-  }
+  const canMention = !!listFiles || agents.length > 0
 
   const refreshMenu = (value: string, caret: number) => {
-    const trigger = detectTrigger(value, caret)
+    const trigger = detectTrigger(value, caret, { commands: !!commands?.length, mentions: canMention })
     setMenu(trigger)
     if (trigger) setMenuIndex(0)
     const reopening = menu === null && trigger !== null
@@ -235,11 +248,12 @@ export function Composer({
 
   const submit = () => {
     if (!canSend) return
-    onSend(text.trim(), pasted, attachments)
+    onSend(text.trim(), pasted, attachments, agent ?? undefined)
     releasePreviews()
     setText('')
     setPasted([])
     setAttachments([])
+    setAgent(null)
     setUploadError(null)
   }
 
@@ -253,42 +267,69 @@ export function Composer({
     setUploadError(null)
   }
 
-  const menuItems: { id: string; label: string; hint?: string }[] = (() => {
+  const menuItems: MenuItem[] = (() => {
     if (!menu) return []
     if (menu.kind === 'command') {
       return (commands ?? [])
         .filter((c) => c.id.toLowerCase().startsWith(menu.query))
         .slice(0, 24)
-        .map((c) => ({ id: c.id, label: `/${c.id}`, hint: c.hint }))
+        .map((c) => ({ id: c.id, label: `/${c.id}`, hint: c.hint, kind: 'command' as const }))
     }
-    const files = Array.isArray(fileList) ? fileList : []
     const q = menu.query
+    // Agents lead the '@' list: there are only a handful of them and they are the rarer intent,
+    // so burying them under a few hundred file paths would make them unreachable.
+    const agentItems: MenuItem[] = agents
+      .filter((a) => a.name.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((a) => ({
+        id: `${AGENT_PREFIX}${a.name}`,
+        label: `@${a.name}`,
+        hint: a.description || (a.mode === 'subagent' ? 'subagent' : 'agent'),
+        kind: 'agent' as const,
+      }))
+    const files = Array.isArray(fileList) ? fileList : []
     const starts = files.filter((f) => f.toLowerCase().startsWith(q))
     const includes = q ? files.filter((f) => !f.toLowerCase().startsWith(q) && f.toLowerCase().includes(q)) : []
-    return [...starts, ...includes].slice(0, 12).map((f) => ({ id: f, label: f }))
+    const fileItems: MenuItem[] = [...starts, ...includes]
+      .slice(0, 12)
+      .map((f) => ({ id: f, label: f, kind: 'file' as const }))
+    return [...agentItems, ...fileItems]
   })()
 
-  const selectMenuItem = (item: { id: string }) => {
+  const selectMenuItem = (item: MenuItem) => {
     if (!menu) return
     const ta = textareaRef.current
+    const caret = ta?.selectionStart ?? text.length
+    const place = (next: { text: string; caret: number }) => {
+      setText(next.text)
+      setMenu(null)
+      requestAnimationFrame(() => {
+        ta?.focus()
+        ta?.setSelectionRange(next.caret, next.caret)
+      })
+    }
     if (menu.kind === 'command') {
       const cmd = (commands ?? []).find((c) => c.id === item.id)
+      // A command whose template reads $ARGUMENTS is typed into the composer so the user can add
+      // them; everything else runs on the spot.
+      if (cmd?.takesArgs) {
+        place({ text: `/${cmd.id} `, caret: cmd.id.length + 2 })
+        return
+      }
       setText('')
       setMenu(null)
       cmd?.run()
       ta?.focus()
       return
     }
-    const caret = ta?.selectionStart ?? text.length
-    const upToCaret = text.slice(0, caret)
-    const replaced = upToCaret.replace(/@([\w./-]*)$/, `@${item.id} `)
-    const next = replaced + text.slice(caret)
-    setText(next)
-    setMenu(null)
-    requestAnimationFrame(() => {
-      ta?.focus()
-      ta?.setSelectionRange(replaced.length, replaced.length)
-    })
+    if (item.kind === 'agent') {
+      // The pick rides the prompt's agent field and shows as a chip, so the '@name' the user was
+      // typing comes back out of the text: leaving it would send the name to the model as well.
+      setAgent(item.id.slice(AGENT_PREFIX.length))
+      place(clearMentionToken(text, caret))
+      return
+    }
+    place(insertMention(text, caret, item.id))
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -340,8 +381,10 @@ export function Composer({
               {menu.kind === 'mention' && fileList === 'loading' && (
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading workspace files…</div>
               )}
-              {menu.kind === 'mention' && Array.isArray(fileList) && menuItems.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">No matching files in the workspace.</div>
+              {menu.kind === 'mention' && fileList !== 'loading' && menuItems.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  {agents.length > 0 ? 'No matching agent or file.' : 'No matching files in the workspace.'}
+                </div>
               )}
               {menuItems.map((item, i) => (
                 <button
@@ -356,8 +399,10 @@ export function Composer({
                     i === menuIndex ? 'bg-muted text-foreground' : 'text-foreground/90 hover:bg-muted',
                   )}
                 >
-                  {menu.kind === 'command' ? (
+                  {item.kind === 'command' ? (
                     <SquareSlash className="size-3.5 shrink-0 text-muted-foreground" />
+                  ) : item.kind === 'agent' ? (
+                    <Bot className="size-3.5 shrink-0 text-primary" />
                   ) : (
                     <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
                   )}
@@ -368,8 +413,25 @@ export function Composer({
             </div>
           )}
 
-          {(pasted.length > 0 || attachments.length > 0) && (
+          {(pasted.length > 0 || attachments.length > 0 || agent) && (
             <div className="flex flex-wrap gap-2 px-1 pt-1">
+              {agent && (
+                <span
+                  title={`This message runs as the ${agent} agent`}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 py-1 pr-1 pl-1.5 text-sm text-foreground/90"
+                >
+                  <Bot className="size-3.5 shrink-0 text-primary" />
+                  <span className="truncate font-mono text-xs">@{agent}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAgent(null)}
+                    aria-label={`Send without the ${agent} agent`}
+                    className="grid size-4 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              )}
               {pasted.map((block) => (
                 <PastedChip
                   key={block.id}
@@ -470,7 +532,7 @@ export function Composer({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Mention a file"
+              aria-label={agents.length > 0 ? 'Mention a file or agent' : 'Mention a file'}
               onClick={() => {
                 const ta = textareaRef.current
                 const caret = ta?.selectionStart ?? text.length
@@ -525,7 +587,9 @@ export function Composer({
         <p className="mt-1.5 px-1 text-center text-[0.7rem] text-muted-foreground/70">
           {busy
             ? `Enter queues · ⌥ Enter ${liveSteer ? 'steers without stopping' : 'stops & sends'} · Shift + Enter for a new line`
-            : 'Enter to send · Shift + Enter for a new line'}
+            : bangShell
+              ? 'Enter to send · ! runs a shell command · Shift + Enter for a new line'
+              : 'Enter to send · Shift + Enter for a new line'}
         </p>
       </div>
     </div>

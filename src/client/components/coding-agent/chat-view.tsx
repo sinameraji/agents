@@ -9,6 +9,7 @@ import { transcriptToMarkdown } from '~shared/transcript-markdown'
 import { HARNESS_MARKS, PROVIDER_MARKS, PROVIDER_LABELS } from '../brand-marks'
 import { HARNESSES } from '~shared/protocol'
 import { harnessCaps } from '~shared/harness-caps'
+import { mergeDynamicCommands, parseBangCommand, parseSlashInvocation } from '~shared/composer-input'
 import { modelAcceptsImages } from '~shared/vision'
 import { pricingOf } from '~shared/pricing'
 import type { UploadedAttachment } from '@/lib/upload'
@@ -45,6 +46,13 @@ const HARNESS_COMMAND_DEFS: Record<string, { label: string; hint: string; run: (
   stats: { label: 'Stats', hint: 'session statistics', run: (s) => void s.bridgeCommand('stats') },
   export: { label: 'Export', hint: 'session → HTML in the workspace', run: (s) => void s.bridgeCommand('export') },
 }
+
+/** The '!' affordance, listed in the slash menu so it is discoverable rather than folklore. */
+const BANG_HELP = {
+  id: 'shell',
+  label: 'Shell',
+  hint: 'or type ! before a command',
+} as const
 
 /** Strip client-only fields (thumbnail object URLs) before attachments cross the RPC. */
 function attachmentsToWire(attachments: UploadedAttachment[]) {
@@ -181,7 +189,9 @@ export function ChatView({ session }: { session: SessionApi }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [dockOpen, setDockOpen] = useState(false)
   const [editingName, setEditingName] = useState<string | null>(null)
-  const [dynamicCommands, setDynamicCommands] = useState<{ name: string; description?: string }[]>([])
+  const [dynamicCommands, setDynamicCommands] = useState<
+    { name: string; description?: string; takesArgs?: boolean }[]
+  >([])
   const [subagentsOpen, setSubagentsOpen] = useState(false)
   const [previewReq, setPreviewReq] = useState<{ port: number; nonce: number } | null>(null)
 
@@ -295,6 +305,13 @@ export function ChatView({ session }: { session: SessionApi }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [turnCount, session.status, meta?.id])
+
+  // Slash text typed WITH arguments only routes for commands the harness itself named (plus
+  // '/shell'): intercepting the built-in ids too would swallow ordinary prose like "/new idea".
+  const routableCommands = [
+    ...dynamicCommands.map((c) => c.name),
+    ...(caps.bangShell ? [BANG_HELP.id] : []),
+  ]
 
   return (
     <div className="flex h-full min-w-0 flex-1">
@@ -444,18 +461,31 @@ export function ChatView({ session }: { session: SessionApi }) {
                 const def = HARNESS_COMMAND_DEFS[id]
                 return def ? [{ id, label: def.label, hint: def.hint, run: () => def.run(session) }] : []
               }),
+              // Same gate: '/shell' is only real where the harness can run a command directly.
+              ...(caps.bangShell
+                ? [
+                    {
+                      ...BANG_HELP,
+                      takesArgs: true,
+                      run: (args?: string) => {
+                        if (args?.trim()) void session.runShell(args.trim())
+                      },
+                    },
+                  ]
+                : []),
             ]
-            const taken = new Set(base.map((c) => c.id))
+            // Dynamic section: whatever the harness itself reports, minus anything the static
+            // menu already owns.
             return [
               ...base,
-              ...dynamicCommands
-                .filter((c) => !taken.has(c.name))
-                .map((c) => ({
-                  id: c.name,
-                  label: c.name,
-                  hint: c.description ?? 'harness command',
-                  run: () => void session.runCustomCommand(c.name),
-                })),
+              ...mergeDynamicCommands(base, dynamicCommands).map((c) => ({
+                id: c.name,
+                label: c.name,
+                hint: c.description ?? 'harness command',
+                // Commands whose template reads $ARGUMENTS wait in the composer for them.
+                takesArgs: c.takesArgs,
+                run: (args?: string) => void session.runCustomCommand(c.name, args ?? ''),
+              })),
             ]
           })()}
           extras={
@@ -503,14 +533,29 @@ export function ChatView({ session }: { session: SessionApi }) {
               )}
             </>
           }
-          onSend={(text, pasted, attachments) =>
+          agents={caps.subagents ? session.agents : []}
+          bangShell={caps.bangShell}
+          onSend={(text, pasted, attachments, agent) => {
+            // '!ls -la' runs straight through the harness shell endpoint: no model turn, no cost.
+            const bang = parseBangCommand(text, caps.bangShell)
+            if (bang) return void session.runShell(bang.command)
+            // '/mycommand foo bar' keeps its arguments: the harness expands $ARGUMENTS itself.
+            const slash = parseSlashInvocation(withPasted(text, pasted), routableCommands)
+            if (slash) {
+              if (slash.name === BANG_HELP.id) {
+                if (slash.args) void session.runShell(slash.args)
+                return
+              }
+              return void session.runCustomCommand(slash.name, slash.args)
+            }
             void (
               session.send as (
                 text: string,
                 attachments?: { key: string; name: string; size: number; mime?: string }[],
+                agent?: string,
               ) => Promise<void>
-            )(withPasted(text, pasted), attachmentsToWire(attachments))
-          }
+            )(withPasted(text, pasted), attachmentsToWire(attachments), agent)
+          }}
           busy={busy}
           onSteer={(text, pasted, attachments) =>
             // Native mid-turn steering where the harness supports it (pi); the server falls

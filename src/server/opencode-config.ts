@@ -119,3 +119,10 @@ export function opencodePromptModel(provider: Provider, model: string): { provid
   const bare = model.replace(new RegExp(`^${pid}/`), '')
   return { providerID: pid, modelID: bare }
 }
+
+/** The same pick as a `<providerId>/<modelId>` STRING: session.command takes `model` that way
+ *  (types.gen.d.ts:8709), unlike promptAsync/session.shell which take the split object. */
+export function opencodeModelRef(provider: Provider, model: string): string {
+  const { providerID, modelID } = opencodePromptModel(provider, model)
+  return `${providerID}/${modelID}`
+}

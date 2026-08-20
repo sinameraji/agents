@@ -19,8 +19,13 @@ export interface HarnessCaps {
   commands: string[]
   /** Emits interactive permission asks the user must answer. */
   permissions: boolean
-  /** Emits subtask/sub-agent parts (drives the sub-agents panel). */
+  /** Emits subtask/sub-agent parts (drives the sub-agents panel), and exposes a named-agent
+   *  roster the composer can pick from. */
   subagents: boolean
+  /** A composer line starting with '!' runs the rest as a direct shell command instead of a
+   *  prompt: no model call, no cost. OpenCode only, it is the one harness with a session.shell
+   *  endpoint. Everywhere else a leading '!' is ordinary prompt text. */
+  bangShell: boolean
   /** What a prompt may carry beyond text. */
   promptCapabilities: {
     /** The HARNESS pipe can put image input in front of the model. This is only the harness
@@ -46,8 +51,10 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     commands: ['compact', 'undo', 'redo', 'init', 'diff', 'share', 'unshare'],
     // permission.asked events, plus the permission.list poll during turns.
     permissions: true,
-    // The only harness that emits subtask/agent parts (opencode-map.ts).
+    // The only harness that emits subtask/agent parts (opencode-map.ts) and lists named agents.
     subagents: true,
+    // POST /session/{id}/shell runs the command straight, outside any model turn.
+    bangShell: true,
     // image: promptAsync FilePartInput with a file:// URL; the server base64s it for the model.
     promptCapabilities: { image: true, fileAttach: true },
     reasoning: true,
@@ -63,6 +70,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // No tool-permission asks (--no-approve); only rare extension UI dialogs surface as cards.
     permissions: false,
     subagents: false,
+    bangShell: false,
     // image: pi's RPC prompt pipe carries text only — images stay workspace files.
     promptCapabilities: { image: false, fileAttach: true },
     // The adapter maps text deltas only; thinking output is not surfaced.
@@ -78,6 +86,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // permission.request events, resolved via resolve_permission.
     permissions: true,
     subagents: false,
+    bangShell: false,
     // image: the kimiflare prompt pipe is text-only (options.images is not wired through) —
     // images stay workspace files.
     promptCapabilities: { image: false, fileAttach: true },
@@ -94,6 +103,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // Build mode's ask-before-mutate surfaces as permission cards (gateMutation in the adapter).
     permissions: true,
     subagents: false,
+    bangShell: false,
     // image: data URLs ride POST /prompt into a multimodal AI SDK user message.
     promptCapabilities: { image: true, fileAttach: true },
     reasoning: false,
@@ -108,6 +118,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // Build mode's ask-before-mutate surfaces as permission cards (askPermission in the loop).
     permissions: true,
     subagents: false,
+    bangShell: false,
     // image: the DO builds the multimodal AI SDK user message itself (shares the ai package).
     promptCapabilities: { image: true, fileAttach: true },
     reasoning: false,
@@ -122,6 +133,7 @@ const NO_CAPS: HarnessCaps = {
   commands: [],
   permissions: false,
   subagents: false,
+  bangShell: false,
   promptCapabilities: { image: false, fileAttach: true },
   reasoning: false,
 }

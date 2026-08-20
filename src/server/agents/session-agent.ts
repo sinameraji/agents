@@ -7,8 +7,8 @@ const getSandbox: typeof sdkGetSandbox = (ns, id, opts) =>
   sdkGetSandbox(ns, id, { ...opts, transport: 'rpc' })
 import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
-import { buildOpencodeConfig, hasProviderKey, opencodePromptModel } from '../opencode-config'
-import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
+import { buildOpencodeConfig, hasProviderKey, opencodeModelRef, opencodePromptModel } from '../opencode-config'
+import { mapPart, shellResult, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
 import { runCfAgentLoop, summarizeMessages, stripImagesFromHistory, userMessageWithImages } from '../harness/cfagent'
 import { modelPricing } from '../api/models'
 import type { ModelPricing } from '~shared/pricing'
@@ -33,6 +33,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   type Connections,
   type Harness,
+  type HarnessAgent,
   type Provider,
   type SessionMode,
   type SessionSource,
@@ -69,6 +70,10 @@ interface SessionAgentState {
   status: SessionStatus
   mode: SessionMode
   usage: { tokensIn: number; tokensOut: number; costUsd: number }
+  /** Named agents the running harness advertises, refreshed whenever OpenCode boots. Rides the
+   *  synced state channel so the composer's '@' popover needs no extra round trip. Sessions
+   *  created before this field existed sync it as undefined — always read it as `?? []`. */
+  agents?: HarnessAgent[]
 }
 
 const BRIDGE_HASH = (() => {
@@ -109,6 +114,11 @@ interface QueuedMessage {
   text: string
   runText?: string
   attachments?: Attachment[]
+  /** Named harness agent the user picked for this one prompt ('@agent' in the composer). */
+  agent?: string
+  /** Set when the message is a harness slash command: OpenCode expands the template and
+   *  substitutes $ARGUMENTS server-side, so the raw name + args travel instead of prompt text. */
+  command?: { name: string; args: string }
 }
 
 /**
@@ -122,6 +132,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     status: 'idle',
     mode: 'build',
     usage: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
+    agents: [],
   }
 
   private opencode?: OpencodeClient
@@ -915,6 +926,39 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     )
     const { client } = (await Promise.race([booted, timeout])) as Awaited<typeof booted>
     this.opencode = client
+    // Fire-and-forget: the roster is menu data, never a reason to delay a turn.
+    void this.refreshAgents()
+  }
+
+  /**
+   * Pull the named-agent roster off the running OpenCode server into synced state, which is how
+   * the composer's '@' popover gets it (no extra RPC, and it survives a page reload).
+   *
+   * GET /agent → Array<Agent> — SDK `client.app.agents()` (sdk.gen.d.ts:68), response
+   * AppAgentsResponses (types.gen.d.ts:7116), element Agent (types.gen.d.ts:1933) with
+   * name / description / mode / hidden.
+   */
+  private async refreshAgents(): Promise<void> {
+    if (!this.opencode) return
+    try {
+      const res = await this.opencode.app.agents({} as never)
+      const list = ((res as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>
+      const agents: HarnessAgent[] = list
+        .filter((a) => a.hidden !== true)
+        .map((a) => ({
+          name: String(a.name ?? ''),
+          description: typeof a.description === 'string' ? a.description : undefined,
+          // `mode` is required in the SDK type, but an older server could omit it; a primary
+          // agent is the safe read because that is what the prompt's `agent` field accepts.
+          mode: (a.mode === 'subagent' || a.mode === 'all' ? a.mode : 'primary') as HarnessAgent['mode'],
+        }))
+        .filter((a) => a.name)
+      if (!agents.length) return
+      if (JSON.stringify(agents) === JSON.stringify(this.state.agents ?? [])) return
+      this.setState({ ...this.state, agents })
+    } catch {
+      /* the picker simply stays on whatever roster it already had */
+    }
   }
 
   private async ensureOpencodeSession(): Promise<string> {
@@ -974,6 +1018,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     attachments?: Attachment[]
     /** What actually goes to the harness when it differs from the displayed text (command templates). */
     runText?: string
+    /** Named harness agent to run this one prompt as ('@agent' pick in the composer). */
+    agent?: string
+    /** Harness slash command to execute instead of prompting (OpenCode session.command). */
+    command?: { name: string; args: string }
   }): Promise<{ ok: true }> {
     this.hydrate()
     const id = input.messageId ?? `u-${crypto.randomUUID()}`
@@ -1017,11 +1065,11 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // drain in order after the current turn finishes. Stop clears the queue.
     const pending = this.getKv<QueuedMessage[]>('queue', [])
     if (this.state.status === 'busy' || this.state.status === 'booting' || pending.length > 0) {
-      this.putKv('queue', [...pending, { messageId: id, text: input.text, runText: input.runText, attachments: input.attachments }])
+      this.putKv('queue', [...pending, { messageId: id, text: input.text, runText: input.runText, attachments: input.attachments, agent: input.agent, command: input.command }])
       if (this.state.status !== 'busy' && this.state.status !== 'booting') this.drainQueue()
       return { ok: true }
     }
-    this.startTurn({ messageId: id, text: input.text, runText: input.runText, attachments: input.attachments })
+    this.startTurn({ messageId: id, text: input.text, runText: input.runText, attachments: input.attachments, agent: input.agent, command: input.command })
     return { ok: true }
   }
 
@@ -1104,7 +1152,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       // Image lane: only when the harness pipe AND the current model take images; everything
       // else already reached /workspace/uploads above, so this is purely additive.
       const images = this.planTurnImages(input)
-      if (harness === 'opencode') return this.runOpencodeTurn(text, images)
+      if (harness === 'opencode' && input.command) return this.runOpencodeCommand(input.command)
+      if (harness === 'opencode') return this.runOpencodeTurn(text, images, input.agent)
       if (harness === 'cfagent') return this.runCfAgentTurn(text, await this.inlineImages(images))
       return this.runBridgeTurn(text, await this.inlineImages(images))
     })()
@@ -1136,23 +1185,58 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.startTurn(next)
   }
 
-  private async runOpencodeTurn(text: string, images: { name: string; mime: string }[] = []): Promise<void> {
-    const gen = this.turnGen
+  /**
+   * Common preamble for anything that drives the OpenCode server on the user's behalf (a prompt,
+   * a custom command, a '!' shell line): credential check, boot, session resume, status.
+   */
+  private async openOpencodeTurn(): Promise<{ client: OpencodeClient; ocSession: string; cfg: SessionConfig }> {
     const cfg = this.config()
     const conn = await this.connections()
     if (!hasProviderKey(cfg.provider, conn)) {
       throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
     }
-
     this.setStatus('booting')
     await this.ensureOpencode()
     const ocSession = await this.ensureOpencodeSession()
     this.setStatus('busy')
     this.emittedParts.clear()
     this.handledQuestions.clear()
+    return { client: this.opencode!, ocSession, cfg }
+  }
 
-    const client = this.opencode!
+  /**
+   * Which named agent runs this prompt.
+   *
+   * `agent` on promptAsync (sdk.gen.d.ts:1207) names the PRIMARY agent for the turn, so a pick
+   * whose roster entry says mode 'subagent' (types.gen.d.ts:1933) cannot go there. That pick
+   * instead rides along as an AgentPartInput mention part (types.gen.d.ts:2119) — the exact wire
+   * shape OpenCode's own '@agent' mention uses — and the primary agent delegates to it.
+   * An unknown name (roster not fetched yet) is treated as primary: that is what the user typed.
+   */
+  private resolveTurnAgent(picked: string | undefined, mode: SessionMode): {
+    promptAgent?: string
+    mentionParts: { type: 'agent'; name: string }[]
+    label?: string
+  } {
+    const planAgent = mode === 'plan' ? 'plan' : undefined
+    if (!picked) return { promptAgent: planAgent, mentionParts: [], label: planAgent }
+    const known = (this.state.agents ?? []).find((a) => a.name === picked)
+    if (known?.mode === 'subagent') {
+      return { promptAgent: planAgent, mentionParts: [{ type: 'agent', name: picked }], label: picked }
+    }
+    return { promptAgent: picked, mentionParts: [], label: picked }
+  }
+
+  private async runOpencodeTurn(
+    text: string,
+    images: { name: string; mime: string }[] = [],
+    agent?: string,
+  ): Promise<void> {
+    const gen = this.turnGen
+    const { client, ocSession, cfg } = await this.openOpencodeTurn()
+
     const mode = this.state.mode
+    const routed = this.resolveTurnAgent(agent, mode)
     // Per-prompt model: a running OpenCode server only reads config at process start, so this is
     // the ONLY way the user's current picker choice reaches an already-booted session.
     const promptModel = opencodePromptModel(cfg.provider, cfg.model)
@@ -1172,18 +1256,56 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
             filename: i.name,
             url: `file:///workspace/uploads/${i.name}`,
           })),
+          ...routed.mentionParts,
         ],
         model: promptModel,
+        ...(routed.promptAgent ? { agent: routed.promptAgent } : {}),
+      } as never,
+      { throwOnError: true } as never,
+    )
+    await this.pumpOpencodeTurn(gen, client, ocSession, routed.label)
+  }
+
+  /**
+   * Run one of the harness's own commands (`.opencode/command/*`, skills, MCP commands) through
+   * POST /session/{id}/command — SDK `session.command` (sdk.gen.d.ts:1222), body
+   * SessionCommandData (types.gen.d.ts:8704) = { command, arguments, agent?, model?, … }.
+   * OpenCode expands the command's template and substitutes $ARGUMENTS server-side, which is the
+   * whole point: the client no longer has to strip arguments it cannot interpolate.
+   */
+  private async runOpencodeCommand(command: { name: string; args: string }): Promise<void> {
+    const gen = this.turnGen
+    const { client, ocSession, cfg } = await this.openOpencodeTurn()
+    const mode = this.state.mode
+    await client.session.command(
+      {
+        sessionID: ocSession,
+        command: command.name,
+        arguments: command.args,
+        // `model` here is the STRING ref form, unlike promptAsync's split object.
+        model: opencodeModelRef(cfg.provider, cfg.model),
         ...(mode === 'plan' ? { agent: 'plan' } : {}),
       } as never,
       { throwOnError: true } as never,
     )
+    await this.pumpOpencodeTurn(gen, client, ocSession, mode === 'plan' ? 'plan' : undefined)
+  }
 
-    // The SDK's event.subscribe() SSE does not stream over the Sandbox transport, so we POLL
-    // session.messages (+ todos) and diff against what we've already emitted. All of OpenCode's
-    // assistant messages for this prompt are grouped into ONE Agents turn.
+  /**
+   * Poll the OpenCode session until the work started above settles, emitting normalized parts.
+   *
+   * The SDK's event.subscribe() SSE does not stream over the Sandbox transport, so we POLL
+   * session.messages (+ todos) and diff against what we've already emitted. All of OpenCode's
+   * assistant messages for this prompt are grouped into ONE Agents turn.
+   */
+  private async pumpOpencodeTurn(
+    gen: number,
+    client: OpencodeClient,
+    ocSession: string,
+    agentLabel?: string,
+  ): Promise<void> {
     const turnId = `a-${crypto.randomUUID()}`
-    this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
+    this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', agent: agentLabel, parts: [] } })
     if (this.ocContextLost) {
       this.ocContextLost = false
       this.emit({
@@ -1480,6 +1602,101 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return this.noted({ ok: true, note: 'Session share link revoked.' })
   }
 
+  /**
+   * A composer line starting with '!': run the rest as a real shell command in the session's
+   * workspace, with NO model turn and no token cost.
+   *
+   * POST /session/{id}/shell - SDK `session.shell` (sdk.gen.d.ts:1246). Its body type
+   * SessionShellData (types.gen.d.ts:8751) requires BOTH `command` and `agent` (the method's own
+   * parameter object marks `agent` optional, the wire type does not), and answers with
+   * SessionShellResponses (:8785) = { info: Message, parts: Part[] }. OpenCode runs the command
+   * through its bash tool instead of the model, so the payload is a ToolPart, folded into one
+   * terminal part by shellResult().
+   */
+  @callable()
+  async runShell(command: string): Promise<{ ok: boolean; note: string }> {
+    this.hydrate()
+    const cmd = (command ?? '').trim()
+    if (!cmd) return { ok: false, note: 'Nothing to run.' }
+    if (!harnessCaps(this.config().harness).bangShell) {
+      return this.noted({ ok: false, note: "Direct '!' shell commands need an OpenCode session (for now)." })
+    }
+    if (this.state.status === 'busy' || this.state.status === 'booting') {
+      return this.noted({ ok: false, note: 'The agent is mid-turn, wait for it to finish before running a shell command.' })
+    }
+
+    const userId = `u-${crypto.randomUUID()}`
+    this.emit({
+      t: 'turn.start',
+      turn: {
+        id: userId, role: 'user', createdAt: Date.now(), status: 'complete',
+        parts: [{ kind: 'text', id: `${userId}:text`, text: `!${cmd}` }],
+      },
+    })
+
+    this.turnGen += 1
+    const gen = this.turnGen
+    const turnId = `sh-${crypto.randomUUID()}`
+    try {
+      const { client, ocSession } = await this.openOpencodeTurn()
+      // `agent` only decides which permission ruleset the command runs under. 'build' is
+      // OpenCode's native default primary agent; fall back to any other primary on the roster.
+      const roster = this.state.agents ?? []
+      const shellAgent = roster.some((a) => a.name === 'build')
+        ? 'build'
+        : (roster.find((a) => a.mode !== 'subagent')?.name ?? 'build')
+      const res = await client.session.shell(
+        { sessionID: ocSession, command: cmd, agent: shellAgent } as never,
+        { throwOnError: true } as never,
+      )
+      const data = ((res as { data?: { info?: { id?: string }; parts?: unknown[] } }).data ?? {}) as {
+        info?: { id?: string }
+        parts?: unknown[]
+      }
+      let result = shellResult(data.parts ?? [])
+      // The response can land while the bash tool is still running: re-read the same message
+      // until it settles (session.message, sdk.gen.d.ts:1119 -> SessionMessageResponses :8462).
+      const messageID = data.info?.id
+      const deadline = Date.now() + 10 * 60 * 1000
+      while (!result.done && messageID && Date.now() < deadline && this.turnGen === gen) {
+        await new Promise((r) => setTimeout(r, 600))
+        const poll = await client.session
+          .message({ sessionID: ocSession, messageID } as never)
+          .catch(() => null)
+        const parts = (poll as { data?: { parts?: unknown[] } } | null)?.data?.parts
+        if (parts) result = shellResult(parts)
+      }
+      this.emit({
+        t: 'turn.start',
+        turn: {
+          id: turnId, role: 'assistant', createdAt: Date.now(), status: 'complete', completedAt: Date.now(),
+          parts: [{ kind: 'terminal', id: `${turnId}:sh`, command: cmd, output: result.output, exitCode: result.exitCode }],
+        },
+      })
+      // A shell command can change the workspace exactly like a turn can, so snapshot it too.
+      await this.checkpoint()
+      return { ok: true, note: 'Ran the command.' }
+    } catch (e) {
+      const message = (e as Error).message || 'The shell command failed.'
+      this.emit({
+        t: 'turn.start',
+        turn: {
+          id: turnId, role: 'assistant', createdAt: Date.now(), status: 'error', completedAt: Date.now(),
+          error: { name: 'shell', message },
+          parts: [{ kind: 'error', id: `${turnId}:e`, name: 'shell', message }],
+        },
+      })
+      return { ok: false, note: message }
+    } finally {
+      if (this.turnGen === gen) {
+        this.setStatus('idle')
+        // A '!' command holds the session busy exactly like a turn, so anything the user queued
+        // behind it has to be released here too.
+        this.drainQueue()
+      }
+    }
+  }
+
   /** Proxy a slash command to the bridge harness process (pi extras, aisdk compact). */
   @callable()
   async bridgeCommand(name: string): Promise<{ ok: boolean; note: string }> {
@@ -1494,10 +1711,16 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   /** Commands the harness itself advertises (OpenCode custom/skill/MCP commands, pi extensions). */
   @callable()
-  async harnessCommands(): Promise<{ commands: { name: string; description?: string }[] }> {
+  async harnessCommands(): Promise<{ commands: { name: string; description?: string; takesArgs?: boolean }[] }> {
+    // `template` + `$ARGUMENTS` come straight off the SDK's Command type (types.gen.d.ts:1923);
+    // takesArgs is what tells the composer to wait for arguments instead of firing immediately.
     const clean = (list: Array<Record<string, unknown>>) =>
       list
-        .map((c) => ({ name: String(c.name ?? ''), description: typeof c.description === 'string' ? c.description : undefined }))
+        .map((c) => ({
+          name: String(c.name ?? ''),
+          description: typeof c.description === 'string' ? c.description : undefined,
+          takesArgs: typeof c.template === 'string' ? c.template.includes('$ARGUMENTS') : undefined,
+        }))
         .filter((c) => c.name)
     try {
       const harness = this.config().harness
@@ -1516,22 +1739,23 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return { commands: [] }
   }
 
-  /** Run a harness-advertised command: OpenCode expands the command's prompt template; pi passes the slash text through. */
+  /**
+   * Run a harness-advertised command WITH its arguments.
+   *
+   * OpenCode gets the raw name + argument string and expands the template server-side, so
+   * `$ARGUMENTS` substitution is real (see runOpencodeCommand). pi passes the slash text through.
+   */
   @callable()
-  async runCustomCommand(name: string): Promise<{ ok: boolean; note: string }> {
+  async runCustomCommand(name: string, args = ''): Promise<{ ok: boolean; note: string }> {
     const harness = this.config().harness
+    const argText = (args ?? '').trim()
+    const display = argText ? `/${name} ${argText}` : `/${name}`
     if (harness === 'opencode') {
-      const res = await this.ocOp(() => this.opencode!.command.list({} as never))
-      const list = ((res as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>
-      const cmd = list.find((c) => c.name === name)
-      if (!cmd) return { ok: false, note: `Unknown command: /${name}` }
-      const template = String(cmd.template ?? '').replaceAll('$ARGUMENTS', '').trim()
-      if (!template) return { ok: false, note: `/${name} has no prompt template.` }
-      await this.sendMessage({ text: `/${name}`, runText: template })
+      await this.sendMessage({ text: display, command: { name, args: argText } })
       return { ok: true, note: `Running /${name}.` }
     }
     if (harness === 'pi') {
-      await this.sendMessage({ text: `/${name}` })
+      await this.sendMessage({ text: display })
       return { ok: true, note: `Running /${name}.` }
     }
     return { ok: false, note: 'Custom commands are not supported on this harness.' }
@@ -1767,7 +1991,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.emittedParts.clear()
     this.opencode = undefined
     this.opencodeSessionId = undefined
-    this.setState({ meta: null, status: 'idle', mode: 'build', usage: { tokensIn: 0, tokensOut: 0, costUsd: 0 } })
+    this.setState({ meta: null, status: 'idle', mode: 'build', usage: { tokensIn: 0, tokensOut: 0, costUsd: 0 }, agents: [] })
     try {
       await getSandbox(this.env.Sandbox, `sess-${this.name}`).destroy()
     } catch { /* already gone */ }

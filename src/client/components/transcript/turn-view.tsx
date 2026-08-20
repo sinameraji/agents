@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Copy, Sparkles, User } from 'lucide-react'
+import { Bot, Check, Copy, Sparkles, User } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NormTurn } from '~shared/agent'
@@ -74,6 +74,16 @@ export function TurnView({ turn }: { turn: NormTurn }) {
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{isUser ? 'You' : 'Agent'}</span>
+          {/* Only set when a NON-default named agent ran the turn, so its presence is the signal. */}
+          {!isUser && turn.agent && (
+            <span
+              title={`Handled by the ${turn.agent} agent`}
+              className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[0.7rem] leading-none text-primary"
+            >
+              <Bot className="size-3" />
+              {turn.agent}
+            </span>
+          )}
           <span className="font-mono text-xs text-muted-foreground">
             {timestamp(turn.createdAt)}
           </span>
