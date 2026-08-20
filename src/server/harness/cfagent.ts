@@ -123,8 +123,17 @@ export async function runCfAgentLoop(opts: {
       description: 'Run a shell command in the project root (/workspace).',
       inputSchema: z.object({ command: z.string() }),
       execute: async ({ command }) => {
-        if (readonly && /\b(rm|mv|>|>>|tee|sed -i|git (commit|push)|npm i|pip install)\b/.test(command))
-          return 'blocked in plan mode'
+        // Plan mode is read-only. Two guards because \b can't sit next to whitespace or
+        // punctuation: redirects (>, >>) need their own pattern, and interpreter/installer
+        // escapes (python -c 'open(...,"w")', git apply, dd, curl|sh) need explicit entries.
+        if (readonly) {
+          const redirect = /(^|[\s;|&])>{1,2}/.test(command)
+          const mutating =
+            /\b(rm|mv|cp|touch|mkdir|chmod|chown|ln|tee|truncate|dd|sed\s+-i|git\s+(commit|push|apply|checkout|reset|clean)|npm\s+(i|install|ci|update)|pip3?\s+install|apt(-get)?\s+install|(python3?|node|perl|ruby)\s+-[ce])\b/.test(
+              command,
+            )
+          if (redirect || mutating) return 'blocked in plan mode (read-only)'
+        }
         return sh(command)
       },
     }),
