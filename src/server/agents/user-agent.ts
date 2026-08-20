@@ -175,13 +175,21 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   }
 
   @callable()
-  deleteSession(id: string): { ok: true } {
+  async deleteSession(id: string): Promise<{ ok: true }> {
     this.sql`DELETE FROM sessions WHERE id = ${id}`
-    // Kill the session's container immediately so deleted sessions never idle-bill.
-    try {
-      const sandbox = getSandbox(this.env.Sandbox, `sess-${id}`)
-      void sandbox.destroy().catch(() => null)
-    } catch { /* ignore */ }
+    // Delete used to remove the sidebar row and kill the container, and stop there: the session's
+    // transcript stayed in its Durable Object and its workspace snapshot stayed in R2 with nothing
+    // left pointing at it. wipe() tears down all three, so "delete" means deleted.
+    await getAgentByName(this.env.SessionAgent, id)
+      .then((sa) => sa.wipe())
+      .catch((e) => {
+        console.error('[agents] session wipe failed', e)
+        // Best effort: at least stop the container billing.
+        try {
+          void getSandbox(this.env.Sandbox, `sess-${id}`).destroy().catch(() => null)
+        } catch { /* ignore */ }
+        return null
+      })
     return { ok: true }
   }
 

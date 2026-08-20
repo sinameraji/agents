@@ -2019,6 +2019,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
    *  its sandbox. Server-to-server only (no @callable), used by UserAgent.resetAccount(). */
   async wipe(): Promise<{ ok: true }> {
     this.turnGen += 1 // kill any in-flight poll loops
+    // Drop the workspace snapshot FIRST: clearing kv loses the pointer, and the Sandbox SDK has no
+    // delete of its own ("Expired backups are not automatically deleted from R2"), so anything we
+    // forget here becomes unreachable objects that bill forever.
+    await this.deleteWorkspaceSnapshot()
     this.sql`DELETE FROM turns`
     this.sql`DELETE FROM kv`
     this.transcript = emptyTranscript()
@@ -2031,6 +2035,24 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       await getSandbox(this.env.Sandbox, `sess-${this.name}`).destroy()
     } catch { /* already gone */ }
     return { ok: true }
+  }
+
+  /** Delete this session's R2 workspace snapshot. The Sandbox SDK creates backups but never
+   *  removes them, so the objects are ours to clean up or they accumulate as billed storage. */
+  private async deleteWorkspaceSnapshot(): Promise<void> {
+    const backup = this.getKv<{ id?: string } | null>('backup', null)
+    const bucket = (this.env as unknown as { BACKUP_BUCKET?: R2Bucket }).BACKUP_BUCKET
+    if (!backup?.id || !bucket) return
+    try {
+      let cursor: string | undefined
+      do {
+        const page = await bucket.list({ prefix: `backups/${backup.id}`, cursor })
+        if (page.objects.length) await bucket.delete(page.objects.map((o) => o.key))
+        cursor = page.truncated ? page.cursor : undefined
+      } while (cursor)
+    } catch (e) {
+      console.error('[agents] snapshot cleanup failed', e)
+    }
   }
 
   /** Seed a freshly-created session from a fork: workspace backup pointer + transcript.
