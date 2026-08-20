@@ -18,6 +18,9 @@ export function buildOpencodeConfig(
   provider: Provider,
   model: string,
   conn: Connections,
+  /** When set (cloudflare only), model calls go through the worker's /aig broker: the worker
+   *  validates this per-session bearer and stamps a fresh cf-aig-authorization upstream. */
+  proxy?: { baseURL: string; token: string },
 ): { config: Config; modelRef: string } {
   const pid = providerId(provider)
   const bare = model.replace(new RegExp(`^${pid}/`), '')
@@ -35,12 +38,34 @@ export function buildOpencodeConfig(
       providerBlock = { openai: { options: { apiKey: conn.openaiKey ?? '' } } }
       break
     case 'cloudflare':
+      // KEYLESS unified billing (verified live 2026-08-20): the gateway's OpenAI-compatible
+      // endpoint serves ANY catalog model (openai/…, anthropic/…, workers-ai/@cf/…) on the
+      // account's AI Gateway credits when the CF token rides in `cf-aig-authorization` and NO
+      // `Authorization` header is sent — the mere presence of one flips the gateway into
+      // BYOK mode and it forwards that value upstream as the provider's API key ("Incorrect
+      // API key provided: cfoat…"). OpenCode's built-in cloudflare-ai-gateway provider does
+      // exactly that with apiToken, so we bypass it with a bare openai-compatible provider.
       providerBlock = {
         'cloudflare-ai-gateway': {
-          options: {
-            accountId: conn.cloudflareAccountId ?? '',
-            gatewayId: conn.cloudflareGatewayId ?? '',
-            apiToken: conn.cloudflareApiToken ?? '',
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Cloudflare AI Gateway',
+          options: proxy
+            ? {
+                // Through the worker broker: the bearer below is a per-session proxy token the
+                // worker swaps for a live cf-aig-authorization — no CF credential in the container.
+                baseURL: `${proxy.baseURL}/compat`,
+                apiKey: proxy.token,
+              }
+            : {
+                baseURL: `https://gateway.ai.cloudflare.com/v1/${conn.cloudflareAccountId ?? ''}/${conn.cloudflareGatewayId ?? ''}/compat`,
+                headers: { 'cf-aig-authorization': `Bearer ${conn.cloudflareApiToken ?? ''}` },
+              },
+          // gpt-5* on chat/completions refuses function tools unless reasoning_effort is 'none'
+          // (OpenAI: "Function tools with reasoning_effort are not supported for gpt-5.6-luna …").
+          models: {
+            [bare]: /^openai\/gpt-5/.test(bare)
+              ? { name: bare, options: { reasoningEffort: 'none' } }
+              : { name: bare },
           },
         },
       }

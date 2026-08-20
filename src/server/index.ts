@@ -51,6 +51,16 @@ function hostRole(c: { req: { url: string }; env: unknown }): 'landing' | 'owner
 }
 
 // What this host IS (drives landing page vs app shell client-side).
+// The old dreamweav.com hosts carry nothing anymore — everything 308s to the new domain.
+// /aig is exempt so sandboxes booted before the cutover keep their broker URL working.
+app.use('*', async (c, next) => {
+  const u = new URL(c.req.url)
+  if (u.hostname.endsWith('dreamweav.com') && !u.pathname.startsWith('/aig/')) {
+    return c.redirect(`https://agents.insertcompanywebsite.com${u.pathname}${u.search}`, 308)
+  }
+  return next()
+})
+
 app.get('/api/config', (c) => c.json({ mode: hostRole(c) === 'landing' ? 'landing' : 'app' }))
 
 app.get('/api/auth/providers', (c) => {
@@ -99,6 +109,34 @@ const requireAuth = async (c: any, next: any) => {
 }
 app.use('/api/*', requireAuth)
 app.use('/agents/*', requireAuth)
+
+// AI Gateway broker: harnesses in the sandbox call the WORKER, never Cloudflare directly, so the
+// gateway credential is stamped fresh server-side on every request — nothing that can expire ever
+// lives in the container, and every harness shares one keyless unified-billing path. Auth is a
+// per-session bearer minted at boot (constant-time checked in the SessionAgent).
+app.all('/aig/:sid/*', async (c) => {
+  const sid = c.req.param('sid')
+  const bearer = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, '')
+  if (bearer.length < 32) return c.json({ error: 'unauthorized' }, 401)
+  const sa = await getAgentByName(c.env.SessionAgent, sid)
+  const v = await sa.proxyAuth(bearer).catch(() => ({ ok: false, owner: null }))
+  if (!v.ok || !v.owner) return c.json({ error: 'unauthorized' }, 401)
+  const user = await getAgentByName(c.env.UserAgent, v.owner)
+  const auth = await user.dataPlaneAuth()
+  if (!auth) return c.json({ error: 'cloudflare_not_connected' }, 502)
+  const u = new URL(c.req.url)
+  const rest = u.pathname.slice(`/aig/${sid}/`.length) + u.search
+  const headers: Record<string, string> = { 'cf-aig-authorization': `Bearer ${auth.token}` }
+  const ct = c.req.header('content-type')
+  if (ct) headers['content-type'] = ct
+  const accept = c.req.header('accept')
+  if (accept) headers.accept = accept
+  return fetch(`https://gateway.ai.cloudflare.com/v1/${auth.accountId}/${auth.gatewayId}/${rest}`, {
+    method: c.req.method,
+    headers,
+    body: c.req.raw.body,
+  })
+})
 
 // --- api ------------------------------------------------------------------------------------
 app.get('/api/me', (c) => {
@@ -234,6 +272,7 @@ app.post('/api/reset', async (c) => {
   const res = await user.resetAccount()
   return c.json(res)
 })
+
 
 // Download the session workspace as a gzipped tarball, streamed straight from the sandbox.
 app.get('/api/sessions/:id/export', async (c) => {

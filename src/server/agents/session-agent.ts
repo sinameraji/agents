@@ -158,6 +158,28 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return c
   }
 
+  /** Bearer for the /aig broker route: the harness in the sandbox calls the WORKER, never
+   *  Cloudflare directly, so the gateway credential is stamped fresh server-side per request
+   *  and nothing that can expire ever lives inside the container. */
+  private proxyToken(): string {
+    let t = this.getKv<string | null>('proxyToken', null)
+    if (!t) {
+      t = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '')
+      this.putKv('proxyToken', t)
+    }
+    return t
+  }
+
+  /** Authenticate a proxied model call from this session's sandbox (constant-time compare). */
+  @callable()
+  proxyAuth(token: string): { ok: boolean; owner: string | null } {
+    const want = this.proxyToken()
+    if (typeof token !== 'string' || token.length !== want.length) return { ok: false, owner: null }
+    let diff = 0
+    for (let i = 0; i < want.length; i++) diff |= token.charCodeAt(i) ^ want.charCodeAt(i)
+    return diff === 0 ? { ok: true, owner: this.config().owner } : { ok: false, owner: null }
+  }
+
   private async connections(): Promise<Connections> {
     const user = await getAgentByName(this.env.UserAgent, this.config().owner)
     return (await user.getDecryptedConnections()) as Connections
@@ -662,7 +684,14 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private async ensureOpencode(): Promise<void> {
     const cfg = this.config()
     const conn = await this.connections()
-    const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn)
+    // Cloudflare model calls route through the worker's /aig broker (fresh cf-aig-authorization
+    // per request, keyless unified billing); needs a public host for the container to reach.
+    const ownerHost = (this.env as unknown as { OWNER_HOST?: string }).OWNER_HOST
+    const proxy =
+      cfg.provider === 'cloudflare' && ownerHost
+        ? { baseURL: `https://${ownerHost}/aig/${this.name}`, token: this.proxyToken() }
+        : undefined
+    const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn, proxy)
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
     await this.ensureWorkspace(sandbox)
     const booted = createOpencode(sandbox, { directory: '/workspace', config })
