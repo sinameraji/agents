@@ -11,6 +11,35 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import type { AdapterSink, HarnessAdapter, StartConfig } from './types'
 import type { NormToolState } from '../normalize'
+import { ApprovalBroker } from '~shared/approvals'
+import { isMutatingCommand } from '~shared/mutation-guard'
+
+/**
+ * The mode gate every mutating tool runs first. Returns null when the tool may proceed, else the
+ * string to hand back as the tool result: Plan hard-blocks, Auto never asks, Build parks the call
+ * on a permission ask (surfaced as a card via sink.permission, answered through /permission →
+ * resolvePermission, timed out to denied by the broker). Exported for tests.
+ */
+export async function gateMutation(opts: {
+  mode: StartConfig['mode']
+  /** bash is gated only when the command can mutate; write/edit tools always pass true. */
+  mutating: boolean
+  broker: ApprovalBroker
+  sink: AdapterSink
+  tool: string
+  title: string
+  input?: Record<string, unknown>
+}): Promise<string | null> {
+  if (!opts.mutating || opts.mode === 'auto') return null
+  if (opts.mode === 'plan') return 'blocked in plan mode (read-only)'
+  const allowed = await opts.broker.ask({
+    tool: opts.tool,
+    announce: (id) => opts.sink.permission({ id, title: opts.title, input: opts.input }),
+  })
+  return allowed ? null : 'denied by user'
+}
+
+const clip = (s: string, n = 120) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
 function baseURL(cfg: StartConfig): { url: string; key: string; model: string; headers?: Record<string, string> } {
   switch (cfg.provider) {
@@ -45,6 +74,7 @@ export function createAiSdkAdapter(): HarnessAdapter {
   let cfg: StartConfig
   let messages: ModelMessage[] = []
   let controller: AbortController | null = null
+  const broker = new ApprovalBroker()
 
   const sh = (cmd: string, cwd: string, timeoutMs = 60_000) =>
     new Promise<{ stdout: string; exitCode: number }>((resolve) => {
@@ -89,14 +119,16 @@ export function createAiSdkAdapter(): HarnessAdapter {
           description: 'Run a shell command in the project root.',
           inputSchema: z.object({ command: z.string() }),
           execute: async ({ command }) => {
-            if (readonly) {
-              const redirect = /(^|[\s;|&])>{1,2}/.test(command)
-              const mutating =
-                /\b(rm|mv|cp|touch|mkdir|chmod|chown|ln|tee|truncate|dd|sed\s+-i|git\s+(commit|push|apply|checkout|reset|clean)|npm\s+(i|install|ci|update)|pip3?\s+install|apt(-get)?\s+install|(python3?|node|perl|ruby)\s+-[ce])\b/.test(
-                  command,
-                )
-              if (redirect || mutating) return 'blocked in plan mode (read-only)'
-            }
+            const gated = await gateMutation({
+              mode,
+              mutating: isMutatingCommand(command),
+              broker,
+              sink,
+              tool: 'bash',
+              title: `Run: ${clip(command)}`,
+              input: { command },
+            })
+            if (gated) return gated
             const r = await sh(command, cfg.cwd)
             return `exit ${r.exitCode}\n${r.stdout}`
           },
@@ -146,6 +178,8 @@ export function createAiSdkAdapter(): HarnessAdapter {
                 description: 'Write (create/overwrite) a file with content.',
                 inputSchema: z.object({ path: z.string(), content: z.string() }),
                 execute: async ({ path: p, content }) => {
+                  const gated = await gateMutation({ mode, mutating: true, broker, sink, tool: 'write_file', title: `Write ${clip(p)}`, input: { path: p } })
+                  if (gated) return gated
                   const abs = resolveIn(p)
                   await fs.mkdir(path.dirname(abs), { recursive: true })
                   await fs.writeFile(abs, content)
@@ -156,6 +190,8 @@ export function createAiSdkAdapter(): HarnessAdapter {
                 description: 'Replace an exact string in a file with a new string.',
                 inputSchema: z.object({ path: z.string(), old: z.string(), new: z.string() }),
                 execute: async ({ path: p, old, new: nw }) => {
+                  const gated = await gateMutation({ mode, mutating: true, broker, sink, tool: 'edit_file', title: `Edit ${clip(p)}`, input: { path: p } })
+                  if (gated) return gated
                   const abs = resolveIn(p)
                   const cur = await fs.readFile(abs, 'utf8')
                   if (!cur.includes(old)) return 'error: old string not found'
@@ -218,9 +254,10 @@ export function createAiSdkAdapter(): HarnessAdapter {
     },
     async abort() {
       controller?.abort()
+      broker.denyAll() // a tool parked on an ask must not hold the aborted turn open
     },
-    async resolvePermission() {
-      /* AI-SDK harness has no interactive approvals (plan mode gates writes instead). */
+    async resolvePermission(id, reply) {
+      broker.resolve(id, reply)
     },
     async command(name) {
       if (name !== 'compact') return { ok: false, note: 'Not supported.' }
@@ -243,6 +280,7 @@ export function createAiSdkAdapter(): HarnessAdapter {
     },
     async dispose() {
       controller?.abort()
+      broker.denyAll()
     },
   }
 }
