@@ -131,10 +131,13 @@ export function createKimiflareAdapter(): HarnessAdapter {
           accountId: c.proxy ? undefined : c.creds.cloudflareAccountId,
           apiToken: c.proxy ? undefined : c.creds.cloudflareApiToken,
           aiGatewayId: c.proxy ? undefined : c.creds.cloudflareGatewayId || undefined,
-          // KimiFlare takes a registry id (@cf/moonshotai/kimi-k2.7-code or moonshotai/kimi-k3);
-          // Dreamweav stores Workers AI models with a workers-ai/ prefix, so strip it. Only pass
-          // a recognized Kimi/GLM id — otherwise let KimiFlare use its own default.
-          model: kimiflareModel(c.model),
+          // Direct path: KimiFlare takes a registry id (@cf/moonshotai/kimi-k2.7-code), so the
+          // workers-ai/ prefix is stripped and only recognized Kimi/GLM ids pass. Brokered path:
+          // the /aig broker fronts the gateway compat endpoint, whose catalog wants the FULL id
+          // verbatim (workers-ai/@cf/...) — custom-endpoint mode passes model ids through
+          // unchanged, so hand it the stored id as-is (a bare @cf/... id parses as provider
+          // "@cf" at the gateway: "Invalid provider").
+          model: c.proxy ? c.model || undefined : kimiflareModel(c.model),
         },
       })
     },
