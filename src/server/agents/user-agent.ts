@@ -110,7 +110,6 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     return rows.map((r) => this.rowToSummary(r))
   }
 
-  @callable()
   /** Remember which hostname served the client. On instances without OWNER_HOST (generic
    *  workers.dev deploys) this is the only way sessions learn a URL that reaches this worker,
    *  which the /aig unified-billing broker needs. Any host that routes here works. */
@@ -121,6 +120,7 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
     } catch { /* never block a connect on bookkeeping */ }
   }
 
+  @callable()
   async createSession(input: {
     source: SessionSource
     name?: string
