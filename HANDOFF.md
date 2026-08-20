@@ -43,14 +43,19 @@ committed; finish per the plan in its section. Worktrees under .claude/worktrees
 3. ~~budget caps + export~~ MERGED + DEPLOYED (7174533): lifetime-cost fix, month-anchored spend,
    turn-start enforcement (fail-open), /api/me + sidebar meter, markdown export in session menu.
    135/135 tests. Live verification pending: set a cap on a member, watch the block message.
-4. **worktree-agent-a97d17af028358b5c — OpenCode restart-resume investigation** (0 commits yet).
-   Goal: root-cause why restarted OpenCode forgets history despite same session id (suspect storage
-   dir not persisted/pinned); fix = pin data dir (e.g. XDG_DATA_HOME=/workspace/.opencode-data) or
-   SDK session restore; make the context-reset marker conditional on genuine resume failure.
-5. **~/craft/kimiflare branch feat/custom-endpoint** (no commits yet at snapshot). Goal:
-   KIMIFLARE_BASE_URL + KIMIFLARE_API_KEY (plain Bearer, no cf-aig-authorization, skip CF preflights)
-   so RPC mode runs with zero CF creds → Agents points it at the /aig broker. Ends as PR to
-   sinameraji/kimiflare for Sina's review (do NOT push without asking; last PR was #633).
+4. ~~OpenCode restart-resume~~ MERGED + DEPLOYED (974b4eb). ROOT CAUSE (Docker-repro verified):
+   opencode's SQLite session db lived OUTSIDE /workspace, so container recycles (sleepAfter 10m)
+   wiped it; plain restarts were never the problem. Fix: XDG_DATA_HOME=/workspace/.opencode-data
+   (rides R2 snapshots), legacy-db migration, self-safe bracketed pkill + pgrep wait, and the
+   context-reset note now fires ONLY when session.get says the id is truly gone. Merge resolved
+   ocConfigDirty (modes rename) x ocContextLost (truth signal): both semantics kept.
+   LIVE VERIFY: teal-model-switch test (expect memory + NO note) and >12min recycle test
+   (expect memory) — script in the agent report / branch log.
+5. ~~kimiflare custom endpoint~~ DONE, PR OPEN FOR SINA'S REVIEW:
+   https://github.com/sinameraji/kimiflare/pull/635 (KIMIFLARE_BASE_URL/API_KEY, live-tested against
+   a fake broker, 847/850 = main parity). After merge+publish: bump Dockerfile pin, then wire the
+   kimiflare adapter to pass the /aig broker URL + per-session token (pattern: session-agent's
+   proxyToken/ensureOpencode proxy block) — that closes issue #3 fully.
 
 **Integration notes**: branches 1, 3, 4 all touch src/server/agents/session-agent.ts — merge one at a
 time (suggested order: 3, 1, 4), run `npm run typecheck && npm test && npm run build` after each,
