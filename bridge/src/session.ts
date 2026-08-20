@@ -20,14 +20,30 @@ export class BridgeSession {
   permissions: NormPermission[] = []
   private adapter: HarnessAdapter | null = null
   private current: NormTurn | null = null
+  private harness: Harness | null = null
+  private cfg: StartConfig | null = null
 
   async start(harness: Harness, cfg: StartConfig) {
+    this.harness = harness
+    this.cfg = cfg
     this.adapter = makeAdapter(harness)
     await this.adapter.start(cfg)
     this.status = 'idle'
   }
 
-  prompt(text: string, mode?: StartConfig['mode'], images?: PromptImage[]) {
+  /** Mid-session model switch = restart-with-resume: every adapter persists its harness-side
+   *  session durably (pi: /workspace/.pi-sessions newest-file resume; kimiflare: dw-<id>
+   *  new_session resume; aisdk: .agents-history.json reload), so a fresh adapter on the new
+   *  model comes back with full conversation context. Uniform path, no per-harness cases. */
+  private async ensureModel(model?: string) {
+    if (!model || !this.cfg || !this.harness || model === this.cfg.model) return
+    await this.adapter?.dispose().catch(() => {})
+    this.cfg = { ...this.cfg, model }
+    this.adapter = makeAdapter(this.harness)
+    await this.adapter.start(this.cfg)
+  }
+
+  prompt(text: string, mode?: StartConfig['mode'], images?: PromptImage[], model?: string) {
     if (!this.adapter) throw new Error('not started')
     const userTurn: NormTurn = { id: `u-${Date.now()}`, role: 'user', createdAt: Date.now(), status: 'complete', parts: [{ kind: 'text', id: `u-${Date.now()}-t`, text }] }
     this.turns.push(userTurn)
@@ -60,7 +76,13 @@ export class BridgeSession {
       },
     }
 
-    void this.adapter.prompt(text, sink, mode, images).catch((e) => {
+    // No model change: the adapter call starts synchronously (steer/abort and the tests rely on
+    // it). A model change detours through the async restart-with-resume first.
+    const run =
+      model && this.cfg && model !== this.cfg.model
+        ? this.ensureModel(model).then(() => this.adapter!.prompt(text, sink, mode, images))
+        : this.adapter.prompt(text, sink, mode, images)
+    void run.catch((e) => {
       turn.status = 'error'
       turn.error = { name: 'error', message: (e as Error).message }
       this.status = 'idle'

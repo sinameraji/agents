@@ -39,13 +39,15 @@ const server = createServer(async (req, res) => {
       // `mode` is the CURRENT session mode: mid-session switches reach a running harness this
       // way, without a restart (StartConfig.mode only captured the boot-time value).
       // `images` are inline data URLs the DO pre-built for vision-capable harness+model pairs.
-      const { text, mode, images } = JSON.parse(await body(req)) as {
+      // `model` rides every prompt too: a change triggers the adapter's restart-with-resume.
+      const { text, mode, images, model } = JSON.parse(await body(req)) as {
         text: string
         mode?: StartConfig['mode']
         images?: PromptImage[]
+        model?: string
       }
       if (!session) return send(400, { error: 'not started' })
-      session.prompt(text, mode, images)
+      session.prompt(text, mode, images, model)
       return send(200, { ok: true })
     }
     if (req.method === 'POST' && url === '/steer') {

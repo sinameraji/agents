@@ -58,7 +58,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     // pi's RPC natively accepts steer while a turn runs (the bridge still emulates for now).
     steering: 'live',
     // --model is fixed at spawn; a new pick only lands when the bridge process restarts.
-    modelSwitch: 'none',
+    modelSwitch: 'restart',
     commands: ['compact', 'stats', 'export'],
     // No tool-permission asks (--no-approve); only rare extension UI dialogs surface as cards.
     permissions: false,
@@ -73,7 +73,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     modes: ['plan', 'build', 'auto'],
     steering: 'stop-and-send',
     // Model is set once at new_session; no mid-session switch path.
-    modelSwitch: 'none',
+    modelSwitch: 'restart',
     commands: [],
     // permission.request events, resolved via resolve_permission.
     permissions: true,
@@ -89,7 +89,7 @@ export const HARNESS_CAPS: Record<Harness, HarnessCaps> = {
     modes: ['plan', 'build', 'auto'],
     steering: 'stop-and-send',
     // Provider baseURL + model are captured at /start; no mid-session switch path.
-    modelSwitch: 'none',
+    modelSwitch: 'restart',
     commands: ['compact'],
     // Build mode's ask-before-mutate surfaces as permission cards (gateMutation in the adapter).
     permissions: true,

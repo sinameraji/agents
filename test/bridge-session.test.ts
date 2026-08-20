@@ -325,3 +325,34 @@ describe('BridgeSession.steer', () => {
     expect(session.turns.map((t) => t.role)).toEqual(['user', 'assistant'])
   })
 })
+
+describe('mid-session model switch (restart-with-resume)', () => {
+  it('restarts the adapter when the prompted model differs, and not when it matches', async () => {
+    const { BridgeSession } = await import('../bridge/src/session')
+    const session = new BridgeSession()
+    const starts: string[] = []
+    let disposed = 0
+    // Swap the adapter factory via start(), then spy through the adapter contract itself:
+    await session.start('aisdk', {
+      provider: 'openrouter', model: 'm1', cwd: '/tmp', mode: 'build',
+      creds: { openrouterKey: 'x' },
+    } as never)
+    // Monkey-patch the live adapter with a recorder that satisfies HarnessAdapter.
+    const rec = (model: string) => ({
+      start: async (c: { model: string }) => { starts.push(c.model) },
+      prompt: async (_t: unknown, sink: { done: (e?: unknown) => void }) => { sink.done() },
+      abort: async () => {},
+      dispose: async () => { disposed++ },
+    })
+    ;(session as never as { adapter: unknown }).adapter = rec('m1')
+    ;(session as never as { cfg: { model: string } }).cfg.model = 'm1'
+    // same model: no restart, prompt starts synchronously
+    session.prompt('hello', 'build', undefined, 'm1')
+    expect(disposed).toBe(0)
+    // new model: dispose + fresh adapter on m2 (async detour; flush it)
+    session.prompt('hello', 'build', undefined, 'm2')
+    await new Promise((r) => setTimeout(r, 25))
+    expect(disposed).toBe(1)
+    expect((session as never as { cfg: { model: string } }).cfg.model).toBe('m2')
+  })
+})

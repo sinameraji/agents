@@ -743,12 +743,14 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.emittedParts.clear()
     this.handledQuestions.clear()
 
-    // The CURRENT mode rides along so a mid-session switch reaches the running harness without
-    // a restart (the /start config only carried the boot-time mode). Images are only ever
+    // The CURRENT mode and model ride along so mid-session switches reach the running harness:
+    // mode applies in place; a model change makes the bridge restart the adapter, which resumes
+    // its durable harness-side session on the new model (context intact). Images are only ever
     // non-empty for harnesses whose caps declare an image lane (aisdk today).
     await this.bridgeFetch(sandbox, 'POST', '/prompt', {
       text,
       mode: this.state.mode,
+      model: this.state.meta?.model,
       ...(images.length ? { images } : {}),
     })
     const turnId = `a-${crypto.randomUUID()}`
