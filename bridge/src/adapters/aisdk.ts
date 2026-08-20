@@ -75,13 +75,15 @@ export function createAiSdkAdapter(): HarnessAdapter {
         if (Array.isArray(parsed)) messages = parsed.slice(-80)
       } catch { /* fresh session */ }
     },
-    async prompt(text, sink: AdapterSink) {
+    async prompt(text, sink: AdapterSink, promptMode) {
       const { url, key, model, headers } = baseURL(cfg)
       const provider = createOpenAICompatible({ name: cfg.provider, baseURL: url, apiKey: key, headers })
       messages.push({ role: 'user', content: text })
       controller = new AbortController()
 
-      const readonly = cfg.mode === 'plan'
+      // Mid-session mode switches arrive per prompt; StartConfig.mode is only the boot-time value.
+      const mode = promptMode ?? cfg.mode
+      const readonly = mode === 'plan'
       const tools = {
         bash: tool({
           description: 'Run a shell command in the project root.',

@@ -36,9 +36,11 @@ const server = createServer(async (req, res) => {
       return send(200, { ok: true })
     }
     if (req.method === 'POST' && url === '/prompt') {
-      const { text } = JSON.parse(await body(req)) as { text: string }
+      // `mode` is the CURRENT session mode: mid-session switches reach a running harness this
+      // way, without a restart (StartConfig.mode only captured the boot-time value).
+      const { text, mode } = JSON.parse(await body(req)) as { text: string; mode?: StartConfig['mode'] }
       if (!session) return send(400, { error: 'not started' })
-      session.prompt(text)
+      session.prompt(text, mode)
       return send(200, { ok: true })
     }
     if (req.method === 'POST' && url === '/steer') {

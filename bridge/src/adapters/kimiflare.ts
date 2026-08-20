@@ -132,7 +132,10 @@ export function createKimiflareAdapter(): HarnessAdapter {
         },
       })
     },
-    async prompt(text, s) {
+    async prompt(text, s, promptMode) {
+      // The CURRENT mode rides each /prompt; without it a mid-session switch would keep sending
+      // the stale boot-time mode forever. Dreamweav 'build' is KimiFlare's 'edit'.
+      if (promptMode) mode = promptMode
       turnUsage = { input: 0, output: 0 }
       sink = s
       finished = false

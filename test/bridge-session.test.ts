@@ -9,14 +9,16 @@ import type { AdapterSink, HarnessAdapter, StartConfig } from '../bridge/src/ada
 class FakeAdapter implements HarnessAdapter {
   sink: AdapterSink | null = null
   prompts: string[] = []
+  modes: Array<StartConfig['mode'] | undefined> = []
   aborts = 0
   resolved: Array<{ id: string; reply: string; note?: string }> = []
   /** What prompt() returns; never settles by default (turn stays open until sink.done). */
   promptResult: Promise<void> = new Promise(() => {})
 
   async start(_cfg: StartConfig): Promise<void> {}
-  prompt(text: string, sink: AdapterSink): Promise<void> {
+  prompt(text: string, sink: AdapterSink, mode?: StartConfig['mode']): Promise<void> {
     this.prompts.push(text)
+    this.modes.push(mode)
     this.sink = sink
     return this.promptResult
   }
@@ -71,6 +73,16 @@ describe('BridgeSession', () => {
     expect(assistant.role).toBe('assistant')
     expect(assistant.status).toBe('streaming')
     expect(assistant.parts).toEqual([])
+  })
+
+  it('prompt() forwards the per-prompt mode to the adapter (mid-session switches, no restart)', () => {
+    const { session, adapter } = makeSession()
+    session.prompt('plan it', 'plan')
+    expect(adapter.modes).toEqual(['plan'])
+    // Without a mode the adapter falls back to its boot-time StartConfig.mode.
+    sinkOf(adapter).done()
+    session.prompt('now build')
+    expect(adapter.modes).toEqual(['plan', undefined])
   })
 
   it('sink.part upserts by id into the current assistant turn, preserving order', () => {

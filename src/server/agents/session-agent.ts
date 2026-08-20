@@ -631,7 +631,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     this.emittedParts.clear()
     this.handledQuestions.clear()
 
-    await this.bridgeFetch(sandbox, 'POST', '/prompt', { text })
+    // The CURRENT mode rides along so a mid-session switch reaches the running harness without
+    // a restart (the /start config only carried the boot-time mode).
+    await this.bridgeFetch(sandbox, 'POST', '/prompt', { text, mode: this.state.mode })
     const turnId = `a-${crypto.randomUUID()}`
     this.emit({ t: 'turn.start', turn: { id: turnId, role: 'assistant', createdAt: Date.now(), status: 'streaming', parts: [] } })
 

@@ -27,7 +27,7 @@ export class BridgeSession {
     this.status = 'idle'
   }
 
-  prompt(text: string) {
+  prompt(text: string, mode?: StartConfig['mode']) {
     if (!this.adapter) throw new Error('not started')
     const userTurn: NormTurn = { id: `u-${Date.now()}`, role: 'user', createdAt: Date.now(), status: 'complete', parts: [{ kind: 'text', id: `u-${Date.now()}-t`, text }] }
     this.turns.push(userTurn)
@@ -60,7 +60,7 @@ export class BridgeSession {
       },
     }
 
-    void this.adapter.prompt(text, sink).catch((e) => {
+    void this.adapter.prompt(text, sink, mode).catch((e) => {
       turn.status = 'error'
       turn.error = { name: 'error', message: (e as Error).message }
       this.status = 'idle'
