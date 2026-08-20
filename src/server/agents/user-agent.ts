@@ -247,10 +247,11 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
 
   private async gatewayApi(): Promise<{ base: string; headers: Record<string, string> } | null> {
     const conn = await this.getDecryptedConnections()
-    if (!conn.cloudflareAccountId || !conn.cloudflareApiToken) return null
+    const token = await this.cfControlToken()
+    if (!conn.cloudflareAccountId || !token) return null
     return {
       base: `https://api.cloudflare.com/client/v4/accounts/${conn.cloudflareAccountId}/ai-gateway/gateways`,
-      headers: { authorization: `Bearer ${conn.cloudflareApiToken}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     }
   }
 
@@ -304,11 +305,11 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
    *  Needs the login to carry DNS + Workers Routes scopes (added to the OAuth client). */
   @callable()
   async setupCustomDomainAuto(domain: string): Promise<{ ok: boolean; note: string; needsReconnect?: boolean }> {
-    const conn = await this.getDecryptedConnections()
-    if (!conn.cloudflareApiToken) {
+    const token = await this.cfControlToken()
+    if (!token) {
       return { ok: false, note: 'Connect Cloudflare first (log in with Cloudflare), then try again.', needsReconnect: true }
     }
-    return this.wireDomain(domain, conn.cloudflareApiToken, true)
+    return this.wireDomain(domain, token, true)
   }
 
   /** Wire a custom domain for a self-hosted instance: proxied DNS for the apex and wildcard
@@ -503,9 +504,42 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
   /** Store the Cloudflare OAuth token bundle (from "Log in with Cloudflare"), encrypted. */
   async storeCfOauth(bundle: { access: string; refresh: string | null; expiresAt: number }): Promise<{ ok: true }> {
     this.putSetting('cfOauth', await encryptSecret(JSON.stringify(bundle), this.env.ENCRYPTION_KEY))
-    // Mirror into the regular connection slot so the UI/presence checks light up.
-    await this.saveSettings({ connections: { cloudflareApiToken: bundle.access } })
+    // Mirror into the regular connection slot so the UI/presence checks light up — but NEVER
+    // clobber a real pasted API token. The AI Gateway DATA plane rejects OAuth (cfoat_…) tokens,
+    // forwarding them upstream as provider keys, so model calls depend on the pasted token.
+    const existing = await this.decryptedConnField('cloudflareApiToken')
+    if (!existing || existing.startsWith('cfoat')) {
+      await this.saveSettings({ connections: { cloudflareApiToken: bundle.access } })
+    }
     return { ok: true }
+  }
+
+  /** Decrypt one stored connection field (null when absent/undecryptable). */
+  private async decryptedConnField(field: string): Promise<string | null> {
+    const enc = this.getSetting<string | null>(`conn:${field}`, null)
+    if (!enc) return null
+    try {
+      return await decryptSecret(enc, this.env.ENCRYPTION_KEY)
+    } catch {
+      return null
+    }
+  }
+
+  /** Control-plane CF token: prefer the live OAuth token (it carries the dashboard scopes for
+   *  gateway management and DNS/route wiring), fall back to the pasted API token. Model calls
+   *  (getDecryptedConnections) do the opposite: the data plane needs the real API token. */
+  private async cfControlToken(): Promise<string | null> {
+    return (await this.freshCfOauthToken()) ?? (await this.decryptedConnField('cloudflareApiToken'))
+  }
+
+  /** Fresh AI Gateway data-plane credentials for the /aig broker: the pasted API token when one
+   *  exists, else the live (auto-refreshed) OAuth token. Called server-side per proxied request,
+   *  so harness containers never hold a credential that can expire. */
+  @callable()
+  async dataPlaneAuth(): Promise<{ accountId: string; gatewayId: string; token: string } | null> {
+    const conn = await this.getDecryptedConnections()
+    if (!conn.cloudflareAccountId || !conn.cloudflareGatewayId || !conn.cloudflareApiToken) return null
+    return { accountId: conn.cloudflareAccountId, gatewayId: conn.cloudflareGatewayId, token: conn.cloudflareApiToken }
   }
 
   /** Return a live CF access token from the OAuth bundle, refreshing it when near expiry. */
@@ -552,9 +586,13 @@ export class UserAgent extends Agent<Env, { ready: boolean }> {
       const enc = this.getSetting<string | null>(`conn:${f}`, null)
       if (enc) out[f] = await decryptSecret(enc, key)
     }
-    // "Log in with Cloudflare" users get a live (auto-refreshed) OAuth token as their CF token.
+    // Model calls MUST use the real pasted API token when one exists: the AI Gateway data plane
+    // rejects OAuth (cfoat_…) tokens and forwards them upstream as provider keys ("Incorrect API
+    // key: cfoat…"). The live OAuth token only substitutes for an absent or self-mirrored value,
+    // which keeps OAuth-only accounts working with a fresh (auto-refreshed) token.
     const oauthToken = await this.freshCfOauthToken()
-    if (oauthToken) out.cloudflareApiToken = oauthToken
+    const storedTok = out.cloudflareApiToken
+    if (oauthToken && (!storedTok || storedTok.startsWith('cfoat'))) out.cloudflareApiToken = oauthToken
     return out
   }
 }

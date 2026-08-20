@@ -41,6 +41,9 @@ const CF_SCOPES = [
   'zone.read',
   'dns.write',
   'workers-routes.write',
+  // Without offline_access Cloudflare issues no refresh_token and every login dies after ~1h,
+  // taking all unified-billing model calls down with it (gateway error 2009 'Unauthorized').
+  'offline_access',
 ]
 
 const GH_AUTH_URL = 'https://github.com/login/oauth/authorize'
@@ -156,6 +159,10 @@ async function completeLogin(
 // --- Cloudflare ------------------------------------------------------------------------------
 export async function startCfLogin(request: Request, env: OauthEnv, linkUserId?: string): Promise<Response> {
   if (!env.CF_OAUTH_CLIENT_ID || !env.AUTH_SECRET) return failPage('Cloudflare login is not configured yet.')
+  // `?basic=1` retries without offline_access for OAuth clients that don't allow that scope yet
+  // (login still works; model calls then stop ~1h after login until the scope is added).
+  const basic = new URL(request.url).searchParams.get('basic') === '1'
+  const scopes = basic ? CF_SCOPES.filter((s) => s !== 'offline_access') : CF_SCOPES
   const origin = new URL(request.url).origin
   const state = rand(16)
   const verifier = rand(48)
@@ -164,7 +171,7 @@ export async function startCfLogin(request: Request, env: OauthEnv, linkUserId?:
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('client_id', env.CF_OAUTH_CLIENT_ID)
   url.searchParams.set('redirect_uri', `${origin}/auth/cloudflare/callback`)
-  url.searchParams.set('scope', CF_SCOPES.join(' '))
+  url.searchParams.set('scope', scopes.join(' '))
   url.searchParams.set('state', state)
   url.searchParams.set('code_challenge', challenge)
   url.searchParams.set('code_challenge_method', 'S256')
@@ -176,6 +183,13 @@ export async function finishCfLogin(request: Request, env: OauthEnv): Promise<Re
   if (!env.CF_OAUTH_CLIENT_ID || !env.CF_OAUTH_CLIENT_SECRET || !env.AUTH_SECRET)
     return failPage('Cloudflare login is not configured yet.')
   const url = new URL(request.url)
+  const oauthErr = url.searchParams.get('error')
+  if (oauthErr === 'invalid_scope') {
+    // The OAuth client doesn't allow offline_access (yet) — retry the flow without it so login
+    // always works. Add the scope to the client to get refresh tokens (no 1h token expiry).
+    return new Response(null, { status: 302, headers: { location: '/auth/cloudflare?basic=1' } })
+  }
+  if (oauthErr) return failPage(`Cloudflare returned: ${url.searchParams.get('error_description') ?? oauthErr}`)
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   const flow = await readFlow(request, env.AUTH_SECRET)
