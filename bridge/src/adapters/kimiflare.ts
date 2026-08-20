@@ -113,7 +113,13 @@ export function createKimiflareAdapter(): HarnessAdapter {
   return {
     async start(c: StartConfig) {
       mode = c.mode
-      proc = new JsonlProcess('kimiflare', ['--mode', 'rpc'], { cwd: c.cwd, env: {} }, handle, (message) => {
+      // Brokered mode (kimiflare >= 0.99): the CLI's custom-endpoint env routes ALL model calls
+      // through the host's /aig broker with a per-session bearer — no Cloudflare credentials in
+      // the container. The broker path ends in /compat because the CLI appends /chat/completions.
+      const env: Record<string, string> = c.proxy
+        ? { KIMIFLARE_BASE_URL: `${c.proxy.baseURL}/compat`, KIMIFLARE_API_KEY: c.proxy.token }
+        : {}
+      proc = new JsonlProcess('kimiflare', ['--mode', 'rpc'], { cwd: c.cwd, env }, handle, (message) => {
         finish({ name: 'harness', message })
       })
       proc.send({
@@ -122,9 +128,9 @@ export function createKimiflareAdapter(): HarnessAdapter {
         sessionId: `dw-${c.sessionId ?? 'default'}`,
         cwd: c.cwd,
         config: {
-          accountId: c.creds.cloudflareAccountId,
-          apiToken: c.creds.cloudflareApiToken,
-          aiGatewayId: c.creds.cloudflareGatewayId || undefined,
+          accountId: c.proxy ? undefined : c.creds.cloudflareAccountId,
+          apiToken: c.proxy ? undefined : c.creds.cloudflareApiToken,
+          aiGatewayId: c.proxy ? undefined : c.creds.cloudflareGatewayId || undefined,
           // KimiFlare takes a registry id (@cf/moonshotai/kimi-k2.7-code or moonshotai/kimi-k3);
           // Dreamweav stores Workers AI models with a workers-ai/ prefix, so strip it. Only pass
           // a recognized Kimi/GLM id — otherwise let KimiFlare use its own default.

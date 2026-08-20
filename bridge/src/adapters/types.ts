@@ -7,6 +7,9 @@ export interface StartConfig {
   /** Stable Dreamweav session id — adapters use it to resume harness-side sessions across restarts. */
   sessionId?: string
   mode: 'plan' | 'build' | 'auto'
+  /** Host-side model-traffic broker (provider=cloudflare): adapters that support a custom
+   *  OpenAI-compatible endpoint call this instead of receiving raw Cloudflare credentials. */
+  proxy?: { baseURL: string; token: string }
   creds: {
     openrouterKey?: string
     anthropicKey?: string

@@ -450,9 +450,18 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       }
     }
     if (!this.bridgeStarted) {
+      // Cloudflare-provider model traffic goes through the /aig broker (same as OpenCode): the
+      // adapter gets a per-session bearer and, for harnesses that support a custom endpoint
+      // (kimiflare >= 0.99), the raw CF token is withheld from the container entirely.
+      const ownerHost = (this.env as unknown as { OWNER_HOST?: string }).OWNER_HOST
+      const proxy = cfg.provider === 'cloudflare' && ownerHost
+        ? { baseURL: `https://${ownerHost}/aig/${this.name}`, token: this.proxyToken() }
+        : undefined
+      const brokered = !!proxy && cfg.harness === 'kimiflare'
+      const credsOut = brokered ? { ...conn, cloudflareApiToken: undefined } : conn
       const res = await this.bridgeFetch(sandbox, 'POST', '/start', {
         harness: cfg.harness,
-        config: { provider: cfg.provider, model: cfg.model, cwd: '/workspace', mode: this.state.mode, creds: conn, sessionId: this.name },
+        config: { provider: cfg.provider, model: cfg.model, cwd: '/workspace', mode: this.state.mode, creds: credsOut, sessionId: this.name, proxy },
       })
       if (!res?.ok) throw new Error('Bridge failed to start the harness.')
       this.bridgeStarted = true

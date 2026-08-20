@@ -27,7 +27,7 @@ RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/downloa
 # Harness CLIs (best-effort — if a registry hiccups the image still builds with OpenCode + AI-SDK).
 # Pinned: version drift against pi's version-sensitive RPC (and a silently harness-less image
 # when the registry hiccups) is worse than a deliberate bump. Update versions consciously.
-RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.84.2 kimiflare@0.98.1
+RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.84.2 kimiflare@0.99.0
 
 
 EXPOSE 7700 4096 3000 5173 8080
