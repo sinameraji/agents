@@ -31,6 +31,8 @@ interface SyncState {
   usage: { tokensIn: number; tokensOut: number; costUsd: number }
   /** Named agents the running harness advertises. Absent until the harness has booted once. */
   agents?: HarnessAgent[]
+  /** Boot narration ("Cloning owner/repo"), present only while the session is starting up. */
+  phase?: string
 }
 
 type Action = { type: 'hydrate'; state: TranscriptState } | { type: 'event'; event: AgentEvent }
@@ -47,6 +49,8 @@ export interface SessionApi {
   usage: SyncState['usage']
   /** OpenCode's agent roster, empty until the harness has booted at least once. */
   agents: HarnessAgent[]
+  /** What the session is doing while it boots, for the working indicator. */
+  phase?: string
   turns: NormTurn[]
   todos: NormTodo[]
   permissions: NormPermission[]
@@ -262,6 +266,7 @@ export function useSession(sessionId: string): SessionApi {
     mode: sync.mode,
     usage: sync.usage,
     agents: sync.agents ?? [],
+    phase: sync.phase,
     turns: transcript.turns,
     todos: transcript.todos,
     permissions: transcript.permissions,

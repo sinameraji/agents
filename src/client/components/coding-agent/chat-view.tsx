@@ -407,6 +407,7 @@ export function ChatView({ session }: { session: SessionApi }) {
             turns={session.turns}
             permissions={session.permissions}
             status={session.status}
+            phase={session.phase}
             onPermissionReply={(id, reply, note) => void session.respondPermission(id, reply, note)}
           />
         </div>

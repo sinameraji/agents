@@ -25,11 +25,15 @@ export function Transcript({
   turns,
   permissions,
   status,
+  phase,
   onPermissionReply,
 }: {
   turns: NormTurn[]
   permissions?: NormPermission[]
   status?: SessionStatus
+  /** What the session is doing while it boots. Shown verbatim: a cold start is tens of seconds,
+   *  and "Cloning owner/repo" is the difference between waiting and wondering if it broke. */
+  phase?: string
   onPermissionReply?: (id: string, reply: PermissionReply, note?: string) => void
 }) {
   const working = status === 'booting' || status === 'busy'
@@ -39,7 +43,7 @@ export function Transcript({
   // to the user it's all just the agent thinking.
   const showWorking =
     working && (!last || last.role === 'user' || (last.role === 'assistant' && last.parts.length === 0))
-  const workingLabel = 'Thinking…'
+  const workingLabel = phase ? `${phase}…` : 'Thinking…'
 
   // An assistant turn that hasn't produced anything yet is represented by the Thinking row, not an
   // empty bubble. (Terminal empty turns DO render, TurnView gives them an explicit placeholder.)

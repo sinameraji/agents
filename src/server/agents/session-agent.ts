@@ -74,6 +74,10 @@ interface SessionAgentState {
    *  synced state channel so the composer's '@' popover needs no extra round trip. Sessions
    *  created before this field existed sync it as undefined — always read it as `?? []`. */
   agents?: HarnessAgent[]
+  /** What the session is doing while it boots, in the user's words ("Cloning owner/repo"). Cold
+   *  starts pull an image, restore a workspace and boot a harness, which is tens of seconds of
+   *  apparent nothing without this. Cleared once the harness starts producing. */
+  phase?: string
 }
 
 const BRIDGE_HASH = (() => {
@@ -244,6 +248,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     return (await user.getDecryptedConnections()) as Connections
   }
 
+  /** Narrate a boot step. Cheap: state is already synced to every open client. */
+  private setPhase(phase: string | undefined) {
+    if (this.state.phase === phase) return
+    this.setState({ ...this.state, phase })
+  }
+
   private setStatus(status: SessionStatus) {
     this.setState({ ...this.state, status, meta: this.state.meta ? { ...this.state.meta, lastActivity: 'now' } : null })
     const cfg = this.getKv<SessionConfig | null>('config', null)
@@ -375,7 +385,23 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     } catch { /* best-effort */ }
   }
 
+  private hydrating: Promise<void> | null = null
+
+  /** Hydration is single-flight. Seven call sites reach it (turns, the files panel, git status,
+   *  preview, forks), and when two arrived while /workspace was still empty they BOTH passed the
+   *  emptiness check and both cloned, so the loser died on "destination path '.' already exists".
+   *  Collapsing concurrent callers onto one promise is what makes a second session on the same
+   *  repo, or opening Files mid-boot, safe. */
   private async ensureWorkspace(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
+    if (!this.hydrating) {
+      this.hydrating = this.hydrateWorkspace(sandbox).finally(() => {
+        this.hydrating = null
+      })
+    }
+    return this.hydrating
+  }
+
+  private async hydrateWorkspace(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
     await this.ensureGitCredentials(sandbox)
 
     // Hydrate (restore/clone) BEFORE writing anything into /workspace. Writing AGENTS.md first
@@ -393,6 +419,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const backup = this.getKv<{ id: string; dir: string; localBucket?: boolean } | null>('backup', null)
     if (backup) {
       try {
+        this.setPhase('Restoring your workspace')
         await sandbox.restoreBackup(backup as never)
         await this.ensureAgentContext(sandbox)
         return
@@ -416,6 +443,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       // The clone's own exit code is echoed into the log so a failure is DETECTED: previously the
       // shell's status came from `tail`, so a failed clone looked like success and the user just
       // got a mysteriously empty workspace with no explanation.
+      this.setPhase(`Cloning ${url.replace(/^https?:\/\/(www\.)?github\.com\//, '')}`)
       const scrub = (t: string) => t.replaceAll(conn.githubPat ?? '\u0000', '***')
       const out = await sandbox
         .exec(`sh -lc 'cd /workspace && (git clone --depth 50 ${branch} ${auth}.git . >/tmp/dw-clone.log 2>&1; echo "CLONE_EXIT:$?" >>/tmp/dw-clone.log); git remote set-url origin ${url}.git 2>/dev/null; tail -6 /tmp/dw-clone.log'`)
@@ -669,8 +697,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
 
     this.setStatus('booting')
+    this.setPhase('Starting your sandbox')
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
     await this.ensureWorkspace(sandbox)
+    this.setPhase(undefined)
     this.setStatus('busy')
 
     const history = this.getKv<ModelMessage[]>('cfagent:messages', [])
@@ -807,7 +837,9 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
 
     this.setStatus('booting')
+    this.setPhase('Starting your sandbox')
     const sandbox = await this.ensureBridge()
+    this.setPhase(undefined)
     this.setStatus('busy')
     this.emittedParts.clear()
     this.handledQuestions.clear()
@@ -1141,6 +1173,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // Checkpoint lifetime cost before the turn starts: usage events report per-turn running
     // totals, and the accumulator in emit('usage') adds them on top of this base.
     this.putKv('costBase', this.state.usage.costUsd)
+    this.setPhase(undefined)
     this.setStatus('busy')
     const harness = this.config().harness
     const promptText = input.runText ?? input.text
@@ -1196,8 +1229,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       throw new Error(`No ${cfg.provider} key set. Open Settings and add your key.`)
     }
     this.setStatus('booting')
+    this.setPhase('Starting your sandbox')
     await this.ensureOpencode()
     const ocSession = await this.ensureOpencodeSession()
+    this.setPhase(undefined)
     this.setStatus('busy')
     this.emittedParts.clear()
     this.handledQuestions.clear()
