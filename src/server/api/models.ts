@@ -98,8 +98,13 @@ async function fetchUnifiedCatalog(acct: string, token: string, gatewayId: strin
   }
 }
 
-/** Cloudflare's two lanes: Workers AI models on the user's own account (Cloudflare bills those
- *  directly and the account API publishes no per-token price, hence 0/0 = unknown) plus the
+/** Prices we already keep by hand for specific Workers AI model ids (the KimiFlare registry).
+ *  Price is a property of the MODEL, not of the harness that runs it, so the same id gets the
+ *  same price on every lane — the picker and the cost meter then agree by construction. */
+const HAND_PRICED = new Map(KIMIFLARE_MODELS.map((m) => [m.id, m]))
+
+/** Cloudflare's two lanes: Workers AI models on the user's own account (the account API publishes
+ *  no per-token price, so anything not in HAND_PRICED stays 0/0 = unknown, never "free") plus the
  *  unified-billing vendor models, live from the gateway catalog with the curated set as backup. */
 async function cloudflareModels(conn: Connections | undefined): Promise<ModelInfo[]> {
   try {
@@ -111,7 +116,17 @@ async function cloudflareModels(conn: Connections | undefined): Promise<ModelInf
       const wai: ModelInfo[] = (res.result ?? [])
         .map((m) => String(m.name ?? ''))
         .filter(Boolean)
-        .map((name) => ({ id: `workers-ai/${name}`, label: `${name.replace('@cf/', '')} · Workers AI`, provider: 'cloudflare', inputPerM: 0, outputPerM: 0 }))
+        .map((name) => {
+          const id = `workers-ai/${name}`
+          const known = HAND_PRICED.get(id)
+          return {
+            id,
+            label: `${name.replace('@cf/', '')} · Workers AI`,
+            provider: 'cloudflare',
+            inputPerM: known?.inputPerM ?? 0,
+            outputPerM: known?.outputPerM ?? 0,
+          }
+        })
       // Unified-billing vendor models, LIVE from the gateway catalog so new models (e.g. a
       // freshly-added gpt-5.6-sol) appear automatically. Fall back to the curated set.
       const live = await fetchUnifiedCatalog(conn.cloudflareAccountId, conn.cloudflareApiToken, conn.cloudflareGatewayId ?? '')
