@@ -214,6 +214,7 @@ app.use('/agents/*', requireMember)
 registerOrgRoutes(app)
 
 
+
 // Admin-only custom-domain onboarding wizard (zone create → nameservers → attach).
 registerDomainRoutes(app)
 

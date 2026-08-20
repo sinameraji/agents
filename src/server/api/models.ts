@@ -84,12 +84,18 @@ async function fetchUnifiedCatalog(acct: string, token: string, gatewayId: strin
       headers: { 'cf-aig-authorization': `Bearer ${token}` },
     }).then((r) => r.json())) as { data?: Array<{ id?: string; owned_by?: string; cost_in?: number; cost_out?: number }> }
     if (!Array.isArray(res.data)) return []
-    // Probed against this gateway on 2026-08-20 with a keyless cf-aig-authorization call per
-    // family: ONLY these owners answer without a provider key of your own. google-ai-studio,
-    // deepseek, mistral, grok/xai, groq, cerebras and openrouter all return 401/400 "invalid API
-    // key" style errors, which read like an app bug when the picker offers them as "unified
-    // billing". Listing a model we cannot actually call is the dishonesty this manifest work
-    // exists to remove, so they stay out until BYOK-per-provider is a real feature.
+    // DOCS SAY six providers are on unified billing (OpenAI, Anthropic, Google AI Studio, Google
+    // Vertex AI, xAI, Groq — developers.cloudflare.com/ai-gateway/features/unified-billing/).
+    // REALITY on this account, probed 2026-08-20 across BOTH documented HTTP paths (the gateway
+    // compat endpoint with cf-aig-authorization, and the REST /accounts/{id}/ai/v1 endpoint):
+    // only these four answer. google-ai-studio 400s "Missing or invalid Authorization header",
+    // grok/xai and groq 401 "no credentials", and the REST path is strictly worse (it 404s even
+    // anthropic ids that compat serves). deepseek, mistral, cerebras and openrouter need a key of
+    // your own too. Listing a model the user cannot actually call is the dishonesty this whole
+    // capability effort exists to remove, so they stay out; when Cloudflare turns the managed
+    // credentials on for an owner, adding it back is this one line plus a probe to confirm.
+    // BYOK keys stored in the gateway under the "default" alias would also make those providers
+    // work keyless, so per-provider stored keys are the real unlock (not yet a feature here).
     const UNIFIED_OWNERS = new Set(['openai', 'anthropic', 'workers-ai', 'moonshot'])
     // Non-chat / specialized / duplicate variants that shouldn't clutter a coding-model picker.
     const EXCLUDE = /(:batch|embed|whisper|tts|dall|image|imagen|realtime|moderation|audio|transcribe|rerank|robotics|live|translate|omni|-vision|guard|banana|-search|lyria|veo|deep-research|computer-use|clip|learnlm|aqa|-\d{8}$)/i
