@@ -14,7 +14,7 @@ import type { ModelMessage } from 'ai'
 // The bridge (pi/KimiFlare/AI-SDK host) ships INSIDE the worker and is written into the container
 // at runtime, so its version always matches this deploy, no image rebuilds, no warm-pool staleness.
 import bridgeSource from '../../../bridge/dist/bridge.mjs?raw'
-import { applyEvent, emptyTranscript } from '~shared/agent-reduce'
+import { applyEvent, emptyTranscript, sweepDanglingTools } from '~shared/agent-reduce'
 import type { AgentEvent, NormTurn, PermissionReply, SessionStatus, TranscriptState } from '~shared/agent'
 import {
   DEFAULT_MODEL_BY_PROVIDER,
@@ -275,7 +275,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       }
     }
     return {
-      turns: this.transcript.turns,
+      // Heals transcripts persisted before dangling-tool finalization existed.
+      turns: this.transcript.turns.map(sweepDanglingTools),
       todos: this.transcript.todos,
       permissions: this.transcript.permissions,
       status: this.state.status,
