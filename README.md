@@ -16,30 +16,53 @@ hosted service — dreamweav.com is the maintainer's own instance.
 
 ## Deploy your own
 
-Requires a Cloudflare account on the **Workers Paid** plan (Sandbox containers).
+Requires a Cloudflare account on the **Workers Paid** plan ($5/month, needed for Sandbox containers).
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sinameraji/dreamweav)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sinameraji/agents)
 
-Or by hand:
+The button clones this repo into your GitHub account, provisions the R2 buckets and Durable
+Objects, and prompts for three secrets plus your email:
+
+- `ENCRYPTION_KEY`: 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts the model
+  provider keys you paste into Settings.
+- `AUTH_SECRET`: signs the login session cookie (`openssl rand -base64 32`).
+- `APP_PASSWORD`: the password you log in with.
+- `OWNER_EMAIL` (optional): seeded as the instance owner and admin, so you can invite members.
+
+The first deploy takes several minutes because it builds the sandbox container image. When it
+finishes you get `https://agents.<your-subdomain>.workers.dev`. Open it, log in with your
+password, and paste a model provider key in Settings (OpenRouter, Anthropic, or OpenAI, or a
+Cloudflare API token for Workers AI + AI Gateway unified billing on your own account).
+
+If the button path fails, deploy by hand. You need Node 20+, and Docker running locally to build
+the container image:
 
 ```sh
-git clone https://github.com/sinameraji/dreamweav && cd dreamweav
+git clone https://github.com/sinameraji/agents && cd agents
 npm install
-npm run setup    # wrangler login check → generates + uploads secrets → deploys
+npm run deploy                            # first deploy creates the worker (and buckets)
+npx wrangler secret put ENCRYPTION_KEY    # openssl rand -base64 32
+npx wrangler secret put AUTH_SECRET       # openssl rand -base64 32
+npx wrangler secret put APP_PASSWORD
 ```
 
-Then open the printed workers.dev URL, log in with the password `setup` printed, and paste a model
-provider key in Settings (OpenRouter / Anthropic / OpenAI — or a Cloudflare API token for Workers
-AI + AI Gateway unified billing on your own account).
+`npm run setup` walks the same steps interactively (login check, deploy, then secrets).
 
-Optional:
+## Use your own domain
 
-- `ALLOWED_USERS` secret — comma-separated emails allowed to log in. Unset = anyone who can reach
-  your URL and pass the password gate.
-- **Custom domain** — needed for live previews of dev servers (wildcard DNS). Add your zone in the
-  Cloudflare dash, point a route at the worker in `wrangler.jsonc`, and add a `*` DNS record.
-- **Login with Cloudflare / GitHub / email** — each needs its own OAuth client or Email Service
-  setup; the password gate works without any of them.
+The workers.dev URL is fully functional. A custom domain is nicer and is required for the
+Cloudflare and GitHub OAuth login flows (which need a fixed callback URL you control). Your
+domain must be on Cloudflare DNS; the free plan is fine:
+
+1. Cloudflare dashboard > Account Home > Add a domain, and follow the onboarding.
+2. At your registrar, disable DNSSEC first, then replace the nameservers with the two Cloudflare
+   shows you. Wait until the zone shows Active (usually minutes, can take longer).
+3. Attach the domain to the worker: Workers & Pages > agents > Settings > Domains & Routes >
+   Add > Custom domain. Or add a `routes` entry to `wrangler.jsonc` and redeploy:
+
+   ```jsonc
+   "routes": [{ "pattern": "agents.example.com", "custom_domain": true }]
+   ```
 
 ## Architecture
 
@@ -102,7 +125,9 @@ npm test
 Deploy (requires a **Workers Paid** plan — containers):
 
 ```sh
-npm run build && npx wrangler deploy
+npm run deploy        # generic: root wrangler.jsonc, worker `agents`, *.workers.dev
+npm run deploy:self   # maintainer production: generates wrangler.self.jsonc (worker `dreamweav`,
+                      # custom domains, send_email) via scripts/make-self-config.mjs
 ```
 
 Secrets (via `npx wrangler secret put`, or `.dev.vars` locally):
@@ -110,10 +135,10 @@ Secrets (via `npx wrangler secret put`, or `.dev.vars` locally):
 - `ENCRYPTION_KEY` — 32 random bytes, base64; encrypts stored provider keys (`openssl rand -base64 32`)
 - `APP_PASSWORD` — the password gate
 - `AUTH_SECRET` — HMAC key for the signed session cookie (`openssl rand -base64 32`)
-- `ALLOWED_USERS` — optional login allowlist (comma-separated emails); unset = open
+- `OWNER_EMAIL` — optional; seeded as the instance owner/admin
 
-`.dev.vars` also takes `OWNER_EMAIL` and `DEV_USER_EMAIL` (local auth bypass). To run a real coding
-turn, open Settings in the app and paste a provider key.
+`.dev.vars` also takes `DEV_USER_EMAIL` (local auth bypass; ignored once any real auth is
+configured). To run a real coding turn, open Settings in the app and paste a provider key.
 
 ## Gotchas we learned
 
