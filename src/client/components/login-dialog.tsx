@@ -68,13 +68,20 @@ function Field({ name, hint, value }: { name: string; hint: string; value?: stri
  *  stated plainly and a link that lands on the right dashboard page. */
 function Prereq({ title, cost, href, cta, children }: { title: string; cost: string; href: string; cta: string; children: React.ReactNode }) {
   return (
-    <li className="flex flex-col gap-1 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-semibold text-foreground">{title}</span>
-        <span className="text-[0.7rem] text-muted-foreground">{cost}</span>
+    <li className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold text-foreground">{title}</span>
+          <span className="text-[0.7rem] text-muted-foreground">{cost}</span>
+        </div>
+        <span className="text-xs leading-snug text-muted-foreground">{children}</span>
       </div>
-      <span className="text-xs leading-snug text-muted-foreground">{children}</span>
-      <a href={href} target="_blank" rel="noreferrer" className="mt-0.5 text-xs font-medium text-primary hover:underline">
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="shrink-0 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+      >
         {cta}
       </a>
     </li>
@@ -106,18 +113,27 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
           (deploy ? 'max-h-[92vh] max-w-lg overflow-hidden' : 'max-w-sm items-center gap-4 p-6')
         }
       >
-        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className="absolute top-3 right-3 z-10 text-white/80 hover:text-white">
+        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className={`absolute top-3 right-3 z-10 ${deploy && step > 1 ? 'text-muted-foreground hover:text-foreground' : 'text-white/80 hover:text-white'}`}>
           <X className="size-4" />
         </Button>
 
         {deploy ? (
           <>
-            {/* Visual hero: the brand at a glance */}
-            <img
-              src="/og.png"
-              alt="Agents. Your favorite coding model, harness, and provider in your browser."
-              className="max-h-[26vh] w-full shrink-0 object-cover"
-            />
+            {/* The hero earns its height on the pitch screen only; the setup screens get a slim
+                bar so the whole dialog stays well inside a laptop window. */}
+            {step === 1 ? (
+              <img
+                src="/og.png"
+                alt="Agents. Your favorite coding model, harness, and provider in your browser."
+                className="max-h-[26vh] w-full shrink-0 object-cover"
+              />
+            ) : (
+              <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
+                <img src="/logo.svg" alt="" className="size-5 rounded" />
+                <span className="text-sm font-semibold">Deploy your own</span>
+                <span className="ml-auto pr-6 text-xs text-muted-foreground">Step {step} of 3</span>
+              </div>
+            )}
 
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
               {step === 1 && (
@@ -151,36 +167,25 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
                   <div>
                     <h2 className="text-base font-semibold">Before you start</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Three accounts or settings need to exist first. The two Cloudflare ones are the
-                      reason a deploy otherwise fails partway through.
+                      Two switches in your Cloudflare account. Without them the deploy fails partway.
                     </p>
                   </div>
-                  <ul className="flex flex-col gap-2.5">
+                  <ul className="flex flex-col gap-2">
                     <Prereq
-                      title="Workers Paid plan"
+                      title="Workers Paid"
                       cost="$5 per month"
                       href="https://dash.cloudflare.com/?to=/:account/workers/plans"
-                      cta="Open Workers plans"
+                      cta="Enable"
                     >
-                      Every session runs in a Cloudflare Container, and containers are not on the free plan.
+                      Sessions run in containers, which the free plan does not include.
                     </Prereq>
                     <Prereq
-                      title="R2 turned on"
-                      cost="free for normal use"
-                      href="https://dash.cloudflare.com/?to=/:account/r2"
-                      cta="Open R2"
-                    >
-                      Cloudflare calls this an R2 subscription, but the free tier covers 10 GB of storage
-                      with free egress, which is far more than uploads and workspace snapshots need.
-                    </Prereq>
-                    <Prereq
-                      title="A GitHub or GitLab account"
+                      title="R2 storage"
                       cost="free"
-                      href="https://github.com"
-                      cta="Open GitHub"
+                      href="https://dash.cloudflare.com/?to=/:account/r2"
+                      cta="Enable"
                     >
-                      Cloudflare copies this repo into your account and redeploys it on every push, so
-                      your instance stays yours.
+                      One switch. The free tier covers 10 GB with free egress.
                     </Prereq>
                   </ul>
                 </>
@@ -191,22 +196,20 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
                   <div>
                     <h2 className="text-base font-semibold">What Cloudflare will ask you for</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      The next page is one long form. These are the fields worth preparing. The two
-                      secrets are generated here in your browser and never leave this page, so copy
-                      them straight across.
+                      Copy these across as the form asks for them. Both secrets are generated here in
+                      your browser and never leave this page.
                     </p>
                   </div>
                   <ul className="flex flex-col gap-2">
-                    <Field name="Git account" hint="Connect GitHub or GitLab, then leave the repository name as it is." />
-                    <Field name="R2 buckets (2)" hint="One for uploads, one for workspace snapshots. Click new on each and accept the suggested name." />
-                    <Field name="ENCRYPTION_KEY" hint="Encrypts the model provider keys you paste into Settings." value={encryptionKey} />
-                    <Field name="AUTH_SECRET" hint="Signs your login session cookie." value={authSecret} />
-                    <Field name="APP_PASSWORD" hint="You choose it. It is the password you log in with, so make it strong." />
-                    <Field name="OWNER_EMAIL" hint="Your email. Makes you the admin who can invite members. Optional." />
+                    <Field name="Connect GitHub or GitLab" hint="Cloudflare copies the repo into your account." />
+                    <Field name="Create two R2 buckets" hint="Click new on each, accept the names." />
+                    <Field name="ENCRYPTION_KEY" hint="Encrypts your stored provider keys." value={encryptionKey} />
+                    <Field name="AUTH_SECRET" hint="Signs your login cookie." value={authSecret} />
+                    <Field name="APP_PASSWORD" hint="The password you will log in with." />
+                    <Field name="OWNER_EMAIL" hint="Makes you the admin. Optional." />
                   </ul>
                   <p className="text-xs text-muted-foreground">
-                    Leave the build, deploy and preview commands exactly as they are. The first deploy
-                    takes several minutes because it builds the sandbox container image.
+                    Leave the build commands as they are. The first deploy takes a few minutes.
                   </p>
                 </>
               )}
