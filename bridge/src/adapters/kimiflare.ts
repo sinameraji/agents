@@ -21,8 +21,9 @@ const KIMIFLARE_IDS = new Set([
   '@cf/zai-org/glm-5.2',
 ])
 
-/** Map a Dreamweav model id to a KimiFlare registry id, or undefined to use KimiFlare's default. */
-function kimiflareModel(model: string | undefined): string | undefined {
+/** Map a Dreamweav model id to a KimiFlare registry id, or undefined to use KimiFlare's default.
+ *  Exported because the ACP adapter (kimiflare-acp.ts) drives the same CLI and must agree. */
+export function kimiflareModel(model: string | undefined): string | undefined {
   if (!model) return undefined
   const id = model.replace(/^workers-ai\//, '')
   return KIMIFLARE_IDS.has(id) ? id : undefined
