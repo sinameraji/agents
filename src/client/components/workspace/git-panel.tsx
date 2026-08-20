@@ -58,7 +58,7 @@ export function GitPanel({ session }: { session: SessionApi }) {
   return (
     <div className="scrollbar-thin flex h-full flex-col gap-3 overflow-y-auto p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Git export</h3>
+        <h3 className="text-sm font-semibold">Source control</h3>
         <Button variant="ghost" size="icon-sm" onClick={refresh} aria-label="Refresh git status">
           {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
         </Button>
@@ -71,10 +71,10 @@ export function GitPanel({ session }: { session: SessionApi }) {
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
             <dt className="text-muted-foreground">Repository</dt>
             <dd>{info.repo ? 'initialized' : 'not initialized, the first push sets it up'}</dd>
-            <dt className="text-muted-foreground">Branch</dt>
+            <dt className="text-muted-foreground">Working branch</dt>
             <dd className="flex items-center gap-1 font-mono">
               <GitBranch className="size-3" />
-              {info.branch || session.meta?.branch || '—'}
+              {info.branch || '—'}
             </dd>
             <dt className="text-muted-foreground">Uncommitted</dt>
             <dd>{info.dirty} file(s)</dd>
@@ -112,6 +112,15 @@ export function GitPanel({ session }: { session: SessionApi }) {
         <input type="checkbox" checked={openPr} onChange={(e) => setOpenPr(e.target.checked)} className="accent-primary" />
         Open a pull request (sessions cloned from GitHub)
       </label>
+
+      {session.meta?.branch && (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Your work stays on <span className="font-mono">{info?.branch || 'the working branch'}</span> in the
+          sandbox; pushing sends it to a new branch{' '}
+          <span className="font-mono text-foreground/80">{session.meta.branch}</span> on GitHub, so nothing
+          lands on the default branch until you merge the PR.
+        </p>
+      )}
 
       <div className="flex items-center gap-2">
         <Button size="sm" className="gap-1.5" onClick={() => void doExport()} disabled={busy}>
