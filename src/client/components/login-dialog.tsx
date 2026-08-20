@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Boxes, Check, Copy, Eye, EyeOff, Globe, Users, Wallet, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUpRight, Boxes, Check, Copy, Eye, EyeOff, Globe, Users, Wallet, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { LoginOptions, CloudflareMark } from './login-screen'
@@ -76,13 +76,16 @@ function Prereq({ title, cost, href, cta, children }: { title: string; cost: str
         </div>
         <span className="text-xs leading-snug text-muted-foreground">{children}</span>
       </div>
+      {/* Brand-tinted so it reads as an action, but never mistaken for the primary or the orange
+          Cloudflare CTA. The arrow says it leaves for the dashboard. */}
       <a
         href={href}
         target="_blank"
         rel="noreferrer"
-        className="shrink-0 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm transition-colors hover:border-primary/60 hover:bg-primary/20"
       >
         {cta}
+        <ArrowUpRight className="size-3.5" />
       </a>
     </li>
   )
@@ -194,7 +197,18 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
               {step === 3 && (
                 <>
                   <div>
-                    <h2 className="text-base font-semibold">What Cloudflare will ask you for</h2>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <h2 className="text-base font-semibold">What Cloudflare will ask you for</h2>
+                      <a
+                        href={`${REPO}#deploy-your-own`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-primary hover:underline"
+                      >
+                        Full guide
+                        <ArrowUpRight className="size-3" />
+                      </a>
+                    </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       Copy these across as the form asks for them. Both secrets are generated here in
                       your browser and never leave this page.
@@ -240,14 +254,6 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
                   </a>
                 )}
               </div>
-              <a
-                href={`${REPO}#deploy-your-own`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-center text-xs text-muted-foreground hover:text-foreground"
-              >
-                Read the setup guide
-              </a>
             </div>
           </>
         ) : (
