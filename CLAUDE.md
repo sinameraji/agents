@@ -31,5 +31,10 @@ loop behind the `bridge` HTTP server on :7700).
 - BYO credentials only (OpenRouter / Cloudflare AI Gateway / Anthropic / OpenAI keys). Never Claude Pro/Max OAuth.
 - Use `npm` (no pnpm). Commit granularly (one logical change per commit); push to `sinameraji/dreamweav`.
 
-**Commands:** `npm run dev` · `npm run build` · `npm run typecheck` · `npm test` · deploy =
-`npm run build && npx wrangler deploy` (Workers Paid; secrets: ENCRYPTION_KEY, APP_PASSWORD, AUTH_SECRET).
+**Commands:** `npm run dev` · `npm run build` · `npm run typecheck` · `npm test` ·
+PRODUCTION deploy = `npm run deploy:self` (worker `dreamweav` + custom domains + send_email; generates
+wrangler.self.jsonc from the generic config via scripts/make-self-config.mjs — production overrides live
+THERE, never in wrangler.jsonc). Plain `npm run deploy` uses the root wrangler.jsonc, which is the GENERIC
+"Deploy to Cloudflare"-button config (worker `agents`, no routes, no send_email) — keep it deployable on
+any account. Never use wrangler `--env` (suffixes the worker name → orphans all DO data).
+(Workers Paid; secrets: ENCRYPTION_KEY, APP_PASSWORD, AUTH_SECRET, optional OWNER_EMAIL.)
