@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
   AlertCircle,
   ArrowLeft,
@@ -17,6 +17,27 @@ import { cn } from '@/lib/utils'
 import type { SessionApi } from '@/hooks/use-session'
 import { Button } from '@/components/ui/button'
 import { CodeBlock } from '../transcript/code-block'
+import { DiffView } from '../transcript/diff-view'
+
+type ChangeStatus = 'M' | 'A' | 'D' | 'R' | '?'
+interface ChangeInfo {
+  /** File path → its git status vs HEAD. */
+  files: Map<string, ChangeStatus>
+  /** Folder paths that contain at least one change (for parent-folder dots). */
+  dirs: Set<string>
+}
+const ChangesContext = createContext<ChangeInfo>({ files: new Map(), dirs: new Set() })
+
+/** Small M/A/D/? badge with a green/amber/red tint, matching git conventions. */
+function ChangeBadge({ status }: { status: ChangeStatus }) {
+  const tone =
+    status === 'D' ? 'text-destructive' : status === 'M' ? 'text-amber-500' : 'text-success'
+  const label = status === '?' ? 'U' : status
+  return <span className={cn('shrink-0 font-mono text-[0.7rem] font-semibold', tone)} title={statusLabel(status)}>{label}</span>
+}
+function statusLabel(s: ChangeStatus): string {
+  return s === 'M' ? 'Modified' : s === 'A' ? 'Added' : s === 'D' ? 'Deleted' : s === 'R' ? 'Renamed' : 'Untracked (new)'
+}
 
 const ROOT = '/workspace'
 
@@ -27,56 +48,118 @@ interface FileEntry {
   size: number
 }
 
+// Cache directory listings so collapsing/re-expanding a folder is instant, and the app's ~1.2s
+// status poll (which hands down a new `session` object each render) never re-triggers a sandbox
+// `exec`. Keyed by SESSION + path — two sessions share the /workspace path but not their files.
+const dirCache = new Map<string, FileEntry[]>()
+const cacheKey = (sid: string, path: string) => `${sid}::${path}`
+
 export function FilesPanel({ session }: { session: SessionApi }) {
   const [refreshKey, setRefreshKey] = useState(0)
   const [openPath, setOpenPath] = useState<string | null>(null)
+  const sessionId = session.meta?.id ?? ''
+  const status = session.status
+  const [changes, setChanges] = useState<ChangeInfo>({ files: new Map(), dirs: new Set() })
+
+  // Load per-file change status. Refetch when the agent finishes a turn (status → idle), on
+  // refresh, and when switching sessions — so "what changed" tracks the agent's edits live.
+  const gitChanges = session.gitChanges
+  useEffect(() => {
+    let alive = true
+    gitChanges()
+      .then((r) => {
+        if (!alive) return
+        const files = new Map(r.changes.map((c) => [c.path, c.status] as const))
+        const dirs = new Set<string>()
+        for (const c of r.changes) {
+          let p = c.path
+          while (p.length > ROOT.length && p.lastIndexOf('/') > 0) {
+            p = p.slice(0, p.lastIndexOf('/'))
+            if (p.length >= ROOT.length) dirs.add(p)
+            else break
+          }
+        }
+        setChanges({ files, dirs })
+      })
+      .catch(() => alive && setChanges({ files: new Map(), dirs: new Set() }))
+    return () => {
+      alive = false
+    }
+  }, [gitChanges, sessionId, refreshKey, status])
 
   if (openPath) {
-    return <FileViewer session={session} path={openPath} onBack={() => setOpenPath(null)} />
+    return (
+      <ChangesContext.Provider value={changes}>
+        <FileViewer session={session} path={openPath} onBack={() => setOpenPath(null)} />
+      </ChangesContext.Provider>
+    )
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <span className="truncate font-mono text-xs text-muted-foreground">{ROOT}</span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => setRefreshKey((k) => k + 1)}
-          aria-label="Refresh files"
-        >
-          <RefreshCw className="size-3.5" />
-        </Button>
+    <ChangesContext.Provider value={changes}>
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <span className="truncate font-mono text-xs text-muted-foreground">{ROOT}</span>
+          <div className="flex items-center gap-2">
+            {changes.files.size > 0 && (
+              <span className="font-mono text-[0.7rem] text-muted-foreground">{changes.files.size} changed</span>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => {
+                dirCache.clear()
+                setRefreshKey((k) => k + 1)
+              }}
+              aria-label="Refresh files"
+            >
+              <RefreshCw className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-1.5">
+          <DirListing key={`${sessionId}:${refreshKey}`} sid={sessionId} session={session} path={ROOT} depth={0} onOpenFile={setOpenPath} />
+        </div>
       </div>
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-1.5">
-        <DirListing key={refreshKey} session={session} path={ROOT} depth={0} onOpenFile={setOpenPath} />
-      </div>
-    </div>
+    </ChangesContext.Provider>
   )
 }
 
 function DirListing({
+  sid,
   session,
   path,
   depth,
   onOpenFile,
 }: {
+  sid: string
   session: SessionApi
   path: string
   depth: number
   onOpenFile: (p: string) => void
 }) {
-  const [entries, setEntries] = useState<FileEntry[] | null>(null)
+  // listFiles is a stable useCallback in useSession, so keying the effect on it (not the whole
+  // `session` object) means poll-driven re-renders don't refetch. Seed from cache for no flash.
+  const listFiles = session.listFiles
+  const key = cacheKey(sid, path)
+  const [entries, setEntries] = useState<FileEntry[] | null>(() => dirCache.get(key) ?? null)
   const [error, setError] = useState(false)
 
   useEffect(() => {
+    const cached = dirCache.get(key)
+    if (cached) {
+      setEntries(cached)
+      return
+    }
     let alive = true
     setEntries(null)
     setError(false)
-    session
-      .listFiles(path)
+    listFiles(path)
       .then((files) => {
-        if (alive) setEntries(sortEntries(files))
+        if (!alive) return
+        const sorted = sortEntries(files)
+        dirCache.set(key, sorted)
+        setEntries(sorted)
       })
       .catch(() => {
         if (alive) setError(true)
@@ -84,7 +167,7 @@ function DirListing({
     return () => {
       alive = false
     }
-  }, [session, path])
+  }, [listFiles, key, path])
 
   if (error) {
     return (
@@ -110,40 +193,55 @@ function DirListing({
         entry.isDirectory ? (
           <DirNode
             key={entry.path}
+            sid={sid}
             session={session}
             entry={entry}
             depth={depth}
             onOpenFile={onOpenFile}
           />
         ) : (
-          <li key={entry.path}>
-            <RowButton depth={depth} onClick={() => onOpenFile(entry.path)}>
-              <span className="size-3.5 shrink-0" />
-              <File className="size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-              <span className="shrink-0 font-mono text-[0.65rem] text-muted-foreground/70">
-                {formatSize(entry.size)}
-              </span>
-            </RowButton>
-          </li>
+          <FileRow key={entry.path} entry={entry} depth={depth} onOpen={() => onOpenFile(entry.path)} />
         ),
       )}
     </ul>
   )
 }
 
+function FileRow({ entry, depth, onOpen }: { entry: FileEntry; depth: number; onOpen: () => void }) {
+  const changes = useContext(ChangesContext)
+  const status = changes.files.get(entry.path)
+  return (
+    <li>
+      <RowButton depth={depth} onClick={onOpen}>
+        <span className="size-3.5 shrink-0" />
+        <File className={cn('size-4 shrink-0 text-muted-foreground', status && 'text-foreground/80')} />
+        <span className={cn('min-w-0 flex-1 truncate', status && 'font-medium')}>{entry.name}</span>
+        {status ? (
+          <ChangeBadge status={status} />
+        ) : (
+          <span className="shrink-0 font-mono text-[0.65rem] text-muted-foreground/70">{formatSize(entry.size)}</span>
+        )}
+      </RowButton>
+    </li>
+  )
+}
+
 function DirNode({
+  sid,
   session,
   entry,
   depth,
   onOpenFile,
 }: {
+  sid: string
   session: SessionApi
   entry: FileEntry
   depth: number
   onOpenFile: (p: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const changes = useContext(ChangesContext)
+  const hasChanges = changes.dirs.has(entry.path)
   return (
     <li>
       <RowButton depth={depth} onClick={() => setOpen((o) => !o)}>
@@ -159,9 +257,10 @@ function DirNode({
           <Folder className="size-4 shrink-0 text-primary" />
         )}
         <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+        {hasChanges && <span className="size-1.5 shrink-0 rounded-full bg-amber-500" title="Contains changes" />}
       </RowButton>
       {open && (
-        <DirListing session={session} path={entry.path} depth={depth + 1} onOpenFile={onOpenFile} />
+        <DirListing sid={sid} session={session} path={entry.path} depth={depth + 1} onOpenFile={onOpenFile} />
       )}
     </li>
   )
@@ -219,7 +318,13 @@ function FileViewer({
   path: string
   onBack: () => void
 }) {
+  const changes = useContext(ChangesContext)
+  const status = changes.files.get(path)
+  const isChanged = !!status && status !== 'D'
+  // Changed files open on their diff by default (that's what the user came to see); toggle to raw.
+  const [mode, setMode] = useState<'diff' | 'file'>(isChanged ? 'diff' : 'file')
   const [content, setContent] = useState<string | null>(null)
+  const [diff, setDiff] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
@@ -227,24 +332,20 @@ function FileViewer({
     let alive = true
     setLoading(true)
     setError(false)
-    setContent(null)
-    session
-      .readFile(path)
-      .then((text) => {
-        if (!alive) return
-        if (text === null) setError(true)
-        else setContent(text)
-        setLoading(false)
-      })
-      .catch(() => {
-        if (!alive) return
-        setError(true)
-        setLoading(false)
-      })
+    const load =
+      mode === 'diff'
+        ? session.gitDiff(path).then((r) => setDiff(r.diff))
+        : session.readFile(path).then((text) => {
+            if (text === null) setError(true)
+            else setContent(text)
+          })
+    load
+      .catch(() => alive && setError(true))
+      .finally(() => alive && setLoading(false))
     return () => {
       alive = false
     }
-  }, [session, path])
+  }, [session, path, mode])
 
   const name = path.split('/').filter(Boolean).pop() ?? path
 
@@ -255,9 +356,28 @@ function FileViewer({
           <ArrowLeft className="size-3.5" />
         </Button>
         <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate font-mono text-xs text-foreground" title={path}>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground" title={path}>
           {name}
         </span>
+        {status && <ChangeBadge status={status} />}
+        {isChanged && (
+          <div className="flex shrink-0 items-center rounded-md bg-muted p-0.5 text-[0.7rem]">
+            <button
+              type="button"
+              onClick={() => setMode('diff')}
+              className={cn('rounded px-1.5 py-0.5', mode === 'diff' ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground')}
+            >
+              Diff
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('file')}
+              className={cn('rounded px-1.5 py-0.5', mode === 'file' ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground')}
+            >
+              File
+            </button>
+          </div>
+        )}
       </div>
       <div className="scrollbar-thin min-h-0 flex-1 overflow-auto p-3">
         {loading ? (
@@ -268,6 +388,12 @@ function FileViewer({
           <div className="flex items-center gap-2 text-xs text-destructive">
             <AlertCircle className="size-3.5" /> This file could not be read.
           </div>
+        ) : mode === 'diff' ? (
+          diff && diff.trim() ? (
+            <DiffView diff={diff} maxHeight={600} />
+          ) : (
+            <div className="text-xs text-muted-foreground">No diff vs the last commit.</div>
+          )
         ) : content === '' ? (
           <div className="text-xs text-muted-foreground">This file is empty.</div>
         ) : (
