@@ -62,9 +62,18 @@ const UNIFIED_FALLBACK: ModelInfo[] = [
   { id: 'openai/gpt-5.6-luna', label: 'gpt-5.6-luna · unified billing', provider: 'cloudflare', inputPerM: 0.1, outputPerM: 0.6 },
   { id: 'openai/gpt-5.1', label: 'gpt-5.1 · unified billing', provider: 'cloudflare', inputPerM: 1.25, outputPerM: 10 },
   { id: 'openai/gpt-4.1-mini', label: 'gpt-4.1-mini · unified billing', provider: 'cloudflare', inputPerM: 0.4, outputPerM: 1.6 },
-  { id: 'anthropic/claude-sonnet-4.5', label: 'claude-sonnet-4.5 · unified billing', provider: 'cloudflare', inputPerM: 3, outputPerM: 15 },
-  { id: 'anthropic/claude-haiku-4.5', label: 'claude-haiku-4.5 · unified billing', provider: 'cloudflare', inputPerM: 1, outputPerM: 5 },
+  { id: 'anthropic/claude-sonnet-4-6', label: 'claude-sonnet-4-6 · unified billing', provider: 'cloudflare', inputPerM: 3, outputPerM: 15 },
+  { id: 'anthropic/claude-haiku-4-5', label: 'claude-haiku-4-5 · unified billing', provider: 'cloudflare', inputPerM: 1, outputPerM: 5 },
 ]
+
+/** Gateway catalog ids are not always callable as listed: anthropic publishes dotted versions
+ *  (claude-sonnet-4.6) but only accepts dashed ones (claude-sonnet-4-6). Verified by probing both
+ *  forms against /compat/chat/completions. Other families pass through untouched. */
+export function normalizeUnifiedId(id: string): string {
+  if (!id.startsWith('anthropic/')) return id
+  const [, ...rest] = id.split('/')
+  return `anthropic/${rest.join('/').replace(/(\d)\.(\d)/g, '$1-$2')}`
+}
 
 /** Live unified-billing catalog from the gateway's OpenAI-compatible /models list, filtered to
  *  chat models from providers Cloudflare bills on the user's behalf. Empty array on any failure. */
@@ -75,7 +84,13 @@ async function fetchUnifiedCatalog(acct: string, token: string, gatewayId: strin
       headers: { 'cf-aig-authorization': `Bearer ${token}` },
     }).then((r) => r.json())) as { data?: Array<{ id?: string; owned_by?: string; cost_in?: number; cost_out?: number }> }
     if (!Array.isArray(res.data)) return []
-    const UNIFIED_OWNERS = new Set(['openai', 'anthropic', 'google-ai-studio', 'xai', 'groq'])
+    // Probed against this gateway on 2026-08-20 with a keyless cf-aig-authorization call per
+    // family: ONLY these owners answer without a provider key of your own. google-ai-studio,
+    // deepseek, mistral, grok/xai, groq, cerebras and openrouter all return 401/400 "invalid API
+    // key" style errors, which read like an app bug when the picker offers them as "unified
+    // billing". Listing a model we cannot actually call is the dishonesty this manifest work
+    // exists to remove, so they stay out until BYOK-per-provider is a real feature.
+    const UNIFIED_OWNERS = new Set(['openai', 'anthropic', 'workers-ai', 'moonshot'])
     // Non-chat / specialized / duplicate variants that shouldn't clutter a coding-model picker.
     const EXCLUDE = /(:batch|embed|whisper|tts|dall|image|imagen|realtime|moderation|audio|transcribe|rerank|robotics|live|translate|omni|-vision|guard|banana|-search|lyria|veo|deep-research|computer-use|clip|learnlm|aqa|-\d{8}$)/i
     return res.data
@@ -87,8 +102,11 @@ async function fetchUnifiedCatalog(acct: string, token: string, gatewayId: strin
         return !EXCLUDE.test(m.id)
       })
       .map((m) => ({
-        id: m.id!,
-        label: `${m.id!.split('/').pop()} · unified billing`,
+        // The catalog lists anthropic ids with dotted versions (claude-sonnet-4.6) but
+        // chat/completions only accepts the dashed form and 404s on the dotted one
+        // ("Did you mean claude-sonnet-4-6?"). Normalize so a pick from the picker actually runs.
+        id: normalizeUnifiedId(m.id!),
+        label: `${normalizeUnifiedId(m.id!).split('/').pop()} · unified billing`,
         provider: 'cloudflare',
         inputPerM: (m.cost_in ?? 0) * 1_000_000,
         outputPerM: (m.cost_out ?? 0) * 1_000_000,

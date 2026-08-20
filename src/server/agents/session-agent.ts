@@ -398,11 +398,33 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       const branch = cfg.source.branch ? `-b ${cfg.source.branch}` : ''
       // Clone with the token in the URL, then IMMEDIATELY reset the remote to the clean URL so the
       // PAT never persists in .git/config (it would leak via gitStatus, exports, and R2 backups).
-      await sandbox
-        .exec(`sh -lc 'cd /workspace && git clone --depth 50 ${branch} ${auth}.git . >/tmp/dw-clone.log 2>&1; git remote set-url origin ${url}.git 2>/dev/null; tail -2 /tmp/dw-clone.log'`)
-        .catch((e) => {
-          console.error('[agents] clone failed', String((e as Error).message ?? e).replaceAll(conn.githubPat ?? '\u0000', '***'))
+      // The clone's own exit code is echoed into the log so a failure is DETECTED: previously the
+      // shell's status came from `tail`, so a failed clone looked like success and the user just
+      // got a mysteriously empty workspace with no explanation.
+      const scrub = (t: string) => t.replaceAll(conn.githubPat ?? '\u0000', '***')
+      const out = await sandbox
+        .exec(`sh -lc 'cd /workspace && (git clone --depth 50 ${branch} ${auth}.git . >/tmp/dw-clone.log 2>&1; echo "CLONE_EXIT:$?" >>/tmp/dw-clone.log); git remote set-url origin ${url}.git 2>/dev/null; tail -6 /tmp/dw-clone.log'`)
+        .then((r) => String((r as { stdout?: string }).stdout ?? ''))
+        .catch((e) => `CLONE_EXIT:1\n${String((e as Error).message ?? e)}`)
+      if (!/CLONE_EXIT:0\b/.test(out)) {
+        const detail = scrub(out).replace(/CLONE_EXIT:\d+/g, '').trim().slice(0, 600) || 'no output'
+        console.error('[agents] clone failed', detail)
+        // Surface it in the transcript instead of leaving an empty workspace unexplained. Private
+        // repos need a token with CONTENTS read access to that repo (Settings -> Git).
+        const hint = /not found|Authentication failed|could not read Username|403/i.test(detail)
+          ? ' For a private repo, add a GitHub token with Contents: Read for that repository in Settings -> Git, then create the session again.'
+          : ''
+        const id = `clone-${Date.now()}`
+        const message = `Could not clone ${url}. git said: ${detail}${hint}`
+        this.emit({
+          t: 'turn.start',
+          turn: {
+            id, role: 'assistant', createdAt: Date.now(), status: 'error', completedAt: Date.now(),
+            error: { name: 'clone_failed', message },
+            parts: [{ kind: 'error', id: `${id}:e`, name: 'Clone failed', message }],
+          },
         })
+      }
     }
 
     // Repo cloned (or intentionally blank) — now inject the Agents context block. Idempotent.

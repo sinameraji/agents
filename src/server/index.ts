@@ -140,11 +140,35 @@ app.all('/aig/:sid/*', async (c) => {
   if (ct) headers['content-type'] = ct
   const accept = c.req.header('accept')
   if (accept) headers.accept = accept
-  return fetch(`https://gateway.ai.cloudflare.com/v1/${auth.accountId}/${auth.gatewayId}/${rest}`, {
+  const upstream = await fetch(`https://gateway.ai.cloudflare.com/v1/${auth.accountId}/${auth.gatewayId}/${rest}`, {
     method: c.req.method,
     headers,
     body: c.req.raw.body,
   })
+  // Unified billing egresses from whichever Cloudflare colo serves the request, and some vendors
+  // geo-block their own supported-country list (OpenAI 403s from HKG, for example). The raw
+  // "Country, region, or territory not supported" reads like a broken key, so name the real cause
+  // and the edge it came from; other models on the same gateway keep working.
+  if (upstream.status === 403) {
+    const text = await upstream.text()
+    if (/country,?\s*region,?\s*or territory/i.test(text)) {
+      const colo = (upstream.headers.get('cf-ray') ?? '').split('-')[1] || 'this'
+      const message = `This model's provider refused the request from Cloudflare's ${colo} edge because it does not serve that region. Your credits and key are fine. Pick a model from another provider (Workers AI and Anthropic are unaffected) or retry from a different network.`
+      return c.json({ error: { message, type: 'region_not_supported', code: 'unsupported_country_region_territory', upstream: text.slice(0, 300) } }, 403)
+    }
+    return c.newResponse(text, 403, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' })
+  }
+  // Unified billing enforces its own throughput ceiling; the raw "Wholesale rate limit exceeded"
+  // says nothing about what to do next.
+  if (upstream.status === 402 || upstream.status === 429) {
+    const text = await upstream.text()
+    if (/wholesale/i.test(text)) {
+      const message = 'Cloudflare unified billing is rate limiting this account right now (wholesale limit). Wait a moment and retry, or switch to a Workers AI model, which is billed directly and not subject to this limit.'
+      return c.json({ error: { message, type: 'wholesale_rate_limited', upstream: text.slice(0, 200) } }, 429)
+    }
+    return c.newResponse(text, upstream.status as 402 | 429, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' })
+  }
+  return upstream
 })
 
 // --- api ------------------------------------------------------------------------------------
@@ -188,6 +212,7 @@ app.use('/agents/*', requireMember)
 
 // Admin-only roster management (each route re-verifies the caller's admin role server-side).
 registerOrgRoutes(app)
+
 
 // Admin-only custom-domain onboarding wizard (zone create → nameservers → attach).
 registerDomainRoutes(app)

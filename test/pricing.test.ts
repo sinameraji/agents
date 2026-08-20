@@ -70,3 +70,18 @@ describe('nextTurnTokens', () => {
     expect(nextTurnTokens({ recentOutputTokens: [100, 100, 101] }).output).toBe(100)
   })
 })
+
+describe('normalizeUnifiedId', () => {
+  it('dashes anthropic version numbers (the catalog lists dots, the API rejects them)', async () => {
+    const { normalizeUnifiedId } = await import('../src/server/api/models')
+    expect(normalizeUnifiedId('anthropic/claude-sonnet-4.6')).toBe('anthropic/claude-sonnet-4-6')
+    expect(normalizeUnifiedId('anthropic/claude-haiku-4.5')).toBe('anthropic/claude-haiku-4-5')
+    expect(normalizeUnifiedId('anthropic/claude-opus-5')).toBe('anthropic/claude-opus-5')
+  })
+  it('leaves every other family untouched', async () => {
+    const { normalizeUnifiedId } = await import('../src/server/api/models')
+    expect(normalizeUnifiedId('openai/gpt-5.6-luna')).toBe('openai/gpt-5.6-luna')
+    expect(normalizeUnifiedId('workers-ai/@cf/moonshotai/kimi-k2.7-code')).toBe('workers-ai/@cf/moonshotai/kimi-k2.7-code')
+    expect(normalizeUnifiedId('moonshotai/kimi-k3')).toBe('moonshotai/kimi-k3')
+  })
+})
