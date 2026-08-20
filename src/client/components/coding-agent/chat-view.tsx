@@ -344,6 +344,7 @@ export function ChatView({ session }: { session: SessionApi }) {
           listFiles={listWorkspaceFiles}
           onCommandMenuOpen={fetchHarnessCommands}
           allowAttachments={caps.promptCapabilities.fileAttach}
+          liveSteer={caps.steering === 'live'}
           commands={(() => {
             // Mode commands only exist where the harness has more than one real mode.
             const modeCommands =

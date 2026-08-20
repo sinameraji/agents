@@ -46,6 +46,7 @@ export function Composer({
   busy,
   onSteer,
   allowAttachments = true,
+  liveSteer = false,
 }: {
   onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   sessionName: string
@@ -59,6 +60,9 @@ export function Composer({
   onSteer?: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   /** When false, the attach button and drag/drop uploads are hidden (harness can't take them). */
   allowAttachments?: boolean
+  /** From the harness capability manifest: true = the harness injects steering mid-turn
+   *  without aborting; false = the fallback (stop, then send) — the hint must not overpromise. */
+  liveSteer?: boolean
 }) {
   const [text, setText] = useState('')
   const [pasted, setPasted] = useState<PastedBlock[]>([])
@@ -436,7 +440,7 @@ export function Composer({
         </div>
         <p className="mt-1.5 px-1 text-center text-[0.7rem] text-muted-foreground/70">
           {busy
-            ? 'Enter queues · ⌥ Enter interrupts & steers · Shift + Enter for a new line'
+            ? `Enter queues · ⌥ Enter ${liveSteer ? 'steers without stopping' : 'stops & sends'} · Shift + Enter for a new line`
             : 'Enter to send · Shift + Enter for a new line'}
         </p>
       </div>
