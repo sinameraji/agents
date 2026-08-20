@@ -391,6 +391,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
 
     const cfg = this.config()
+    // A failed clone must leave /workspace EMPTY: git refuses to clone into a non-empty directory,
+    // so writing AGENTS.md here would make every later retry fail with a second, misleading error
+    // ("destination path '.' already exists") even after the token is fixed.
+    let cloneFailed = false
     if (cfg.source.kind === 'github') {
       const conn = await this.connections()
       const url = cfg.source.url.replace(/\.git$/, '').replace(/\/$/, '')
@@ -406,7 +410,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         .exec(`sh -lc 'cd /workspace && (git clone --depth 50 ${branch} ${auth}.git . >/tmp/dw-clone.log 2>&1; echo "CLONE_EXIT:$?" >>/tmp/dw-clone.log); git remote set-url origin ${url}.git 2>/dev/null; tail -6 /tmp/dw-clone.log'`)
         .then((r) => String((r as { stdout?: string }).stdout ?? ''))
         .catch((e) => `CLONE_EXIT:1\n${String((e as Error).message ?? e)}`)
-      if (!/CLONE_EXIT:0\b/.test(out)) {
+      cloneFailed = !/CLONE_EXIT:0\b/.test(out)
+      if (cloneFailed) {
         const detail = scrub(out).replace(/CLONE_EXIT:\d+/g, '').trim().slice(0, 600) || 'no output'
         console.error('[agents] clone failed', detail)
         // Surface it in the transcript instead of leaving an empty workspace unexplained. Private
@@ -428,6 +433,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
 
     // Repo cloned (or intentionally blank) — now inject the Agents context block. Idempotent.
+    if (cloneFailed) return
     await this.ensureAgentContext(sandbox)
   }
 
