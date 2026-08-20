@@ -41,6 +41,12 @@ const server = createServer(async (req, res) => {
       session.prompt(text)
       return send(200, { ok: true })
     }
+    if (req.method === 'POST' && url === '/steer') {
+      const { text } = JSON.parse(await body(req)) as { text: string }
+      if (!session) return send(400, { error: 'not started' })
+      // {ok:false, reason:'unsupported'|'idle'|…} tells the caller to fall back to abort+prompt.
+      return send(200, await session.steer(text))
+    }
     if (req.method === 'POST' && url === '/command') {
       const { name, args } = JSON.parse(await body(req)) as { name: string; args?: Record<string, unknown> }
       if (!session) return send(400, { error: 'not started' })
