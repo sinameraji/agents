@@ -77,6 +77,15 @@ the "default" alias would make any provider work keyless - that is the real unlo
 Wholesale rate limits surface as 402/429; provider geo-blocks as 403 (depends on the CF colo the
 request egresses from: HKG is blocked by OpenAI, ICN/ORD/KUL worked). Both now explained by /aig.
 
+## KNOWN SMALL ISSUES
+- Switching models mid-session on OpenCode can return "container is not listening on 10.0.0.1:4096"
+  once: ensureOpencode waits for the OLD process to die but not for the NEW one to bind. Retrying the
+  prompt works. Fix: poll the opencode port after restart before prompting.
+- Sessions created before 2026-08-20 keep whatever region they were placed in; a session behind the
+  HKG edge cannot use OpenAI models. Remedy is a new session (now pinned via locationHintForCountry).
+- Sidebar shows region "IAD1" for every session; it is hardcoded in SessionAgent.init and is not
+  the real placement. Cosmetic but misleading.
+
 ## LEFT AFTER THAT (roadmap tail)
 - MID-SESSION MODEL SWITCH SHIPPED for bridges (restart-with-resume; model rides every /prompt;
   manifest modelSwitch=restart for pi/kimiflare/aisdk). Live-verified on kimiflare (switch to K3
