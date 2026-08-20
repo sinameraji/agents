@@ -409,6 +409,7 @@ export function ChatView({ session }: { session: SessionApi }) {
             status={session.status}
             phase={session.phase}
             phaseLog={session.phaseLog}
+            phaseSince={session.phaseSince}
             onPermissionReply={(id, reply, note) => void session.respondPermission(id, reply, note)}
           />
         </div>

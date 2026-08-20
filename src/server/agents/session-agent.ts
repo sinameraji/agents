@@ -81,6 +81,9 @@ interface SessionAgentState {
   /** Steps already finished, oldest first, so the UI can show provisioning as progress rather
    *  than a single label that keeps changing. Capped: this is a status line, not a log file. */
   phaseLog?: string[]
+  /** When the current phase started, so the UI can show elapsed seconds. A boot step with no
+   *  clock is indistinguishable from a wedged one, which is precisely the complaint. */
+  phaseSince?: number
 }
 
 const BRIDGE_HASH = (() => {
@@ -167,6 +170,15 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   onStart() {
     this.sql`CREATE TABLE IF NOT EXISTS turns (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, data_json TEXT NOT NULL)`
     this.sql`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`
+    // A phase only ever means something while the warmUp that set it is still running IN THIS
+    // INSTANCE. Synced state is persisted, so a DO that hibernated or was evicted mid-clone wakes
+    // holding a phase nothing will ever advance — the user sees "Cloning …" spinning next to an
+    // Idle header, forever. Any phase seen at startup is therefore stale by definition: drop it,
+    // and if provisioning never actually finished, run it again so the session self-heals.
+    if (this.state.phase) this.setState({ ...this.state, phase: undefined, phaseSince: undefined })
+    if (this.getKv<SessionConfig | null>('config', null) && !this.getKv('workspaceReady', false)) {
+      void this.warmUp()
+    }
   }
 
   private hydrate() {
@@ -257,7 +269,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     if (this.state.phase === phase) return
     const done = this.state.phase && this.state.phase !== phase ? this.state.phase : null
     const phaseLog = done ? [...(this.state.phaseLog ?? []), done].slice(-5) : this.state.phaseLog
-    this.setState({ ...this.state, phase, phaseLog })
+    this.setState({ ...this.state, phase, phaseLog, phaseSince: phase ? Date.now() : undefined })
   }
 
   /** Provisioning starts the moment the session exists, not when the first message arrives:
@@ -273,6 +285,16 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       this.setPhase('Workspace ready')
     } catch (e) {
       console.error('[agents] warmup failed', e)
+      const id = `warm-${Date.now()}`
+      const message = `Setting up this session did not finish: ${(e as Error).message}. Send a message to try again, or create a new session.`
+      this.emit({
+        t: 'turn.start',
+        turn: {
+          id, role: 'assistant', createdAt: Date.now(), status: 'error', completedAt: Date.now(),
+          error: { name: 'warmup_failed', message },
+          parts: [{ kind: 'error', id: `${id}:e`, name: 'Setup failed', message }],
+        },
+      })
     } finally {
       // Never clobber a turn that started while we were warming.
       if (this.state.status === 'booting') this.setStatus('idle')
@@ -420,7 +442,14 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
    *  repo, or opening Files mid-boot, safe. */
   private async ensureWorkspace(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
     if (!this.hydrating) {
-      this.hydrating = this.hydrateWorkspace(sandbox).finally(() => {
+      this.hydrating = Promise.race([
+        this.hydrateWorkspace(sandbox),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Workspace setup timed out')), 200_000),
+        ),
+      ]).finally(() => {
+        // Cleared either way: a failed attempt must leave the next caller free to retry rather
+        // than awaiting a promise that already lost.
         this.hydrating = null
       })
     }
@@ -428,6 +457,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   }
 
   private async hydrateWorkspace(sandbox: ReturnType<typeof getSandbox>): Promise<void> {
+    this.setPhase('Starting your sandbox')
+    await sandbox.exec("sh -lc 'echo up'", { timeout: 180_000 }).catch(() => null)
     await this.ensureGitCredentials(sandbox)
 
     // Hydrate (restore/clone) BEFORE writing anything into /workspace. Writing AGENTS.md first
@@ -439,6 +470,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       .catch(() => false)
     if (!empty) {
       await this.ensureAgentContext(sandbox)
+      this.putKv('workspaceReady', true)
       return
     }
 
@@ -472,7 +504,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       this.setPhase(`Cloning ${url.replace(/^https?:\/\/(www\.)?github\.com\//, '')}`)
       const scrub = (t: string) => t.replaceAll(conn.githubPat ?? '\u0000', '***')
       const out = await sandbox
-        .exec(`sh -lc 'cd /workspace && (git clone --depth 50 ${branch} ${auth}.git . >/tmp/dw-clone.log 2>&1; echo "CLONE_EXIT:$?" >>/tmp/dw-clone.log); git remote set-url origin ${url}.git 2>/dev/null; tail -6 /tmp/dw-clone.log'`)
+        .exec(
+          `sh -lc 'cd /workspace && (timeout 150 git clone --depth 50 ${branch} ${auth}.git . >/tmp/dw-clone.log 2>&1; echo "CLONE_EXIT:$?" >>/tmp/dw-clone.log); git remote set-url origin ${url}.git 2>/dev/null; tail -6 /tmp/dw-clone.log'`,
+          { timeout: 170_000 },
+        )
         .then((r) => String((r as { stdout?: string }).stdout ?? ''))
         .catch((e) => `CLONE_EXIT:1\n${String((e as Error).message ?? e)}`)
       cloneFailed = !/CLONE_EXIT:0\b/.test(out)
@@ -500,6 +535,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // Repo cloned (or intentionally blank) — now inject the Agents context block. Idempotent.
     if (cloneFailed) return
     await this.ensureAgentContext(sandbox)
+    this.putKv('workspaceReady', true)
   }
 
   /** Copy uploaded files from R2 into the sandbox at /workspace/uploads/. */

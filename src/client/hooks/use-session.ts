@@ -35,6 +35,7 @@ interface SyncState {
   phase?: string
   /** Provisioning steps already finished. */
   phaseLog?: string[]
+  phaseSince?: number
 }
 
 type Action = { type: 'hydrate'; state: TranscriptState } | { type: 'event'; event: AgentEvent }
@@ -55,6 +56,7 @@ export interface SessionApi {
   phase?: string
   /** Provisioning steps already finished, for the progress list. */
   phaseLog?: string[]
+  phaseSince?: number
   turns: NormTurn[]
   todos: NormTodo[]
   permissions: NormPermission[]
@@ -272,6 +274,7 @@ export function useSession(sessionId: string): SessionApi {
     agents: sync.agents ?? [],
     phase: sync.phase,
     phaseLog: sync.phaseLog,
+    phaseSince: sync.phaseSince,
     turns: transcript.turns,
     todos: transcript.todos,
     permissions: transcript.permissions,

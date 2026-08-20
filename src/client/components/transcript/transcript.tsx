@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type {
   NormPermission,
   NormTurn,
@@ -29,6 +30,7 @@ export function Transcript({
   status,
   phase,
   phaseLog,
+  phaseSince,
   onPermissionReply,
 }: {
   turns: NormTurn[]
@@ -39,6 +41,7 @@ export function Transcript({
   phase?: string
   /** Provisioning steps already finished, oldest first. */
   phaseLog?: string[]
+  phaseSince?: number
   onPermissionReply?: (id: string, reply: PermissionReply, note?: string) => void
 }) {
   const working = status === 'booting' || status === 'busy'
@@ -63,6 +66,16 @@ export function Transcript({
       ),
   )
 
+  // A step with no clock cannot be told apart from a wedged one. Tick only while a phase is
+  // live, and only surface it once the wait is long enough to be worth explaining.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!phase) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [phase])
+  const elapsed = phaseSince ? Math.max(0, Math.round((now - phaseSince) / 1000)) : 0
+
   // Provisioning is the one moment where infra detail helps: a cold start pulls an image and
   // clones a repo before anything can happen, and silence reads as breakage.
   const steps = [...(phaseLog ?? []), ...(phase ? [phase] : [])]
@@ -80,6 +93,9 @@ export function Transcript({
                   <Check className="size-3.5 shrink-0 text-primary" />
                 )}
                 <span className={current ? 'text-foreground' : 'text-muted-foreground'}>{step}</span>
+                {current && elapsed >= 5 && (
+                  <span className="text-muted-foreground tabular-nums">{elapsed}s</span>
+                )}
               </li>
             )
           })}
