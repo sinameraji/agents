@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BridgeSession } from '../bridge/src/session'
-import type { AdapterSink, HarnessAdapter, StartConfig } from '../bridge/src/adapters/types'
+import { buildUserContent } from '../bridge/src/adapters/aisdk'
+import type { AdapterSink, HarnessAdapter, PromptImage, StartConfig } from '../bridge/src/adapters/types'
 
 /**
  * A controllable in-memory adapter. Tests drive the AdapterSink that BridgeSession hands to
@@ -10,15 +11,17 @@ class FakeAdapter implements HarnessAdapter {
   sink: AdapterSink | null = null
   prompts: string[] = []
   modes: Array<StartConfig['mode'] | undefined> = []
+  images: Array<PromptImage[] | undefined> = []
   aborts = 0
   resolved: Array<{ id: string; reply: string; note?: string }> = []
   /** What prompt() returns; never settles by default (turn stays open until sink.done). */
   promptResult: Promise<void> = new Promise(() => {})
 
   async start(_cfg: StartConfig): Promise<void> {}
-  prompt(text: string, sink: AdapterSink, mode?: StartConfig['mode']): Promise<void> {
+  prompt(text: string, sink: AdapterSink, mode?: StartConfig['mode'], images?: PromptImage[]): Promise<void> {
     this.prompts.push(text)
     this.modes.push(mode)
+    this.images.push(images)
     this.sink = sink
     return this.promptResult
   }
@@ -73,6 +76,17 @@ describe('BridgeSession', () => {
     expect(assistant.role).toBe('assistant')
     expect(assistant.status).toBe('streaming')
     expect(assistant.parts).toEqual([])
+  })
+
+  it('prompt() forwards inline images to the adapter untouched', () => {
+    const { session, adapter } = makeSession()
+    const images: PromptImage[] = [{ name: 'shot.png', dataUrl: 'data:image/png;base64,AAAA' }]
+    session.prompt('what is in this screenshot?', 'build', images)
+    expect(adapter.images).toEqual([images])
+    // and their absence stays absent (no [] materialized for text-only prompts)
+    sinkOf(adapter).done()
+    session.prompt('plain text')
+    expect(adapter.images).toEqual([images, undefined])
   })
 
   it('prompt() forwards the per-prompt mode to the adapter (mid-session switches, no restart)', () => {
@@ -238,6 +252,27 @@ describe('BridgeSession', () => {
     expect(session.turns[3].status).toBe('complete')
     const second = session.turns[3].parts[0]
     if (second.kind === 'text') expect(second.text).toBe('two')
+  })
+})
+
+describe('aisdk buildUserContent', () => {
+  it('stays a plain string without images (identical wire shape to before)', () => {
+    expect(buildUserContent('fix the bug')).toBe('fix the bug')
+    expect(buildUserContent('fix the bug', [])).toBe('fix the bug')
+  })
+
+  it('builds a multimodal part array: text first, then file parts with data URLs', () => {
+    const content = buildUserContent('describe this', [
+      { name: 'shot.png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' },
+      { name: 'photo.jpg', dataUrl: 'data:image/jpeg;base64,/9j/4AAQ' },
+    ])
+    expect(content).toEqual([
+      { type: 'text', text: 'describe this' },
+      // AI SDK v7 FilePart: bare data-URL string as `data`, mediaType from the URL header
+      // (verified against ai@7 convertToLanguageModelV4FilePart, which splits data: URLs).
+      { type: 'file', data: 'data:image/png;base64,iVBORw0KGgo=', mediaType: 'image/png', filename: 'shot.png' },
+      { type: 'file', data: 'data:image/jpeg;base64,/9j/4AAQ', mediaType: 'image/jpeg', filename: 'photo.jpg' },
+    ])
   })
 })
 

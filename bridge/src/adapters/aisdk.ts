@@ -6,13 +6,14 @@
 import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { generateText, streamText, tool, stepCountIs, type ModelMessage } from 'ai'
+import { generateText, streamText, tool, stepCountIs, type ModelMessage, type UserContent } from 'ai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
-import type { AdapterSink, HarnessAdapter, StartConfig } from './types'
+import type { AdapterSink, HarnessAdapter, PromptImage, StartConfig } from './types'
 import type { NormToolState } from '../normalize'
 import { ApprovalBroker } from '~shared/approvals'
 import { isMutatingCommand } from '~shared/mutation-guard'
+import { mimeFromDataUrl } from '~shared/vision'
 
 /**
  * The mode gate every mutating tool runs first. Returns null when the tool may proceed, else the
@@ -40,6 +41,25 @@ export async function gateMutation(opts: {
 }
 
 const clip = (s: string, n = 120) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+
+/**
+ * The user message content for a prompt: plain text without images, a multimodal part array
+ * with them. AI SDK v7 file parts take a bare data-URL string as `data` (the SDK splits the
+ * header into base64 + mediaType itself); `type:'image'` is deprecated in v7, so images ride
+ * as `file` parts with an image mediaType. Exported for tests.
+ */
+export function buildUserContent(text: string, images?: PromptImage[]): UserContent {
+  if (!images?.length) return text
+  return [
+    { type: 'text', text },
+    ...images.map((i) => ({
+      type: 'file' as const,
+      data: i.dataUrl,
+      mediaType: mimeFromDataUrl(i.dataUrl),
+      filename: i.name,
+    })),
+  ]
+}
 
 function baseURL(cfg: StartConfig): { url: string; key: string; model: string; headers?: Record<string, string> } {
   switch (cfg.provider) {
@@ -112,10 +132,10 @@ export function createAiSdkAdapter(): HarnessAdapter {
         if (Array.isArray(parsed)) messages = parsed.slice(-80)
       } catch { /* fresh session */ }
     },
-    async prompt(text, sink: AdapterSink, promptMode) {
+    async prompt(text, sink: AdapterSink, promptMode, images) {
       const { url, key, model, headers } = baseURL(cfg)
       const provider = createOpenAICompatible({ name: cfg.provider, baseURL: url, apiKey: key, headers })
-      messages.push({ role: 'user', content: text })
+      messages.push({ role: 'user', content: buildUserContent(text, images) })
       controller = new AbortController()
 
       // Mid-session mode switches arrive per prompt; StartConfig.mode is only the boot-time value.

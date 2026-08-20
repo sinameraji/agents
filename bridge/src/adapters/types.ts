@@ -20,6 +20,14 @@ export interface StartConfig {
   }
 }
 
+/** An image riding along with a prompt, already inlined as a base64 data URL by the DO
+ *  (the mime lives in the data URL header). Only harnesses whose capability manifest says
+ *  `promptCapabilities.image` ever receive these. */
+export interface PromptImage {
+  name: string
+  dataUrl: string
+}
+
 /** The adapter reports normalized activity to the host via these callbacks. */
 export interface AdapterSink {
   /** Add or replace a part on the current assistant turn (keyed by part.id). */
@@ -37,8 +45,11 @@ export interface HarnessAdapter {
    * Begin a new assistant turn for `text`. Resolves when the turn is fully done.
    * `mode` is the session's CURRENT mode (mid-session switches arrive per prompt);
    * adapters fall back to StartConfig.mode when it is absent, and pi ignores it entirely.
+   * `images` (optional) are inline data URLs for vision models; adapters without an image
+   * lane (pi, kimiflare) simply ignore the parameter — the caps manifest already keeps
+   * images away from them.
    */
-  prompt(text: string, sink: AdapterSink, mode?: StartConfig['mode']): Promise<void>
+  prompt(text: string, sink: AdapterSink, mode?: StartConfig['mode'], images?: PromptImage[]): Promise<void>
   /**
    * Inject guidance into the RUNNING turn without aborting it (pi's `steer` RPC command).
    * Optional — leaving it undefined is the honest signal that the harness can only
