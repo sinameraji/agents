@@ -94,7 +94,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private emittedParts = new Map<string, string>()
   /** Question ids already declined this turn (poll re-lists until the server drops them). */
   private handledQuestions = new Set<string>()
-  /** Set when the OpenCode process was restarted (model switch / clear) — the next turn gets an honest context note. */
+  /** Set when the OpenCode process was restarted (model/mode switch, clear) — the next turn gets an honest context note. */
   private ocRestarted = false
   private cfAbort: AbortController | null = null
   /** Bumped by stop() and every new turn; in-flight poll loops exit when their captured value goes stale. */
@@ -697,13 +697,16 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       cfg.provider === 'cloudflare' && ownerHost
         ? { baseURL: `https://${ownerHost}/aig/${this.name}`, token: this.proxyToken() }
         : undefined
-    const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn, proxy)
+    const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn, this.state.mode, proxy)
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
     await this.ensureWorkspace(sandbox)
-    // Model changed since the server booted: kill it so createOpencode starts fresh with the
-    // rebuilt config (the custom provider's model map + per-model options only apply at start).
-    // Session history persists on the container disk, so the same sessionID resumes seamlessly.
-    if (this.getKv<boolean>('ocModelDirty', false)) {
+    // Model or mode changed since the server booted: kill it so createOpencode starts fresh with
+    // the rebuilt config (the custom provider's model map, per-model options AND the permission
+    // preset only apply at process start). Session history persists on the container disk, so the
+    // same sessionID resumes seamlessly. (ocModelDirty is the flag's pre-rename key; honor a
+    // pending one across the deploy.)
+    if (this.getKv<boolean>('ocConfigDirty', false) || this.getKv<boolean>('ocModelDirty', false)) {
+      this.putKv('ocConfigDirty', false)
       this.putKv('ocModelDirty', false)
       this.ocRestarted = true
       this.opencode = undefined
@@ -928,7 +931,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
       this.ocRestarted = false
       this.emit({
         t: 'part.upsert', turnId,
-        part: { kind: 'text', id: `${turnId}:ctx-note`, text: '_The harness was restarted (model switch or clear) — earlier conversation context may not carry over._' },
+        part: { kind: 'text', id: `${turnId}:ctx-note`, text: '_The harness was restarted (model or mode switch, or clear); earlier conversation context may not carry over._' },
       })
     }
 
@@ -1562,7 +1565,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // the on-disk histories the pi/aisdk adapters resume from.
     this.putKv('opencodeSessionId', null)
     this.opencodeSessionId = undefined
-    this.putKv('ocModelDirty', true) // force a fresh OpenCode process next turn
+    this.putKv('ocConfigDirty', true) // force a fresh OpenCode process next turn
     this.bridgeStarted = false
     try {
       const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
@@ -1577,7 +1580,13 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
 
   @callable()
   setMode(mode: SessionMode): { ok: true } {
+    const prev = this.state.mode
     this.setState({ ...this.state, mode })
+    // OpenCode only reads its permission preset at process start: a real mode change marks the
+    // process dirty so the next turn restarts it with the new preset (same on-disk session, so
+    // context carries over). Other harnesses take the mode per prompt, no restart needed.
+    const cfg = this.getKv<SessionConfig | null>('config', null)
+    if (mode !== prev && cfg?.harness === 'opencode') this.putKv('ocConfigDirty', true)
     return { ok: true }
   }
 
@@ -1590,7 +1599,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     // in its boot-time map ("languageModel is not a function"). Mark the process dirty so the next
     // turn restarts it with a rebuilt config — OpenCode persists sessions on disk, so the same
     // sessionID continues with context intact.
-    if (cfg.harness === 'opencode' && model !== cfg.model) this.putKv('ocModelDirty', true)
+    if (cfg.harness === 'opencode' && model !== cfg.model) this.putKv('ocConfigDirty', true)
     if (this.state.meta) this.setState({ ...this.state, meta: { ...this.state.meta, model } })
     void getAgentByName(this.env.UserAgent, cfg.owner).then((u) => u.upsertSessionSummary({ id: this.name, model }))
     return { ok: true }
