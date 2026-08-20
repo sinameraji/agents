@@ -10,7 +10,7 @@ import type {
   SessionStatus,
   TranscriptState,
 } from '~shared/agent'
-import type { Harness, Provider, SessionMode } from '~shared/protocol'
+import type { Harness, HarnessAgent, Provider, SessionMode } from '~shared/protocol'
 
 interface SessionMeta {
   id: string
@@ -29,6 +29,8 @@ interface SyncState {
   status: SessionStatus
   mode: SessionMode
   usage: { tokensIn: number; tokensOut: number; costUsd: number }
+  /** Named agents the running harness advertises. Absent until the harness has booted once. */
+  agents?: HarnessAgent[]
 }
 
 type Action = { type: 'hydrate'; state: TranscriptState } | { type: 'event'; event: AgentEvent }
@@ -43,11 +45,19 @@ export interface SessionApi {
   status: SessionStatus
   mode: SessionMode
   usage: SyncState['usage']
+  /** OpenCode's agent roster, empty until the harness has booted at least once. */
+  agents: HarnessAgent[]
   turns: NormTurn[]
   todos: NormTodo[]
   permissions: NormPermission[]
   connected: boolean
-  send: (text: string, attachments?: { key: string; name: string; size: number; mime?: string }[]) => Promise<void>
+  send: (
+    text: string,
+    attachments?: { key: string; name: string; size: number; mime?: string }[],
+    agent?: string,
+  ) => Promise<void>
+  /** Run a '!' line as a direct shell command (no model turn). OpenCode sessions only. */
+  runShell: (command: string) => Promise<string>
   /** Mid-turn steering: native (no abort) where the harness supports it, stop + re-prompt otherwise. */
   steer: (text: string, attachments?: { key: string; name: string; size: number; mime?: string }[]) => Promise<void>
   stop: () => Promise<void>
@@ -56,8 +66,8 @@ export interface SessionApi {
   respondPermission: (id: string, reply: PermissionReply, note?: string) => Promise<void>
   runCommand: (name: string) => Promise<string>
   bridgeCommand: (name: string) => Promise<string>
-  harnessCommands: () => Promise<{ name: string; description?: string }[]>
-  runCustomCommand: (name: string) => Promise<string>
+  harnessCommands: () => Promise<{ name: string; description?: string; takesArgs?: boolean }[]>
+  runCustomCommand: (name: string, args?: string) => Promise<string>
   rename: (name: string) => Promise<void>
   fork: () => Promise<{ id?: string; note: string }>
   gitStatus: () => Promise<{ repo: boolean; branch: string; dirty: number; remote: string | null; lastCommit: string | null }>
@@ -82,6 +92,7 @@ export function useSession(sessionId: string): SessionApi {
     status: 'idle',
     mode: 'build',
     usage: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
+    agents: [],
   })
   const [connected, setConnected] = useState(false)
 
@@ -126,7 +137,11 @@ export function useSession(sessionId: string): SessionApi {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
-  const send = useCallback(async (text: string, attachments?: { key: string; name: string; size: number; mime?: string }[]) => {
+  const send = useCallback(async (
+    text: string,
+    attachments?: { key: string; name: string; size: number; mime?: string }[],
+    agent?: string,
+  ) => {
     const messageId = `u-${crypto.randomUUID()}`
     // optimistic echo with the SAME id the server will use, so its turn.start replaces this
     dispatch({
@@ -142,7 +157,7 @@ export function useSession(sessionId: string): SessionApi {
         },
       },
     })
-    await agentRef.current.stub.sendMessage({ text, messageId, attachments })
+    await agentRef.current.stub.sendMessage({ text, messageId, attachments, agent })
   }, [])
 
   const steer = useCallback(async (text: string, attachments?: { key: string; name: string; size: number; mime?: string }[]) => {
@@ -181,11 +196,19 @@ export function useSession(sessionId: string): SessionApi {
     return r?.note ?? 'Done.'
   }, [])
   const harnessCommands = useCallback(async () => {
-    const r = (await agentRef.current.stub.harnessCommands()) as { commands: { name: string; description?: string }[] }
+    const r = (await agentRef.current.stub.harnessCommands()) as {
+      commands: { name: string; description?: string; takesArgs?: boolean }[]
+    }
     return r.commands
   }, [])
-  const runCustomCommand = useCallback(async (name: string) => {
-    const r = (await agentRef.current.stub.runCustomCommand(name)) as { note?: string }
+  const runCustomCommand = useCallback(async (name: string, args?: string) => {
+    const r = (await agentRef.current.stub.runCustomCommand(name, args ?? '')) as { note?: string }
+    return r?.note ?? 'Done.'
+  }, [])
+  const runShell = useCallback(async (command: string) => {
+    // No optimistic echo: the DO writes both the '!command' user turn and the terminal part, so
+    // a local one would duplicate. The round trip is a single RPC, not a model call.
+    const r = (await agentRef.current.stub.runShell(command)) as { note?: string }
     return r?.note ?? 'Done.'
   }, [])
   const bridgeCommand = useCallback(async (name: string) => {
@@ -238,11 +261,13 @@ export function useSession(sessionId: string): SessionApi {
     status: sync.status,
     mode: sync.mode,
     usage: sync.usage,
+    agents: sync.agents ?? [],
     turns: transcript.turns,
     todos: transcript.todos,
     permissions: transcript.permissions,
     connected,
     send,
+    runShell,
     steer,
     stop,
     setModel,

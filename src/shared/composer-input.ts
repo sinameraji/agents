@@ -40,7 +40,7 @@ export interface SlashInvocation {
  * commands (`:`, `.`, `-`, `_`).
  */
 export function parseSlashInvocation(text: string, known: readonly string[]): SlashInvocation | null {
-  const m = /^\/([A-Za-z0-9][\w.:-]*)(?:[ \t]+([\s\S]*))?$/.exec(text.trim())
+  const m = /^\/([A-Za-z0-9][\w.:-]*)(?:\s+([\s\S]*))?$/.exec(text.trim())
   if (!m) return null
   const name = m[1]
   if (!known.includes(name)) return null
