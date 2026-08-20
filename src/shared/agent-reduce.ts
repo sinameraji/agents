@@ -33,19 +33,24 @@ function patchActiveTurn(
   return next
 }
 
-/** A turn in a terminal status finalizes its dangling tool parts: a harness that died or was
- *  stopped mid-call never sends tool_execution_end, and a persisted "running" spinner on an
- *  idle session reads as a live process that isn't there. Streaming turns pass through. */
+/** A turn in a terminal status finalizes its dangling parts: a harness that died or was stopped
+ *  mid-call never sends tool_execution_end (or a final non-streaming text/reasoning upsert), and
+ *  a persisted "running" spinner or pulsing "Thinking" label on an idle session reads as a live
+ *  process that isn't there. Streaming turns pass through. */
 export function sweepDanglingTools(turn: NormTurn): NormTurn {
   if (turn.status === 'streaming') return turn
-  if (!turn.parts.some((p) => p.kind === 'tool' && (p.state.status === 'running' || p.state.status === 'pending'))) return turn
+  const danglingTool = (p: NormTurn['parts'][number]) =>
+    p.kind === 'tool' && (p.state.status === 'running' || p.state.status === 'pending')
+  const danglingStream = (p: NormTurn['parts'][number]) => (p.kind === 'text' || p.kind === 'reasoning') && p.streaming === true
+  if (!turn.parts.some((p) => danglingTool(p) || danglingStream(p))) return turn
   return {
     ...turn,
-    parts: turn.parts.map((p) =>
-      p.kind === 'tool' && (p.state.status === 'running' || p.state.status === 'pending')
-        ? { ...p, state: { ...p.state, status: 'error' as const, error: 'Interrupted — the turn ended before this call finished.' } }
-        : p,
-    ),
+    parts: turn.parts.map((p) => {
+      if (danglingTool(p) && p.kind === 'tool')
+        return { ...p, state: { ...p.state, status: 'error' as const, error: 'Interrupted — the turn ended before this call finished.' } }
+      if (danglingStream(p) && (p.kind === 'text' || p.kind === 'reasoning')) return { ...p, streaming: false }
+      return p
+    }),
   }
 }
 
