@@ -51,11 +51,15 @@ function hostRole(c: { req: { url: string }; env: unknown }): 'landing' | 'owner
 }
 
 // What this host IS (drives landing page vs app shell client-side).
-// The old dreamweav.com hosts carry nothing anymore — everything 308s to the new domain.
-// /aig is exempt so sandboxes booted before the cutover keep their broker URL working.
+// The old dreamweav.com hosts carry nothing anymore, and the bare/www company domain funnels
+// into the landing host — everything 308s to agents.insertcompanywebsite.com. /aig is exempt
+// so sandboxes booted before a cutover keep their broker URL working on any host.
 app.use('*', async (c, next) => {
   const u = new URL(c.req.url)
-  if (u.hostname.endsWith('dreamweav.com') && !u.pathname.startsWith('/aig/')) {
+  const host = u.hostname.toLowerCase()
+  const legacy = host.endsWith('dreamweav.com')
+  const bare = host === 'insertcompanywebsite.com' || host === 'www.insertcompanywebsite.com'
+  if ((legacy || bare) && !u.pathname.startsWith('/aig/')) {
     return c.redirect(`https://agents.insertcompanywebsite.com${u.pathname}${u.search}`, 308)
   }
   return next()
