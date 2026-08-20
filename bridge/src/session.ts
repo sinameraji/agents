@@ -3,12 +3,24 @@ import type { AdapterSink, HarnessAdapter, PromptImage, StartConfig } from './ad
 import { createAiSdkAdapter } from './adapters/aisdk'
 import { createPiAdapter } from './adapters/pi'
 import { createKimiflareAdapter } from './adapters/kimiflare'
+import { createKimiflareAcpAdapter } from './adapters/kimiflare-acp'
 
 export type Harness = 'aisdk' | 'pi' | 'kimiflare'
 
+/**
+ * DARK PILOT SWITCH — leave false.
+ *
+ * Flip to true to drive the `kimiflare` harness through ACP (kimiflare-acp.ts) instead of
+ * kimiflare's bespoke RPC. There is deliberately no UI, no env var and no protocol field for
+ * this: it is an in-code constant so the pilot cannot leak into a user's session by accident.
+ * Turning it on also requires the sandbox image to ship the `kimiflare-acp` bin, which npm
+ * `kimiflare@0.99.0` does not install. See docs/acp-pilot.md.
+ */
+const KIMIFLARE_VIA_ACP = false
+
 function makeAdapter(h: Harness): HarnessAdapter {
   if (h === 'pi') return createPiAdapter()
-  if (h === 'kimiflare') return createKimiflareAdapter()
+  if (h === 'kimiflare') return KIMIFLARE_VIA_ACP ? createKimiflareAcpAdapter() : createKimiflareAdapter()
   return createAiSdkAdapter()
 }
 
