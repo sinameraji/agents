@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useState } from 'react'
-import { Bot, Check, Copy, Download, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'lucide-react'
+import { Bot, Check, Copy, Download, FileText, GitBranch, Layers, MoreHorizontal, PanelRight, Square } from 'lucide-react'
 
 import type { SessionApi } from '@/hooks/use-session'
+import { transcriptToMarkdown } from '~shared/transcript-markdown'
 import { HARNESS_MARKS, PROVIDER_MARKS, PROVIDER_LABELS } from '../brand-marks'
 import { HARNESSES } from '~shared/protocol'
 import { harnessCaps } from '~shared/harness-caps'
@@ -47,7 +48,33 @@ function withPasted(text: string, pasted: PastedBlock[]): string {
   return text ? `${text}\n\n${blocks}` : blocks
 }
 
-/** The header "…" menu: stop the turn, copy the session link, download the workspace. */
+/** Build the transcript markdown from the already-loaded turns and hand it over as a download.
+ *  Entirely client-side: no server round trip. */
+function downloadTranscript(session: SessionApi) {
+  const md = transcriptToMarkdown({
+    title: session.meta?.name ?? 'Session',
+    harness: session.meta?.harness,
+    model: session.meta?.model,
+    turns: session.turns,
+  })
+  const slug =
+    (session.meta?.name ?? 'session')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'session'
+  const blob = new Blob([md], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${slug}-transcript.md`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** The header "…" menu: stop the turn, copy the session link, export the transcript, download the workspace. */
 function SessionOptionsMenu({ session, busy }: { session: SessionApi; busy: boolean }) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -109,6 +136,18 @@ function SessionOptionsMenu({ session, busy }: { session: SessionApi; busy: bool
           >
             {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5 text-muted-foreground" />}
             {copied ? 'Copied' : 'Copy session link'}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              downloadTranscript(session)
+            }}
+            className={item}
+          >
+            <FileText className="size-3.5 text-muted-foreground" />
+            Export transcript (.md)
           </button>
           <button
             type="button"
