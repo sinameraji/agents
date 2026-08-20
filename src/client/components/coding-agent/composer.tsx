@@ -45,6 +45,7 @@ export function Composer({
   onCommandMenuOpen,
   busy,
   onSteer,
+  allowAttachments = true,
 }: {
   onSend: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
   sessionName: string
@@ -56,6 +57,8 @@ export function Composer({
   /** While the agent runs a turn: Enter queues, and the steer control interrupts-and-sends. */
   busy?: boolean
   onSteer?: (text: string, pasted: PastedBlock[], attachments: UploadedAttachment[]) => void
+  /** When false, the attach button and drag/drop uploads are hidden (harness can't take them). */
+  allowAttachments?: boolean
 }) {
   const [text, setText] = useState('')
   const [pasted, setPasted] = useState<PastedBlock[]>([])
@@ -121,7 +124,7 @@ export function Composer({
   }
 
   const uploadSelected = async (files: File[]) => {
-    if (files.length === 0) return
+    if (!allowAttachments || files.length === 0) return
     setUploading(true)
     setUploadError(null)
     try {
@@ -142,6 +145,7 @@ export function Composer({
 
   const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
+    if (!allowAttachments) return
     dragDepth.current += 1
     setDragging(true)
   }
@@ -357,28 +361,32 @@ export function Composer({
           />
 
           <div className="flex flex-wrap items-center gap-1 px-1">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              tabIndex={-1}
-              aria-hidden="true"
-              onChange={handleFileInput}
-            />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={uploading ? 'Uploading files' : 'Attach file'}
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Paperclip className="size-4" />
-              )}
-            </Button>
+            {allowAttachments && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  onChange={handleFileInput}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={uploading ? 'Uploading files' : 'Attach file'}
+                  disabled={uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {uploading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Paperclip className="size-4" />
+                  )}
+                </Button>
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
