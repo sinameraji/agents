@@ -77,6 +77,9 @@ export interface NormTurn {
   completedAt?: number
   status: TurnStatus
   model?: { providerId?: string; modelId?: string }
+  /** Named harness agent that handled this turn, when it was not the harness default (OpenCode
+   *  build/plan/general or a custom `.opencode/agent/*`). Drives the turn-header label. */
+  agent?: string
   usage?: NormUsage
   error?: { name: string; message: string }
   parts: NormPart[]
