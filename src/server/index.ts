@@ -171,7 +171,7 @@ app.all('/aig/:sid/*', async (c) => {
         }
       }
       const colo = (upstream.headers.get('cf-ray') ?? '').split('-')[1] || 'this'
-      const message = `This model's provider refused the request from Cloudflare's ${colo} edge because it does not serve that region, and the fallback route failed too. Your credits and key are fine. Retry (the edge rotates, so the next attempt often succeeds) or pick a Workers AI or Anthropic model, which are unaffected.`
+      const message = `This model's provider refused the request from Cloudflare's ${colo} edge because it does not serve that region. Your credits and key are fine, and the model itself works. This session's sandbox sits behind that edge, so the reliable fix is to start a new session (new sandboxes are placed in a region the vendors serve). Workers AI and Anthropic models keep working in this one.`
       return c.json({ error: { message, type: 'region_not_supported', code: 'unsupported_country_region_territory', upstream: text.slice(0, 300) } }, 403)
     }
     return c.newResponse(text, 403, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' })
