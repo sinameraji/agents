@@ -66,7 +66,7 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
       <div
         className={
           'relative flex w-full flex-col rounded-2xl border border-border bg-card shadow-2xl ' +
-          (deploy ? 'max-w-lg overflow-hidden' : 'max-w-sm items-center gap-4 p-6')
+          (deploy ? 'max-h-[92vh] max-w-lg overflow-hidden' : 'max-w-sm items-center gap-4 p-6')
         }
       >
         <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close" className="absolute top-3 right-3 z-10 text-white/80 hover:text-white">
@@ -76,9 +76,13 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
         {deploy ? (
           <>
             {/* Visual hero: the brand at a glance */}
-            <img src="/og.png" alt="Agents. Your favorite coding model, harness, and provider in your browser." className="w-full" />
+            <img
+              src="/og.png"
+              alt="Agents. Your favorite coding model, harness, and provider in your browser."
+              className="max-h-[26vh] w-full shrink-0 object-cover"
+            />
 
-            <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto p-6">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
               <div>
                 <h2 className="text-base font-semibold">Run Agents. for your whole company</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -123,6 +127,9 @@ export function LoginDialog({ onClose, deploy }: { onClose: () => void; deploy?:
                 </p>
               </div>
 
+            </div>
+
+            <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-card p-4">
               <a
                 href={DEPLOY}
                 target="_blank"
