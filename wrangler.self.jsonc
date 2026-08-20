@@ -1,0 +1,114 @@
+// GENERATED FILE — do not edit by hand.
+// Produced by scripts/make-self-config.mjs from wrangler.jsonc + production overrides.
+// This is the maintainer's production config (worker `dreamweav`, custom domains, send_email).
+// Deploy with: npm run deploy:self
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dreamweav",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "containers": [
+    {
+      "class_name": "Sandbox",
+      "image": "./Dockerfile",
+      "instance_type": "standard-2",
+      "max_instances": 10
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "UserAgent",
+        "class_name": "UserAgent"
+      },
+      {
+        "name": "SessionAgent",
+        "class_name": "SessionAgent"
+      },
+      {
+        "name": "Sandbox",
+        "class_name": "Sandbox"
+      },
+      {
+        "name": "OrgAgent",
+        "class_name": "OrgAgent"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "UserAgent"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "SessionAgent",
+        "Sandbox"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "OrgAgent"
+      ]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "STORE",
+      "bucket_name": "dreamweav-store"
+    },
+    {
+      "binding": "BACKUP_BUCKET",
+      "bucket_name": "dreamweav-store"
+    }
+  ],
+  "vars": {
+    "APP_NAME": "Agents",
+    "WORKER_NAME": "dreamweav",
+    "LANDING_HOSTS": "agents.insertcompanywebsite.com",
+    "OWNER_HOST": "sina.insertcompanywebsite.com",
+    "OWNER_EMAIL": "sina.meraji@gmail.com,sina@learningloop.org",
+    "CF_OAUTH_CLIENT_ID": "d56dc11cf96142833284da909e60f526",
+    "GITHUB_OAUTH_CLIENT_ID": "Ov23li8bFk3eQTcIqfbo"
+  },
+  "routes": [
+    {
+      "pattern": "agents.insertcompanywebsite.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "sina.insertcompanywebsite.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "insertcompanywebsite.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.insertcompanywebsite.com",
+      "custom_domain": true
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "remote": true
+    }
+  ]
+}

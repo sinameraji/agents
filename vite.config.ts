@@ -6,7 +6,9 @@ import agents from 'agents/vite'
 import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), agents(), cloudflare()],
+  // WRANGLER_CONFIG lets `npm run deploy:self` build against wrangler.self.jsonc; unset (dev,
+  // generic deploys, the deploy button) falls back to the root wrangler.jsonc.
+  plugins: [react(), tailwindcss(), agents(), cloudflare({ configPath: process.env.WRANGLER_CONFIG })],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src/client', import.meta.url)),

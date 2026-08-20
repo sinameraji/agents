@@ -69,9 +69,9 @@ if (!existing.has('APP_PASSWORD')) {
   console.log('• APP_PASSWORD already set — leaving it.')
 }
 
-if (!existing.has('ALLOWED_USERS')) {
-  const allowed = (await rl.question('Restrict logins to specific emails? (comma-separated, empty = open): ')).trim()
-  if (allowed) await ensureSecret('ALLOWED_USERS', allowed)
+if (!existing.has('OWNER_EMAIL')) {
+  const owner = (await rl.question('Your email (becomes the instance owner/admin; empty = password-gate default): ')).trim()
+  if (owner) await ensureSecret('OWNER_EMAIL', owner)
 }
 rl.close()
 

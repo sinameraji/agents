@@ -1,5 +1,6 @@
 import { Agent } from 'agents'
 import type { OrgMember, OrgRole } from '~shared/protocol'
+import { PASSWORD_OWNER_FALLBACK } from '../auth/session'
 
 /**
  * One instance per deployment (name = "org"; see ORG_NAME in ../auth/membership). Owns the
@@ -62,6 +63,10 @@ export class OrgAgent extends Agent<Env, { ready: boolean }> {
     const realAuth =
       !!env.APP_PASSWORD || !!env.CF_OAUTH_CLIENT_ID || !!env.GITHUB_OAUTH_CLIENT_ID || !!env.EMAIL
     if (!realAuth && env.DEV_USER_EMAIL) out.add(norm(env.DEV_USER_EMAIL))
+    // No OWNER_EMAIL configured but a password gate exists (fresh deploy-button instance):
+    // the password path mints PASSWORD_OWNER_FALLBACK (see auth/session.ts), so seed that
+    // identity as the bootstrap admin — whoever knows APP_PASSWORD is the instance owner.
+    if (out.size === 0 && env.APP_PASSWORD) out.add(PASSWORD_OWNER_FALLBACK)
     return [...out]
   }
 
