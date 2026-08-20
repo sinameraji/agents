@@ -4,6 +4,12 @@
   "main": "src/server/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
+  // Custom domains (auto-provisioned on deploy; the zone lives on this account).
+  "routes": [
+    { "pattern": "agents.insertcompanywebsite.com", "custom_domain": true },
+    { "pattern": "insertcompanywebsite.com", "custom_domain": true },
+    { "pattern": "www.insertcompanywebsite.com", "custom_domain": true }
+  ],
   "observability": { "enabled": true },
   "assets": {
     "directory": "./dist/client",
@@ -39,9 +45,9 @@
     "APP_NAME": "Agents",
     "WORKER_NAME": "dreamweav",
     // Hosts that render the public "deploy your own" landing page instead of the app.
-    "LANDING_HOSTS": "dreamweav.com,www.dreamweav.com",
+    "LANDING_HOSTS": "insertcompanywebsite.com,www.insertcompanywebsite.com",
     // Host where the app lives for the instance owner; login there is Cloudflare-only.
-    "OWNER_HOST": "sina.dreamweav.com",
+    "OWNER_HOST": "agents.insertcompanywebsite.com",
     "OWNER_EMAIL": "sina.meraji@gmail.com",
     "CF_OAUTH_CLIENT_ID": "d56dc11cf96142833284da909e60f526",
     "GITHUB_OAUTH_CLIENT_ID": "Ov23li8bFk3eQTcIqfbo"
