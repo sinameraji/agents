@@ -7,6 +7,7 @@ import { Bot, Check, Copy, Download, GitBranch, Layers, MoreHorizontal, PanelRig
 import type { SessionApi } from '@/hooks/use-session'
 import { HARNESS_MARKS, PROVIDER_MARKS, PROVIDER_LABELS } from '../brand-marks'
 import { HARNESSES } from '~shared/protocol'
+import { harnessCaps } from '~shared/harness-caps'
 import { useRouter } from '@/router'
 import { Button } from '@/components/ui/button'
 import { StatusDot, statusLabel } from './status-dot'
@@ -18,6 +19,26 @@ import { TodoList } from '../transcript/parts/todo-list'
 import { WorkspaceDock } from '../workspace/workspace-dock'
 import type { PastedBlock } from '~shared/protocol'
 import { SubagentsPanel } from './subagents-panel'
+
+/** Mode slash commands + switcher metadata; which of these render is driven by caps.modes. */
+const MODE_COMMANDS = [
+  { id: 'plan', label: 'Plan', hint: 'read-only mode', title: 'Plan: read-only, no edits' },
+  { id: 'build', label: 'Build', hint: 'edits allowed', title: 'Build: edits allowed, approvals may apply' },
+  { id: 'auto', label: 'Auto', hint: 'approve everything', title: 'Auto: approve everything' },
+] as const
+
+/** Registry for manifest-declared harness commands: slash id, label, hint, and how to run it. */
+const HARNESS_COMMAND_DEFS: Record<string, { label: string; hint: string; run: (session: SessionApi) => void }> = {
+  compact: { label: 'Compact', hint: 'summarize older turns', run: (s) => void s.runCommand('compact') },
+  undo: { label: 'Undo', hint: 'revert last change', run: (s) => void s.runCommand('undo') },
+  redo: { label: 'Redo', hint: 'restore reverted change', run: (s) => void s.runCommand('redo') },
+  init: { label: 'Init', hint: 'scan repo → AGENTS.md', run: (s) => void s.runCommand('initProject') },
+  diff: { label: 'Diff', hint: 'show session changes', run: (s) => void s.runCommand('showDiff') },
+  share: { label: 'Share', hint: 'get a share link', run: (s) => void s.runCommand('share') },
+  unshare: { label: 'Unshare', hint: 'revoke the share link', run: (s) => void s.runCommand('unshare') },
+  stats: { label: 'Stats', hint: 'session statistics', run: (s) => void s.bridgeCommand('stats') },
+  export: { label: 'Export', hint: 'session → HTML in the workspace', run: (s) => void s.bridgeCommand('export') },
+}
 
 /** Collapsed paste-chips carry real content, fold it back into the outgoing prompt. */
 function withPasted(text: string, pasted: PastedBlock[]): string {
@@ -163,6 +184,7 @@ export function ChatView({ session }: { session: SessionApi }) {
   const dynFetchedFor = useRef<string | null>(null)
   const { navigate } = useRouter()
   const meta = session.meta
+  const caps = harnessCaps(meta?.harness)
   const harnessLabel = HARNESSES.find((h) => h.id === meta?.harness)?.label ?? meta?.harness ?? ''
   const busy = session.status === 'busy' || session.status === 'booting'
   const turnCount = session.turns.length
@@ -322,10 +344,18 @@ export function ChatView({ session }: { session: SessionApi }) {
           listFiles={listWorkspaceFiles}
           onCommandMenuOpen={fetchHarnessCommands}
           commands={(() => {
+            // Mode commands only exist where the harness has more than one real mode.
+            const modeCommands =
+              caps.modes.length > 1
+                ? MODE_COMMANDS.filter((m) => caps.modes.includes(m.id)).map((m) => ({
+                    id: m.id,
+                    label: m.label,
+                    hint: m.hint,
+                    run: () => void session.setMode(m.id),
+                  }))
+                : []
             const base = [
-              { id: 'plan', label: 'Plan', hint: 'read-only mode', run: () => void session.setMode('plan') },
-              { id: 'build', label: 'Build', hint: 'edits allowed', run: () => void session.setMode('build') },
-              { id: 'auto', label: 'Auto', hint: 'approve everything', run: () => void session.setMode('auto') },
+              ...modeCommands,
               { id: 'stop', label: 'Stop', hint: 'interrupt the agent', run: () => void session.stop() },
               { id: 'workspace', label: 'Workspace', hint: 'toggle the side panel', run: () => setDockOpen((v) => !v) },
               { id: 'new', label: 'New session', hint: 'start another session', run: () => navigate('/new') },
@@ -336,27 +366,11 @@ export function ChatView({ session }: { session: SessionApi }) {
                 hint: 'duplicate session (workspace + transcript)',
                 run: () => void session.fork().then((r) => r.id && navigate(`/s/${r.id}`)),
               },
-              ...(meta?.harness === 'opencode'
-                ? [
-                    { id: 'compact', label: 'Compact', hint: 'summarize older turns', run: () => void session.runCommand('compact') },
-                    { id: 'undo', label: 'Undo', hint: 'revert last change', run: () => void session.runCommand('undo') },
-                    { id: 'redo', label: 'Redo', hint: 'restore reverted change', run: () => void session.runCommand('redo') },
-                    { id: 'init', label: 'Init', hint: 'scan repo → AGENTS.md', run: () => void session.runCommand('initProject') },
-                    { id: 'diff', label: 'Diff', hint: 'show session changes', run: () => void session.runCommand('showDiff') },
-                    { id: 'share', label: 'Share', hint: 'get a share link', run: () => void session.runCommand('share') },
-                    { id: 'unshare', label: 'Unshare', hint: 'revoke the share link', run: () => void session.runCommand('unshare') },
-                  ]
-                : []),
-              ...(meta?.harness === 'pi'
-                ? [
-                    { id: 'compact', label: 'Compact', hint: 'summarize context', run: () => void session.runCommand('compact') },
-                    { id: 'stats', label: 'Stats', hint: 'session statistics', run: () => void session.bridgeCommand('stats') },
-                    { id: 'export', label: 'Export', hint: 'session → HTML in the workspace', run: () => void session.bridgeCommand('export') },
-                  ]
-                : []),
-              ...(meta?.harness === 'aisdk' || meta?.harness === 'cfagent'
-                ? [{ id: 'compact', label: 'Compact', hint: 'summarize context', run: () => void session.runCommand('compact') }]
-                : []),
+              // Harness-specific commands come from the capability manifest, not inline harness checks.
+              ...caps.commands.flatMap((id) => {
+                const def = HARNESS_COMMAND_DEFS[id]
+                return def ? [{ id, label: def.label, hint: def.hint, run: () => def.run(session) }] : []
+              }),
             ]
             const taken = new Set(base.map((c) => c.id))
             return [
@@ -373,30 +387,26 @@ export function ChatView({ session }: { session: SessionApi }) {
           })()}
           extras={
             <>
-              <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs" role="group" aria-label="Mode">
-                {(['plan', 'build', 'auto'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => void session.setMode(m)}
-                    className={
-                      'rounded-md px-2 py-0.5 capitalize transition-colors ' +
-                      (session.mode === m
-                        ? 'bg-secondary text-secondary-foreground'
-                        : 'text-muted-foreground hover:text-foreground')
-                    }
-                    title={
-                      m === 'plan'
-                        ? 'Plan: read-only, no edits'
-                        : m === 'build'
-                          ? 'Build: edits allowed, approvals may apply'
-                          : 'Auto: approve everything'
-                    }
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
+              {caps.modes.length > 1 && (
+                <div className="flex items-center rounded-lg border border-border bg-card/60 p-0.5 text-xs" role="group" aria-label="Mode">
+                  {MODE_COMMANDS.filter((m) => caps.modes.includes(m.id)).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => void session.setMode(m.id)}
+                      className={
+                        'rounded-md px-2 py-0.5 capitalize transition-colors ' +
+                        (session.mode === m.id
+                          ? 'bg-secondary text-secondary-foreground'
+                          : 'text-muted-foreground hover:text-foreground')
+                      }
+                      title={m.title}
+                    >
+                      {m.id}
+                    </button>
+                  ))}
+                </div>
+              )}
               <ModelPicker
                 value={meta?.model ?? ''}
                 provider={meta?.provider ?? 'openrouter'}
