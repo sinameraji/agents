@@ -1063,6 +1063,41 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     await this.checkpoint()
   }
 
+  /**
+   * Mid-turn steering. Harnesses that can inject guidance into the RUNNING turn (the bridge asks
+   * the adapter; today that is pi's native `steer` RPC) get it without an abort; everyone else
+   * falls back to the old behavior, stop + re-prompt. The capability decision lives in the
+   * adapter's /steer response, not in a harness table here, so the DO stays harness-agnostic.
+   */
+  @callable()
+  async steer(input: {
+    text: string
+    messageId?: string
+    attachments?: { key: string; name: string; size: number }[]
+    runText?: string
+  }): Promise<{ ok: true; native: boolean }> {
+    this.hydrate()
+    const harness = this.config().harness
+    // opencode/cfagent do not run behind the bridge (same routing check stop() makes), and
+    // attachments need the upload copy step that only the full prompt path performs.
+    const viaBridge = harness !== 'opencode' && harness !== 'cfagent'
+    if (viaBridge && this.state.status === 'busy' && !input.attachments?.length) {
+      const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`)
+      const res = await this.bridgeFetch(sandbox, 'POST', '/steer', { text: input.runText ?? input.text }).catch(() => null)
+      if ((res?.ok ?? false) && (res?.json as { ok?: boolean })?.ok === true) {
+        const id = input.messageId ?? `u-${crypto.randomUUID()}`
+        this.emit({
+          t: 'turn.start',
+          turn: { id, role: 'user', createdAt: Date.now(), status: 'complete', parts: [{ kind: 'text', id: `${id}:text`, text: input.text }] },
+        })
+        return { ok: true, native: true }
+      }
+    }
+    await this.stop()
+    await this.sendMessage(input)
+    return { ok: true, native: false }
+  }
+
   @callable()
   async stop(): Promise<{ ok: true }> {
     const dropped = this.getKv<QueuedMessage[]>('queue', [])
