@@ -95,3 +95,11 @@ export function hasProviderKey(provider: Provider, conn: Connections): boolean {
       return !!(conn.cloudflareApiToken && conn.cloudflareAccountId && conn.cloudflareGatewayId)
   }
 }
+
+/** Per-prompt model ref: lets a RUNNING OpenCode server follow the user's current pick
+ *  (config env only applies at process start, so setModel alone never reaches a live server). */
+export function opencodePromptModel(provider: Provider, model: string): { providerID: string; modelID: string } {
+  const pid = providerId(provider)
+  const bare = model.replace(new RegExp(`^${pid}/`), '')
+  return { providerID: pid, modelID: bare }
+}

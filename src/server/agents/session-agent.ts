@@ -7,7 +7,7 @@ const getSandbox: typeof sdkGetSandbox = (ns, id, opts) =>
   sdkGetSandbox(ns, id, { ...opts, transport: 'rpc' })
 import { createOpencode } from '@cloudflare/sandbox/opencode'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
-import { buildOpencodeConfig, hasProviderKey } from '../opencode-config'
+import { buildOpencodeConfig, hasProviderKey, opencodePromptModel } from '../opencode-config'
 import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
 import { runCfAgentLoop, summarizeMessages } from '../harness/cfagent'
 import type { ModelMessage } from 'ai'
@@ -92,6 +92,8 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private opencode?: OpencodeClient
   private opencodeSessionId?: string
   private emittedParts = new Map<string, string>()
+  /** Question ids already declined this turn (poll re-lists until the server drops them). */
+  private handledQuestions = new Set<string>()
   private cfAbort: AbortController | null = null
   /** Bumped by stop() and every new turn; in-flight poll loops exit when their captured value goes stale. */
   private turnGen = 0
@@ -624,6 +626,7 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const sandbox = await this.ensureBridge()
     this.setStatus('busy')
     this.emittedParts.clear()
+    this.handledQuestions.clear()
 
     await this.bridgeFetch(sandbox, 'POST', '/prompt', { text })
     const turnId = `a-${crypto.randomUUID()}`
@@ -694,6 +697,15 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const { config } = buildOpencodeConfig(cfg.provider, cfg.model, conn, proxy)
     const sandbox = getSandbox(this.env.Sandbox, `sess-${this.name}`, { sleepAfter: '10m' })
     await this.ensureWorkspace(sandbox)
+    // Model changed since the server booted: kill it so createOpencode starts fresh with the
+    // rebuilt config (the custom provider's model map + per-model options only apply at start).
+    // Session history persists on the container disk, so the same sessionID resumes seamlessly.
+    if (this.getKv<boolean>('ocModelDirty', false)) {
+      this.putKv('ocModelDirty', false)
+      this.opencode = undefined
+      await sandbox.exec("sh -lc 'pkill -f opencode || true'").catch(() => null)
+      await new Promise((r) => setTimeout(r, 500))
+    }
     const booted = createOpencode(sandbox, { directory: '/workspace', config })
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('OpenCode did not start in the sandbox within 120s.')), 120_000),
@@ -886,13 +898,18 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     const ocSession = await this.ensureOpencodeSession()
     this.setStatus('busy')
     this.emittedParts.clear()
+    this.handledQuestions.clear()
 
     const client = this.opencode!
     const mode = this.state.mode
+    // Per-prompt model: a running OpenCode server only reads config at process start, so this is
+    // the ONLY way the user's current picker choice reaches an already-booted session.
+    const promptModel = opencodePromptModel(cfg.provider, cfg.model)
     await client.session.promptAsync(
       {
         sessionID: ocSession,
         parts: [{ type: 'text', text }],
+        model: promptModel,
         ...(mode === 'plan' ? { agent: 'plan' } : {}),
       } as never,
       { throwOnError: true } as never,
@@ -956,6 +973,47 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
         this.emit({ t: 'usage', usage })
         if (allComplete) sawComplete = true
         void assistants
+
+        // Permissions + questions: without this poll an OpenCode permission ask (plan agent asks
+        // on edit/bash by default) hangs the turn silently — the card UI exists but nothing
+        // emitted into it. respondPermission → permission.reply is already wired.
+        try {
+          const pRes = await (client as unknown as { permission: { list: () => Promise<unknown> } }).permission.list()
+          const pending = ((pRes as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>
+          for (const p of pending) {
+            const sid = String(p.sessionID ?? '')
+            if (sid && sid !== ocSession) continue
+            const pid = String(p.id ?? '')
+            if (!pid) continue
+            this.emit({
+              t: 'permission.ask',
+              permission: {
+                id: pid,
+                title: String(p.title ?? p.permission ?? p.type ?? 'Permission request'),
+                metadata: (p.metadata as Record<string, unknown>) ?? (p.patterns ? { patterns: p.patterns } : undefined),
+              },
+            })
+          }
+        } catch { /* older servers may lack the endpoint */ }
+        try {
+          const qRes = await (client as unknown as { question: { list: () => Promise<unknown>; reject: (o: never) => Promise<unknown> } }).question.list()
+          const questions = ((qRes as { data?: unknown[] }).data ?? []) as Array<Record<string, unknown>>
+          for (const q of questions) {
+            const qsid = String(q.sessionID ?? '')
+            if (qsid && qsid !== ocSession) continue
+            const qid = String(q.id ?? '')
+            if (!qid || this.handledQuestions.has(qid)) continue
+            this.handledQuestions.add(qid)
+            // No question UI yet (roadmap #8): decline visibly instead of hanging the turn forever.
+            const qText = String((q.questions as Array<Record<string, unknown>> | undefined)?.[0]?.question ?? q.title ?? 'a question')
+            const qPartId = `question:${qid}`
+            this.emit({
+              t: 'part.upsert', turnId,
+              part: { kind: 'error', id: qPartId, name: 'question declined', message: `The agent asked: "${qText}" — interactive questions aren't supported here yet, so it was declined and the agent will continue on its own judgment.` },
+            })
+            await (client as unknown as { question: { reject: (o: never) => Promise<unknown> } }).question.reject({ requestID: qid } as never).catch(() => null)
+          }
+        } catch { /* older servers may lack the endpoint */ }
 
         try {
           const todoRes = await client.session.todo({ sessionID: ocSession } as never)
@@ -1470,6 +1528,12 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   setModel(model: string): { ok: true } {
     const cfg = this.config()
     this.putKv('config', { ...cfg, model })
+    // A running OpenCode server was configured at process start; per-prompt `model` covers
+    // built-in providers, but our custom cloudflare provider can only instantiate models declared
+    // in its boot-time map ("languageModel is not a function"). Mark the process dirty so the next
+    // turn restarts it with a rebuilt config — OpenCode persists sessions on disk, so the same
+    // sessionID continues with context intact.
+    if (cfg.harness === 'opencode' && model !== cfg.model) this.putKv('ocModelDirty', true)
     if (this.state.meta) this.setState({ ...this.state, meta: { ...this.state.meta, model } })
     void getAgentByName(this.env.UserAgent, cfg.owner).then((u) => u.upsertSessionSummary({ id: this.name, model }))
     return { ok: true }
