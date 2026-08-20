@@ -53,9 +53,9 @@ committed; finish per the plan in its section. Worktrees under .claude/worktrees
    (expect memory) — script in the agent report / branch log.
 5. ~~kimiflare custom endpoint~~ DONE, PR OPEN FOR SINA'S REVIEW:
    https://github.com/sinameraji/kimiflare/pull/635 (KIMIFLARE_BASE_URL/API_KEY, live-tested against
-   a fake broker, 847/850 = main parity). After merge+publish: bump Dockerfile pin, then wire the
-   kimiflare adapter to pass the /aig broker URL + per-session token (pattern: session-agent's
-   proxyToken/ensureOpencode proxy block) — that closes issue #3 fully.
+   a fake broker, 847/850 = main parity). DONE (b131e5a): 0.99.0 pinned, adapter brokered via
+   KIMIFLARE_BASE_URL/API_KEY, raw CF token withheld from container. Issue #3 fully closed.
+   Live verify pends image rollout. Pending board: claude.ai/code/artifact/ba34665c-9051-458d-8bea-3db18fd8a1c9
 
 **Integration notes**: branches 1, 3, 4 all touch src/server/agents/session-agent.ts — merge one at a
 time (suggested order: 3, 1, 4), run `npm run typecheck && npm test && npm run build` after each,
