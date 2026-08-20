@@ -51,7 +51,7 @@
     "LANDING_HOSTS": "agents.insertcompanywebsite.com",
     // Host where the app lives for the instance owner; login there is Cloudflare-only.
     "OWNER_HOST": "sina.insertcompanywebsite.com",
-    "OWNER_EMAIL": "sina.meraji@gmail.com",
+    "OWNER_EMAIL": "sina.meraji@gmail.com,sina@learningloop.org",
     "CF_OAUTH_CLIENT_ID": "d56dc11cf96142833284da909e60f526",
     "GITHUB_OAUTH_CLIENT_ID": "Ov23li8bFk3eQTcIqfbo"
   }
