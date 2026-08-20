@@ -64,6 +64,11 @@ cap block message, mode tooltips). Branch 1 also touches harness-caps.ts/chat-vi
 changed today — expect small conflicts.
 
 ## LEFT AFTER THAT (roadmap tail)
+- MID-SESSION MODEL SWITCH SHIPPED for bridges (restart-with-resume; model rides every /prompt;
+  manifest modelSwitch=restart for pi/kimiflare/aisdk). Live-verified on kimiflare (switch to K3
+  mid-conversation worked). KNOWN GAP filed as kimiflare#637: upstream saves sessions only on
+  clean turns, so context can be lost across a switch after an errored turn; aisdk (bridge-owned
+  history file) immune; pi expected fine (own session files), unverified.
 - IMAGE INPUTS SHIPPED (merge 8625559, 186 tests): composer thumbnails + clipboard paste, per-model
   vision detection (OpenRouter input_modalities live + family heuristic), OpenCode file:// parts
   (server inlines), aisdk/cfagent ai@7 FilePart (ImagePart is deprecated), 4MB/8MB caps with skip
