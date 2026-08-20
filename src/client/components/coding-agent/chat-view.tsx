@@ -343,6 +343,7 @@ export function ChatView({ session }: { session: SessionApi }) {
         <Composer
           listFiles={listWorkspaceFiles}
           onCommandMenuOpen={fetchHarnessCommands}
+          allowAttachments={caps.promptCapabilities.image}
           commands={(() => {
             // Mode commands only exist where the harness has more than one real mode.
             const modeCommands =
@@ -414,14 +415,16 @@ export function ChatView({ session }: { session: SessionApi }) {
                 direction="up"
                 onChange={(id) => void session.setModel(id)}
               />
-              <Button
-                variant={subagentsOpen ? 'secondary' : 'ghost'}
-                size="icon-sm"
-                aria-label="Sub-agents"
-                onClick={() => setSubagentsOpen((v) => !v)}
-              >
-                <Layers className="size-4" />
-              </Button>
+              {caps.subagents && (
+                <Button
+                  variant={subagentsOpen ? 'secondary' : 'ghost'}
+                  size="icon-sm"
+                  aria-label="Sub-agents"
+                  onClick={() => setSubagentsOpen((v) => !v)}
+                >
+                  <Layers className="size-4" />
+                </Button>
+              )}
             </>
           }
           onSend={(text, pasted, attachments) =>
@@ -445,11 +448,13 @@ export function ChatView({ session }: { session: SessionApi }) {
           }
           sessionName={meta?.name ?? 'session'}
         />
-        <div className="pointer-events-none absolute inset-x-0 bottom-full">
-          <div className="pointer-events-auto relative mx-auto w-full max-w-3xl px-4">
-            <SubagentsPanel turns={session.turns} open={subagentsOpen} onClose={() => setSubagentsOpen(false)} />
+        {caps.subagents && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-full">
+            <div className="pointer-events-auto relative mx-auto w-full max-w-3xl px-4">
+              <SubagentsPanel turns={session.turns} open={subagentsOpen} onClose={() => setSubagentsOpen(false)} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
     {dockOpen && (
