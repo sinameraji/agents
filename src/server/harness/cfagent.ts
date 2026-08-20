@@ -9,6 +9,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import type { NormPart, NormUsage } from '~shared/agent'
 import type { Connections, Provider, SessionMode } from '~shared/protocol'
+import { estimateCostUsd, type ModelPricing } from '~shared/pricing'
 import { isMutatingCommand } from '~shared/mutation-guard'
 import { mimeFromDataUrl } from '~shared/vision'
 
@@ -146,6 +147,12 @@ export async function runCfAgentLoop(opts: {
   messages: ModelMessage[]
   signal: AbortSignal
   emit: CfAgentEmit
+  /**
+   * Per-million pricing for `model`, from the model catalog (api/models.ts). Null/absent when the
+   * catalog has no price for it: the turn then reports NO cost at all rather than $0.00, because
+   * the session total and the monthly budget cap both add up whatever cost we emit.
+   */
+  pricing?: ModelPricing | null
   /**
    * Build mode's ask-before-mutate: resolves true (run the tool) or false (skip it). Implemented
    * by the SessionAgent as a permission card + its respondPermission callable; times out to
@@ -336,6 +343,10 @@ export async function runCfAgentLoop(opts: {
   flushText(true)
   const u = await result.usage
   const usage: NormUsage = { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 }
+  // Unlike the container harnesses, nothing upstream hands us a price: the AI SDK reports tokens
+  // only. Cost is ours to compute, from the catalog price of the model we just ran.
+  const cost = estimateCostUsd(opts.pricing, usage.input, usage.output)
+  if (cost !== undefined) usage.cost = cost
   emit.usage(usage)
   return { text: finalText, usage }
 }

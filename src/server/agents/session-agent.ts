@@ -10,6 +10,8 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 import { buildOpencodeConfig, hasProviderKey, opencodePromptModel } from '../opencode-config'
 import { mapPart, usageFromInfo, isAssistantComplete } from '../harness/opencode-map'
 import { runCfAgentLoop, summarizeMessages, stripImagesFromHistory, userMessageWithImages } from '../harness/cfagent'
+import { modelPricing } from '../api/models'
+import type { ModelPricing } from '~shared/pricing'
 import type { ModelMessage } from 'ai'
 // The bridge (pi/KimiFlare/AI-SDK host) ships INSIDE the worker and is written into the container
 // at runtime, so its version always matches this deploy, no image rebuilds, no warm-pool staleness.
@@ -139,6 +141,10 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
   private turnGen = 0
   private transcript: TranscriptState = emptyTranscript()
   private hydrated = false
+  /** Catalog pricing per `provider:model`, resolved once and kept for the life of this instance
+   *  (prices change on the order of weeks, a turn runs for minutes). Misses are cached too, so an
+   *  unpriced model doesn't refetch the catalog every turn; lookup FAILURES are not. */
+  private pricingCache = new Map<string, ModelPricing | null>()
 
   onStart() {
     this.sql`CREATE TABLE IF NOT EXISTS turns (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, data_json TEXT NOT NULL)`
@@ -594,6 +600,27 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     }
   }
 
+  /**
+   * Per-million pricing for a model, from the same catalog that fills the model picker. Null when
+   * the catalog has no price (unpriced Workers AI entry, or a provider with no catalog): the turn
+   * then reports no cost, which is the honest answer. Never throws.
+   */
+  private async pricingFor(provider: Provider, model: string): Promise<ModelPricing | null> {
+    const key = `${provider}:${model}`
+    const cached = this.pricingCache.get(key)
+    if (cached !== undefined) return cached
+    try {
+      const conn = provider === 'cloudflare' ? await this.connections() : undefined
+      const pricing = await modelPricing({ provider, harness: this.config().harness, model, conn })
+      this.pricingCache.set(key, pricing)
+      return pricing
+    } catch (e) {
+      // Catalog unreachable: leave the cache empty so the next turn tries again, and price nothing.
+      console.warn(`[cfagent] no pricing for ${key} (catalog lookup failed):`, (e as Error).message)
+      return null
+    }
+  }
+
   private async runCfAgentTurn(text: string, images: InlineImage[] = []): Promise<void> {
     const gen = this.turnGen
     const cfg = this.config()
@@ -619,12 +646,15 @@ export class SessionAgent extends Agent<Env, SessionAgentState> {
     })
     this.cfAbort = new AbortController()
 
-    const runOnce = (model: string) =>
+    const runOnce = async (model: string) =>
       runCfAgentLoop({
         sandbox,
         provider: cfg.provider,
         model,
         creds: conn,
+        // Resolved per call, not per turn: the unified-billing fallback below reruns on a
+        // different (cheaper) model, which must be costed at ITS price.
+        pricing: await this.pricingFor(cfg.provider, model),
         mode: this.state.mode,
         messages: history,
         signal: this.cfAbort!.signal,
