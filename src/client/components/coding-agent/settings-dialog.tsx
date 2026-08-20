@@ -25,6 +25,7 @@ import type { UserAgentApi } from '@/hooks/use-user-agent'
 import { HARNESSES, type Connections, type Provider } from '~shared/protocol'
 import { harnessRequirements } from '../new-session'
 import { Button } from '@/components/ui/button'
+import { MembersPanel } from './members-panel'
 
 export const PROVIDERS: { id: Provider; label: string; field: keyof Connections; placeholder: string; keyUrl: string }[] = [
   { id: 'anthropic', label: 'Anthropic', field: 'anthropicKey', placeholder: 'sk-ant-…', keyUrl: 'https://console.anthropic.com/settings/keys' },
@@ -41,18 +42,21 @@ function HelpLink({ href, children }: { href: string; children: React.ReactNode 
   )
 }
 
-export type SettingsTab = 'providers' | 'harness' | 'git' | 'domain'
+export type SettingsTab = 'providers' | 'harness' | 'git' | 'domain' | 'members'
 
 export function SettingsDialog({
   ua,
   onClose,
   onRequireAuth,
   initialTab,
+  isAdmin,
 }: {
   ua: UserAgentApi
   onClose: () => void
   onRequireAuth?: () => void
   initialTab?: SettingsTab
+  /** Admins get the Members tab (roster management). Hidden for everyone else. */
+  isAdmin?: boolean
 }) {
   const [provider, setProvider] = useState<Provider>(ua.settings.defaultProvider)
   const [keyInput, setKeyInput] = useState('')
@@ -200,7 +204,8 @@ export function SettingsDialog({
                   ['harness', 'Harness'],
                   ['git', 'Git'],
                   ['domain', 'Domain'],
-                ] as const
+                  ...(isAdmin ? ([['members', 'Members']] as const) : []),
+                ] as [SettingsTab, string][]
               ).map(([id, label]) => (
                 <button
                   key={id}
@@ -399,6 +404,8 @@ export function SettingsDialog({
           )}
 
           {tab === 'domain' && <DomainSection ua={ua} />}
+
+          {tab === 'members' && isAdmin && <MembersPanel />}
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
